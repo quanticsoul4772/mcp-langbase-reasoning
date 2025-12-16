@@ -19,8 +19,8 @@ pub struct JsonRpcRequest {
 #[derive(Debug, Serialize)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<Value>,
+    /// ID must always be present in responses (null if notification)
+    pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,7 +104,7 @@ impl JsonRpcResponse {
     pub fn success(id: Option<Value>, result: Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
-            id,
+            id: id.unwrap_or(Value::Null),
             result: Some(result),
             error: None,
         }
@@ -114,7 +114,7 @@ impl JsonRpcResponse {
     pub fn error(id: Option<Value>, code: i32, message: impl Into<String>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
-            id,
+            id: id.unwrap_or(Value::Null),
             result: None,
             error: Some(JsonRpcError {
                 code,

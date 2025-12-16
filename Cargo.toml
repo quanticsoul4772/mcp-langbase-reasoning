@@ -1,0 +1,53 @@
+[package]
+name = "mcp-langbase-reasoning"
+version = "0.1.0"
+edition = "2021"
+authors = ["MCP Langbase Reasoning Team"]
+description = "MCP server delegating reasoning to Langbase Pipes"
+license = "MIT"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
+# Configuration
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# MCP protocol (manual JSON-RPC)
+jsonrpc-core = "18.0"
+
+# Utilities
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+mockall = "0.13"
+wiremock = "0.6"
+tempfile = "3.12"
+pretty_assertions = "1.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

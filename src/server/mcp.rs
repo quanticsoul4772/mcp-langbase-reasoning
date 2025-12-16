@@ -166,32 +166,54 @@ impl McpServer {
                 Ok(request) => self.handle_request(request).await,
                 Err(e) => {
                     error!(error = %e, "Failed to parse request");
-                    JsonRpcResponse::error(None, -32700, format!("Parse error: {}", e))
+                    Some(JsonRpcResponse::error(None, -32700, format!("Parse error: {}", e)))
                 }
             };
 
-            let response_json = serde_json::to_string(&response)?;
-            debug!(response = %response_json, "Sending response");
+            // Only send response if not a notification (per JSON-RPC 2.0 spec)
+            if let Some(response) = response {
+                let response_json = serde_json::to_string(&response)?;
+                debug!(response = %response_json, "Sending response");
 
-            stdout.write_all(response_json.as_bytes()).await?;
-            stdout.write_all(b"\n").await?;
-            stdout.flush().await?;
+                stdout.write_all(response_json.as_bytes()).await?;
+                stdout.write_all(b"\n").await?;
+                stdout.flush().await?;
+            }
         }
 
         Ok(())
     }
 
     /// Handle a single JSON-RPC request
-    async fn handle_request(&self, request: JsonRpcRequest) -> JsonRpcResponse {
+    /// Returns None for notifications (requests without id) per JSON-RPC 2.0 spec
+    async fn handle_request(&self, request: JsonRpcRequest) -> Option<JsonRpcResponse> {
+        // Check if this is a notification (no id = no response required)
+        let is_notification = request.id.is_none();
+
         match request.method.as_str() {
-            "initialize" => self.handle_initialize(request.id),
-            "initialized" => JsonRpcResponse::success(request.id, Value::Null),
-            "tools/list" => self.handle_tools_list(request.id),
-            "tools/call" => self.handle_tool_call(request.id, request.params).await,
-            "ping" => JsonRpcResponse::success(request.id, Value::Object(Default::default())),
+            "initialize" => Some(self.handle_initialize(request.id)),
+            "initialized" => {
+                // Notification - no response per JSON-RPC 2.0
+                debug!("Received initialized notification");
+                None
+            }
+            "notifications/cancelled" => {
+                // Notification - no response
+                debug!("Received cancelled notification");
+                None
+            }
+            "tools/list" => Some(self.handle_tools_list(request.id)),
+            "tools/call" => Some(self.handle_tool_call(request.id, request.params).await),
+            "ping" => Some(JsonRpcResponse::success(request.id, Value::Object(Default::default()))),
             method => {
-                error!(method = %method, "Unknown method");
-                JsonRpcResponse::error(request.id, -32601, format!("Method not found: {}", method))
+                // For unknown methods, only respond if it's a request (has id)
+                if is_notification {
+                    debug!(method = %method, "Unknown notification, ignoring");
+                    None
+                } else {
+                    error!(method = %method, "Unknown method");
+                    Some(JsonRpcResponse::error(request.id, -32601, format!("Method not found: {}", method)))
+                }
             }
         }
     }

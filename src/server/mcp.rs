@@ -248,7 +248,30 @@ impl McpServer {
     fn handle_tools_list(&self, id: Option<Value>) -> JsonRpcResponse {
         info!("Handling tools/list request");
 
-        let tools = vec![get_linear_tool()];
+        let tools = vec![
+            // Phase 1-2 tools
+            get_linear_tool(),
+            get_tree_tool(),
+            get_tree_focus_tool(),
+            get_tree_list_tool(),
+            get_tree_complete_tool(),
+            get_divergent_tool(),
+            get_reflection_tool(),
+            get_reflection_evaluate_tool(),
+            // Phase 3 tools
+            get_backtracking_tool(),
+            get_backtracking_checkpoint_tool(),
+            get_backtracking_list_tool(),
+            get_auto_tool(),
+            get_got_init_tool(),
+            get_got_generate_tool(),
+            get_got_score_tool(),
+            get_got_aggregate_tool(),
+            get_got_refine_tool(),
+            get_got_prune_tool(),
+            get_got_finalize_tool(),
+            get_got_state_tool(),
+        ];
 
         JsonRpcResponse::success(
             id,
@@ -305,7 +328,7 @@ impl McpServer {
 /// Get the linear reasoning tool definition
 fn get_linear_tool() -> Tool {
     Tool {
-        name: "reasoning.linear".to_string(),
+        name: "reasoning_linear".to_string(),
         description: "Single-pass sequential reasoning. Process a thought and get a logical continuation or analysis.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
@@ -325,7 +348,570 @@ fn get_linear_tool() -> Tool {
                     "description": "Confidence threshold (0.0-1.0)"
                 }
             },
-            "required": ["content"]
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the tree reasoning tool definition
+fn get_tree_tool() -> Tool {
+    Tool {
+        name: "reasoning_tree".to_string(),
+        description: "Branching exploration with multiple reasoning paths. Explores 2-4 distinct approaches and recommends the most promising one.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The thought content to explore"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "branch_id": {
+                    "type": "string",
+                    "description": "Optional branch ID to extend (creates root branch if not provided)"
+                },
+                "num_branches": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 4,
+                    "description": "Number of branches to explore (default: 3)"
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Confidence threshold (0.0-1.0)"
+                },
+                "cross_refs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "to_branch": { "type": "string" },
+                            "type": { "type": "string", "enum": ["supports", "contradicts", "extends", "alternative", "depends"] },
+                            "reason": { "type": "string" },
+                            "strength": { "type": "number", "minimum": 0, "maximum": 1 }
+                        },
+                        "required": ["to_branch", "type"]
+                    },
+                    "description": "Optional cross-references to other branches"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the tree focus tool definition
+fn get_tree_focus_tool() -> Tool {
+    Tool {
+        name: "reasoning_tree_focus".to_string(),
+        description: "Focus on a specific branch, making it the active branch for the session.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "branch_id": {
+                    "type": "string",
+                    "description": "The branch ID to focus on"
+                }
+            },
+            "required": ["session_id", "branch_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the tree list tool definition
+fn get_tree_list_tool() -> Tool {
+    Tool {
+        name: "reasoning_tree_list".to_string(),
+        description: "List all branches in a session.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the tree complete tool definition
+fn get_tree_complete_tool() -> Tool {
+    Tool {
+        name: "reasoning_tree_complete".to_string(),
+        description: "Mark a branch as completed or abandoned.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "branch_id": {
+                    "type": "string",
+                    "description": "The branch ID to update"
+                },
+                "completed": {
+                    "type": "boolean",
+                    "description": "True to mark as completed, false to mark as abandoned (default: true)"
+                }
+            },
+            "required": ["branch_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the divergent reasoning tool definition
+fn get_divergent_tool() -> Tool {
+    Tool {
+        name: "reasoning_divergent".to_string(),
+        description: "Creative reasoning that generates novel perspectives and unconventional solutions. Challenges assumptions and synthesizes diverse viewpoints.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The thought content to explore creatively"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "branch_id": {
+                    "type": "string",
+                    "description": "Optional branch ID for tree mode integration"
+                },
+                "num_perspectives": {
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 5,
+                    "description": "Number of perspectives to generate (default: 3)"
+                },
+                "challenge_assumptions": {
+                    "type": "boolean",
+                    "description": "Whether to explicitly identify and challenge assumptions"
+                },
+                "force_rebellion": {
+                    "type": "boolean",
+                    "description": "Enable maximum creativity mode with contrarian viewpoints"
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Confidence threshold (0.0-1.0, default: 0.7)"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the reflection reasoning tool definition
+fn get_reflection_tool() -> Tool {
+    Tool {
+        name: "reasoning_reflection".to_string(),
+        description: "Meta-cognitive reasoning that analyzes and improves reasoning quality. Evaluates strengths, weaknesses, and provides recommendations.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thought_id": {
+                    "type": "string",
+                    "description": "ID of an existing thought to reflect upon"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content to reflect upon (used if thought_id not provided)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "branch_id": {
+                    "type": "string",
+                    "description": "Optional branch ID for tree mode integration"
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Maximum iterations for iterative refinement (default: 3)"
+                },
+                "quality_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Quality threshold to stop iterating (default: 0.8)"
+                },
+                "include_chain": {
+                    "type": "boolean",
+                    "description": "Whether to include full reasoning chain in context"
+                }
+            },
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the reflection evaluate tool definition
+fn get_reflection_evaluate_tool() -> Tool {
+    Tool {
+        name: "reasoning_reflection_evaluate".to_string(),
+        description: "Evaluate a session's overall reasoning quality, coherence, and provide recommendations.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID to evaluate"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+// ============================================================================
+// Phase 3 Tool Definitions
+// ============================================================================
+
+/// Get the backtracking tool definition
+fn get_backtracking_tool() -> Tool {
+    Tool {
+        name: "reasoning_backtrack".to_string(),
+        description: "Restore from a checkpoint and explore alternative reasoning paths. Enables non-linear exploration with state restoration.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "checkpoint_id": {
+                    "type": "string",
+                    "description": "ID of the checkpoint to restore from"
+                },
+                "new_direction": {
+                    "type": "string",
+                    "description": "Optional new direction or approach to try from the checkpoint"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID (must match checkpoint's session)"
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Confidence threshold (0.0-1.0, default: 0.8)"
+                }
+            },
+            "required": ["checkpoint_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the backtracking checkpoint creation tool definition
+fn get_backtracking_checkpoint_tool() -> Tool {
+    Tool {
+        name: "reasoning_checkpoint_create".to_string(),
+        description: "Create a checkpoint at the current reasoning state for later backtracking.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID to checkpoint"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name for the checkpoint"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional description of the checkpoint state"
+                }
+            },
+            "required": ["session_id", "name"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the backtracking list checkpoints tool definition
+fn get_backtracking_list_tool() -> Tool {
+    Tool {
+        name: "reasoning_checkpoint_list".to_string(),
+        description: "List all checkpoints available for a session.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID to list checkpoints for"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the auto mode router tool definition
+fn get_auto_tool() -> Tool {
+    Tool {
+        name: "reasoning_auto".to_string(),
+        description: "Automatically select the most appropriate reasoning mode based on content analysis. Routes to linear, tree, divergent, reflection, or got mode.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The content to analyze for mode selection"
+                },
+                "hints": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional hints about the problem type"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT initialization tool definition
+fn get_got_init_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_init".to_string(),
+        description: "Initialize a new Graph-of-Thoughts reasoning graph with a root node.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Initial thought content for the root node"
+                },
+                "problem": {
+                    "type": "string",
+                    "description": "Optional problem context"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID"
+                },
+                "config": {
+                    "type": "object",
+                    "properties": {
+                        "max_nodes": { "type": "integer", "minimum": 10, "maximum": 1000 },
+                        "max_depth": { "type": "integer", "minimum": 1, "maximum": 20 },
+                        "default_k": { "type": "integer", "minimum": 1, "maximum": 10 },
+                        "prune_threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+                    },
+                    "description": "Optional configuration overrides"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT generate tool definition
+fn get_got_generate_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_generate".to_string(),
+        description: "Generate k diverse continuations from a node in the reasoning graph.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "Optional node ID to generate from (uses active nodes if not specified)"
+                },
+                "k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "Number of continuations to generate (default: 3)"
+                },
+                "problem": {
+                    "type": "string",
+                    "description": "Optional problem context"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT score tool definition
+fn get_got_score_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_score".to_string(),
+        description: "Score a node's quality based on relevance, validity, depth, and novelty.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "The node ID to score"
+                },
+                "problem": {
+                    "type": "string",
+                    "description": "Optional problem context"
+                }
+            },
+            "required": ["session_id", "node_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT aggregate tool definition
+fn get_got_aggregate_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_aggregate".to_string(),
+        description: "Merge multiple reasoning nodes into a unified insight.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "node_ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 2,
+                    "description": "Node IDs to aggregate (minimum 2)"
+                },
+                "problem": {
+                    "type": "string",
+                    "description": "Optional problem context"
+                }
+            },
+            "required": ["session_id", "node_ids"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT refine tool definition
+fn get_got_refine_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_refine".to_string(),
+        description: "Improve a reasoning node through self-critique and refinement.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "The node ID to refine"
+                },
+                "problem": {
+                    "type": "string",
+                    "description": "Optional problem context"
+                }
+            },
+            "required": ["session_id", "node_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT prune tool definition
+fn get_got_prune_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_prune".to_string(),
+        description: "Remove low-scoring nodes from the reasoning graph.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Score threshold - nodes below this are pruned (default: 0.3)"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT finalize tool definition
+fn get_got_finalize_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_finalize".to_string(),
+        description: "Mark terminal nodes and retrieve final conclusions from the reasoning graph.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                },
+                "terminal_node_ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional node IDs to mark as terminal (auto-selects best nodes if empty)"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the GoT state tool definition
+fn get_got_state_tool() -> Tool {
+    Tool {
+        name: "reasoning_got_state".to_string(),
+        description: "Get the current state of the reasoning graph including node counts and structure.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session ID"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
         }),
     }
 }

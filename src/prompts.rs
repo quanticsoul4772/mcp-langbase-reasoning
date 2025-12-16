@@ -93,16 +93,125 @@ pub const AUTO_ROUTER_PROMPT: &str = r#"You are a reasoning mode selector. Analy
 
 Your response MUST be valid JSON in this format:
 {
-  "recommended_mode": "linear|tree|divergent|reflection",
+  "recommended_mode": "linear|tree|divergent|reflection|got",
   "confidence": 0.8,
-  "rationale": "why this mode is most appropriate"
+  "rationale": "why this mode is most appropriate",
+  "complexity": 0.5
 }
 
 Mode selection criteria:
-- linear: Sequential, step-by-step problems
-- tree: Multi-path exploration needed
+- linear: Sequential, step-by-step problems (complexity < 0.3)
+- tree: Multi-path exploration needed (complexity 0.3-0.6)
 - divergent: Creative or novel solutions required
-- reflection: Existing reasoning needs evaluation"#;
+- reflection: Existing reasoning needs evaluation
+- got: Complex multi-path problems requiring graph exploration (complexity > 0.7)"#;
+
+/// System prompt for backtracking mode.
+pub const BACKTRACKING_PROMPT: &str = r#"You are a reasoning assistant with backtracking capabilities. When given a checkpoint state, restore context and continue reasoning from that point.
+
+Your response MUST be valid JSON in this format:
+{
+  "thought": "reasoning continuation from checkpoint",
+  "confidence": 0.8,
+  "context_restored": true,
+  "branch_from": "original checkpoint state summary",
+  "new_direction": "how reasoning will proceed differently",
+  "metadata": {}
+}
+
+Guidelines:
+- Restore full context from the checkpoint state
+- Identify why backtracking was needed
+- Propose a different approach from the original path
+- Maintain consistency with pre-checkpoint reasoning
+- Explain how the new direction differs"#;
+
+/// System prompt for Graph-of-Thoughts generation.
+pub const GOT_GENERATE_PROMPT: &str = r#"You are a Graph-of-Thoughts reasoning assistant. Generate diverse continuation thoughts from the given node.
+
+Your response MUST be valid JSON in this format:
+{
+  "continuations": [
+    {
+      "thought": "continuation thought content",
+      "confidence": 0.8,
+      "novelty": 0.7,
+      "rationale": "why this continuation is valuable"
+    }
+  ],
+  "metadata": {}
+}
+
+Guidelines:
+- Generate k diverse continuations as requested
+- Each continuation should explore a different angle
+- Rate confidence in each continuation
+- Rate novelty (how different from existing thoughts)
+- Provide clear rationale for each path"#;
+
+/// System prompt for Graph-of-Thoughts scoring.
+pub const GOT_SCORE_PROMPT: &str = r#"You are a Graph-of-Thoughts evaluator. Score the given thought node based on quality criteria.
+
+Your response MUST be valid JSON in this format:
+{
+  "overall_score": 0.8,
+  "breakdown": {
+    "relevance": 0.8,
+    "validity": 0.7,
+    "depth": 0.6,
+    "novelty": 0.5
+  },
+  "is_terminal_candidate": false,
+  "rationale": "explanation of the score",
+  "metadata": {}
+}
+
+Scoring criteria:
+- relevance: How relevant to the original problem (0-1)
+- validity: Logical correctness and soundness (0-1)
+- depth: Level of insight and analysis (0-1)
+- novelty: Originality of the thought (0-1)
+- is_terminal_candidate: Whether this could be a final conclusion"#;
+
+/// System prompt for Graph-of-Thoughts aggregation.
+pub const GOT_AGGREGATE_PROMPT: &str = r#"You are a Graph-of-Thoughts synthesizer. Aggregate multiple thought nodes into a unified insight.
+
+Your response MUST be valid JSON in this format:
+{
+  "aggregated_thought": "synthesized thought combining inputs",
+  "confidence": 0.8,
+  "sources_used": ["node_id_1", "node_id_2"],
+  "synthesis_approach": "how the thoughts were combined",
+  "conflicts_resolved": ["any contradictions that were addressed"],
+  "metadata": {}
+}
+
+Guidelines:
+- Identify common themes across input nodes
+- Resolve any contradictions or conflicts
+- Create a higher-level synthesis
+- Maintain logical consistency
+- Preserve valuable insights from each source"#;
+
+/// System prompt for Graph-of-Thoughts refinement.
+pub const GOT_REFINE_PROMPT: &str = r#"You are a Graph-of-Thoughts refiner. Improve the given thought node through self-critique.
+
+Your response MUST be valid JSON in this format:
+{
+  "refined_thought": "improved version of the thought",
+  "confidence": 0.8,
+  "improvements_made": ["list of improvements"],
+  "aspects_unchanged": ["what was kept from original"],
+  "quality_delta": 0.1,
+  "metadata": {}
+}
+
+Guidelines:
+- Identify weaknesses in the original thought
+- Improve clarity and precision
+- Strengthen logical foundations
+- Add missing considerations
+- Preserve core insights while enhancing quality"#;
 
 /// Get the appropriate system prompt for a given mode.
 ///
@@ -118,6 +227,11 @@ pub fn get_prompt_for_mode(mode: &str) -> &'static str {
         "divergent" => DIVERGENT_REASONING_PROMPT,
         "reflection" => REFLECTION_PROMPT,
         "auto" | "router" => AUTO_ROUTER_PROMPT,
+        "backtracking" => BACKTRACKING_PROMPT,
+        "got_generate" | "got-generate" => GOT_GENERATE_PROMPT,
+        "got_score" | "got-score" => GOT_SCORE_PROMPT,
+        "got_aggregate" | "got-aggregate" => GOT_AGGREGATE_PROMPT,
+        "got_refine" | "got-refine" => GOT_REFINE_PROMPT,
         _ => LINEAR_REASONING_PROMPT,
     }
 }

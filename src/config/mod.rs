@@ -57,6 +57,22 @@ pub struct PipeConfig {
     pub divergent: String,
     pub reflection: String,
     pub auto_router: String,
+    pub auto: Option<String>,
+    pub backtracking: Option<String>,
+    pub got: Option<GotPipeConfig>,
+}
+
+/// Graph-of-Thoughts pipe configuration
+#[derive(Debug, Clone)]
+pub struct GotPipeConfig {
+    pub generate_pipe: Option<String>,
+    pub score_pipe: Option<String>,
+    pub aggregate_pipe: Option<String>,
+    pub refine_pipe: Option<String>,
+    pub max_nodes: Option<usize>,
+    pub max_depth: Option<usize>,
+    pub default_k: Option<usize>,
+    pub prune_threshold: Option<f64>,
 }
 
 impl Config {
@@ -110,6 +126,42 @@ impl Config {
                 .unwrap_or(1000),
         };
 
+        // Build GoT pipe config if any GoT env vars are set
+        let got_config = {
+            let generate = env::var("PIPE_GOT_GENERATE").ok();
+            let score = env::var("PIPE_GOT_SCORE").ok();
+            let aggregate = env::var("PIPE_GOT_AGGREGATE").ok();
+            let refine = env::var("PIPE_GOT_REFINE").ok();
+            let max_nodes = env::var("GOT_MAX_NODES").ok().and_then(|s| s.parse().ok());
+            let max_depth = env::var("GOT_MAX_DEPTH").ok().and_then(|s| s.parse().ok());
+            let default_k = env::var("GOT_DEFAULT_K").ok().and_then(|s| s.parse().ok());
+            let prune_threshold = env::var("GOT_PRUNE_THRESHOLD").ok().and_then(|s| s.parse().ok());
+
+            // Only create config if any value is set
+            if generate.is_some()
+                || score.is_some()
+                || aggregate.is_some()
+                || refine.is_some()
+                || max_nodes.is_some()
+                || max_depth.is_some()
+                || default_k.is_some()
+                || prune_threshold.is_some()
+            {
+                Some(GotPipeConfig {
+                    generate_pipe: generate,
+                    score_pipe: score,
+                    aggregate_pipe: aggregate,
+                    refine_pipe: refine,
+                    max_nodes,
+                    max_depth,
+                    default_k,
+                    prune_threshold,
+                })
+            } else {
+                None
+            }
+        };
+
         let pipes = PipeConfig {
             linear: env::var("PIPE_LINEAR").unwrap_or_else(|_| "linear-reasoning-v1".to_string()),
             tree: env::var("PIPE_TREE").unwrap_or_else(|_| "tree-reasoning-v1".to_string()),
@@ -117,6 +169,9 @@ impl Config {
                 .unwrap_or_else(|_| "divergent-reasoning-v1".to_string()),
             reflection: env::var("PIPE_REFLECTION").unwrap_or_else(|_| "reflection-v1".to_string()),
             auto_router: env::var("PIPE_AUTO").unwrap_or_else(|_| "mode-router-v1".to_string()),
+            auto: env::var("PIPE_AUTO").ok(),
+            backtracking: env::var("PIPE_BACKTRACKING").ok(),
+            got: got_config,
         };
 
         Ok(Config {
@@ -137,4 +192,84 @@ impl Default for RequestConfig {
             retry_delay_ms: 1000,
         }
     }
+}
+
+impl Default for PipeConfig {
+    fn default() -> Self {
+        Self {
+            linear: "linear-reasoning-v1".to_string(),
+            tree: "tree-reasoning-v1".to_string(),
+            divergent: "divergent-reasoning-v1".to_string(),
+            reflection: "reflection-v1".to_string(),
+            auto_router: "mode-router-v1".to_string(),
+            auto: None,
+            backtracking: None,
+            got: None,
+        }
+    }
+}
+
+impl Default for GotPipeConfig {
+    fn default() -> Self {
+        Self {
+            generate_pipe: Some("got-generate-v1".to_string()),
+            score_pipe: Some("got-score-v1".to_string()),
+            aggregate_pipe: Some("got-aggregate-v1".to_string()),
+            refine_pipe: Some("got-refine-v1".to_string()),
+            max_nodes: Some(100),
+            max_depth: Some(10),
+            default_k: Some(3),
+            prune_threshold: Some(0.3),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_config_default() {
+        let config = RequestConfig::default();
+        assert_eq!(config.timeout_ms, 30000);
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.retry_delay_ms, 1000);
+    }
+
+    #[test]
+    fn test_pipe_config_default() {
+        let config = PipeConfig::default();
+        assert_eq!(config.linear, "linear-reasoning-v1");
+        assert_eq!(config.tree, "tree-reasoning-v1");
+        assert_eq!(config.divergent, "divergent-reasoning-v1");
+        assert_eq!(config.reflection, "reflection-v1");
+        assert_eq!(config.auto_router, "mode-router-v1");
+        assert!(config.auto.is_none());
+        assert!(config.backtracking.is_none());
+        assert!(config.got.is_none());
+    }
+
+    #[test]
+    fn test_got_pipe_config_default() {
+        let config = GotPipeConfig::default();
+        assert_eq!(config.generate_pipe, Some("got-generate-v1".to_string()));
+        assert_eq!(config.score_pipe, Some("got-score-v1".to_string()));
+        assert_eq!(config.aggregate_pipe, Some("got-aggregate-v1".to_string()));
+        assert_eq!(config.refine_pipe, Some("got-refine-v1".to_string()));
+        assert_eq!(config.max_nodes, Some(100));
+        assert_eq!(config.max_depth, Some(10));
+        assert_eq!(config.default_k, Some(3));
+        assert_eq!(config.prune_threshold, Some(0.3));
+    }
+
+    #[test]
+    fn test_log_format_variants() {
+        assert_eq!(LogFormat::Pretty, LogFormat::Pretty);
+        assert_eq!(LogFormat::Json, LogFormat::Json);
+        assert_ne!(LogFormat::Pretty, LogFormat::Json);
+    }
+
+    // Note: Config::from_env() tests are in tests/config_env_test.rs
+    // because they require serial execution and full env var control.
+    // Unit tests here focus on Default impls and type behavior.
 }

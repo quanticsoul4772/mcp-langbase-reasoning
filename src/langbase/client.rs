@@ -5,7 +5,9 @@ use tracing::{debug, error, info, warn};
 use super::types::{CreatePipeRequest, CreatePipeResponse, Message, PipeRequest, PipeResponse};
 use crate::config::{LangbaseConfig, RequestConfig};
 use crate::error::{LangbaseError, LangbaseResult};
-use crate::prompts::LINEAR_REASONING_PROMPT;
+use crate::prompts::{
+    DIVERGENT_REASONING_PROMPT, LINEAR_REASONING_PROMPT, REFLECTION_PROMPT, TREE_REASONING_PROMPT,
+};
 
 /// Client for interacting with Langbase Pipes API
 #[derive(Clone)]
@@ -191,6 +193,35 @@ impl LangbaseClient {
         Ok(pipe_response)
     }
 
+    /// Delete a pipe by name (uses beta endpoint)
+    pub async fn delete_pipe(&self, owner_login: &str, pipe_name: &str) -> LangbaseResult<()> {
+        let url = format!("{}/beta/pipes/{}/{}", self.base_url, owner_login, pipe_name);
+
+        info!(pipe = %pipe_name, owner = %owner_login, "Deleting Langbase pipe");
+
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await
+            .map_err(LangbaseError::Http)?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let error_body = response.text().await.unwrap_or_default();
+            return Err(LangbaseError::Api {
+                status: status.as_u16(),
+                message: error_body,
+            });
+        }
+
+        info!(pipe = %pipe_name, "Pipe deleted successfully");
+
+        Ok(())
+    }
+
     /// Ensure the linear reasoning pipe exists, creating it if needed
     pub async fn ensure_linear_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
         let request = CreatePipeRequest::new(pipe_name)
@@ -202,14 +233,77 @@ impl LangbaseClient {
             .with_max_tokens(2000)
             .with_messages(vec![Message::system(LINEAR_REASONING_PROMPT)]);
 
+        self.ensure_pipe_internal(request, "Linear reasoning").await
+    }
+
+    /// Ensure the tree reasoning pipe exists, creating it if needed
+    pub async fn ensure_tree_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Tree-based reasoning mode for exploring multiple paths")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.8) // Slightly higher for exploration
+            .with_max_tokens(3000) // More tokens for multiple branches
+            .with_messages(vec![Message::system(TREE_REASONING_PROMPT)]);
+
+        self.ensure_pipe_internal(request, "Tree reasoning").await
+    }
+
+    /// Ensure the divergent reasoning pipe exists, creating it if needed
+    pub async fn ensure_divergent_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Divergent reasoning mode for creative perspectives")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.9) // Higher for maximum creativity
+            .with_max_tokens(3000) // More tokens for multiple perspectives
+            .with_messages(vec![Message::system(DIVERGENT_REASONING_PROMPT)]);
+
+        self.ensure_pipe_internal(request, "Divergent reasoning").await
+    }
+
+    /// Ensure the reflection reasoning pipe exists, creating it if needed
+    pub async fn ensure_reflection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Reflection mode for meta-cognitive analysis")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.6) // Lower for precise analysis
+            .with_max_tokens(2500)
+            .with_messages(vec![Message::system(REFLECTION_PROMPT)]);
+
+        self.ensure_pipe_internal(request, "Reflection").await
+    }
+
+    /// Ensure all reasoning pipes exist, creating them if needed
+    pub async fn ensure_all_pipes(&self) -> LangbaseResult<()> {
+        self.ensure_linear_pipe("linear-reasoning-v1").await?;
+        self.ensure_tree_pipe("tree-reasoning-v1").await?;
+        self.ensure_divergent_pipe("divergent-reasoning-v1").await?;
+        self.ensure_reflection_pipe("reflection-v1").await?;
+        info!("All reasoning pipes ready");
+        Ok(())
+    }
+
+    /// Internal helper to ensure a pipe exists
+    async fn ensure_pipe_internal(
+        &self,
+        request: CreatePipeRequest,
+        mode_name: &str,
+    ) -> LangbaseResult<()> {
+        let pipe_name = request.name.clone();
+
         match self.create_pipe(request).await {
             Ok(_) => {
-                info!(pipe = %pipe_name, "Linear reasoning pipe ready");
+                info!(pipe = %pipe_name, mode = %mode_name, "pipe ready");
                 Ok(())
             }
             Err(LangbaseError::Api { status: 409, .. }) => {
                 // Pipe already exists, that's fine
-                info!(pipe = %pipe_name, "Pipe already exists");
+                info!(pipe = %pipe_name, mode = %mode_name, "pipe already exists");
                 Ok(())
             }
             Err(e) => Err(e),

@@ -1,6 +1,18 @@
+mod auto;
+mod backtracking;
+mod divergent;
+mod got;
 mod linear;
+mod reflection;
+mod tree;
 
+pub use auto::*;
+pub use backtracking::*;
+pub use divergent::*;
+pub use got::*;
 pub use linear::*;
+pub use reflection::*;
+pub use tree::*;
 
 use serde::{Deserialize, Serialize};
 
@@ -52,5 +64,77 @@ impl std::str::FromStr for ReasoningMode {
             "got" => Ok(ReasoningMode::Got),
             _ => Err(format!("Unknown reasoning mode: {}", s)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reasoning_mode_as_str() {
+        assert_eq!(ReasoningMode::Linear.as_str(), "linear");
+        assert_eq!(ReasoningMode::Tree.as_str(), "tree");
+        assert_eq!(ReasoningMode::Divergent.as_str(), "divergent");
+        assert_eq!(ReasoningMode::Reflection.as_str(), "reflection");
+        assert_eq!(ReasoningMode::Backtracking.as_str(), "backtracking");
+        assert_eq!(ReasoningMode::Auto.as_str(), "auto");
+        assert_eq!(ReasoningMode::Got.as_str(), "got");
+    }
+
+    #[test]
+    fn test_reasoning_mode_display() {
+        assert_eq!(format!("{}", ReasoningMode::Linear), "linear");
+        assert_eq!(format!("{}", ReasoningMode::Tree), "tree");
+        assert_eq!(format!("{}", ReasoningMode::Divergent), "divergent");
+        assert_eq!(format!("{}", ReasoningMode::Reflection), "reflection");
+        assert_eq!(format!("{}", ReasoningMode::Backtracking), "backtracking");
+        assert_eq!(format!("{}", ReasoningMode::Auto), "auto");
+        assert_eq!(format!("{}", ReasoningMode::Got), "got");
+    }
+
+    #[test]
+    fn test_reasoning_mode_from_str_valid() {
+        assert_eq!("linear".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
+        assert_eq!("tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
+        assert_eq!("divergent".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
+        assert_eq!("reflection".parse::<ReasoningMode>().unwrap(), ReasoningMode::Reflection);
+        assert_eq!("backtracking".parse::<ReasoningMode>().unwrap(), ReasoningMode::Backtracking);
+        assert_eq!("auto".parse::<ReasoningMode>().unwrap(), ReasoningMode::Auto);
+        assert_eq!("got".parse::<ReasoningMode>().unwrap(), ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_reasoning_mode_from_str_case_insensitive() {
+        assert_eq!("LINEAR".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
+        assert_eq!("Tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
+        assert_eq!("DIVERGENT".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
+    }
+
+    #[test]
+    fn test_reasoning_mode_from_str_invalid() {
+        let result = "invalid".parse::<ReasoningMode>();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Unknown reasoning mode: invalid");
+    }
+
+    #[test]
+    fn test_reasoning_mode_equality() {
+        assert_eq!(ReasoningMode::Linear, ReasoningMode::Linear);
+        assert_ne!(ReasoningMode::Linear, ReasoningMode::Tree);
+    }
+
+    #[test]
+    fn test_reasoning_mode_clone() {
+        let mode = ReasoningMode::Divergent;
+        let cloned = mode.clone();
+        assert_eq!(mode, cloned);
+    }
+
+    #[test]
+    fn test_reasoning_mode_copy() {
+        let mode = ReasoningMode::Auto;
+        let copied = mode; // Copy, not move
+        assert_eq!(mode, copied);
     }
 }

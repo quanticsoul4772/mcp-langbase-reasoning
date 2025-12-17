@@ -1,27 +1,17 @@
 //! Integration tests for SQLite storage layer
 //!
-//! Tests database operations using a temporary SQLite database.
+//! Tests database operations using an in-memory SQLite database.
 
 use chrono::Utc;
 use serde_json::json;
-use tempfile::tempdir;
 
-use mcp_langbase_reasoning::config::DatabaseConfig;
 use mcp_langbase_reasoning::storage::{Invocation, Session, SqliteStorage, Storage, Thought};
 
-/// Create a temporary storage instance for testing
+/// Create an in-memory storage instance for testing
 async fn create_test_storage() -> SqliteStorage {
-    let dir = tempdir().expect("Failed to create temp dir");
-    let db_path = dir.path().join("test.db");
-
-    let config = DatabaseConfig {
-        path: db_path,
-        max_connections: 1,
-    };
-
-    SqliteStorage::new(&config)
+    SqliteStorage::new_in_memory()
         .await
-        .expect("Failed to create storage")
+        .expect("Failed to create in-memory storage")
 }
 
 #[cfg(test)]

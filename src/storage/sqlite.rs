@@ -72,7 +72,6 @@ impl SqliteStorage {
     }
 
     /// Create an in-memory SQLite storage instance for testing
-    #[cfg(test)]
     pub async fn new_in_memory() -> StorageResult<Self> {
         let options = SqliteConnectOptions::from_str("sqlite::memory:")
             .map_err(|e| StorageError::Connection {

@@ -37,7 +37,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           # Allow bots to trigger the workflow
-          allowed_bots: "chatgpt-codex-connector[bot]"
+          allowed_bots: "*"
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |

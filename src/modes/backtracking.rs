@@ -90,6 +90,7 @@ impl BacktrackingResponse {
 }
 
 /// Backtracking mode handler for checkpoint-based exploration.
+#[derive(Clone)]
 pub struct BacktrackingMode {
     /// Storage backend for persisting data.
     storage: SqliteStorage,

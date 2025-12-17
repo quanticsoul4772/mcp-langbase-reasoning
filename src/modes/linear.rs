@@ -48,6 +48,7 @@ pub struct LinearResult {
 }
 
 /// Linear reasoning mode handler for sequential reasoning.
+#[derive(Clone)]
 pub struct LinearMode {
     /// Storage backend for persisting data.
     storage: SqliteStorage,

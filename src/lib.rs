@@ -13,6 +13,7 @@
 //! - **Auto Routing**: Intelligent mode selection based on content analysis
 //! - **Graph-of-Thoughts (GoT)**: Advanced graph-based reasoning with scoring and pruning
 //! - **Bias & Fallacy Detection**: Cognitive bias and logical fallacy identification
+//! - **Workflow Presets**: Composable multi-step reasoning workflows
 //!
 //! ## Architecture
 //!
@@ -52,6 +53,8 @@ pub mod error;
 pub mod langbase;
 /// Reasoning mode implementations (linear, tree, divergent, etc.).
 pub mod modes;
+/// Workflow preset system for composable reasoning workflows.
+pub mod presets;
 /// System prompts for Langbase pipes.
 pub mod prompts;
 /// MCP server implementation and request handling.

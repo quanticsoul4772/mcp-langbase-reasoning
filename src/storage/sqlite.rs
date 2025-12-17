@@ -13,6 +13,29 @@ use super::{BranchState, CrossRefType, EdgeType};
 use crate::config::DatabaseConfig;
 use crate::error::{StorageError, StorageResult};
 
+/// Serialize optional data to JSON string, propagating errors.
+fn serialize_json<T: serde::Serialize>(
+    data: &Option<T>,
+    field_name: &str,
+) -> StorageResult<Option<String>> {
+    data.as_ref()
+        .map(|d| serde_json::to_string(d))
+        .transpose()
+        .map_err(|e| StorageError::Serialization {
+            message: format!("Failed to serialize {}: {}", field_name, e),
+        })
+}
+
+/// Serialize required data to JSON string, propagating errors.
+fn serialize_json_required<T: serde::Serialize>(
+    data: &T,
+    field_name: &str,
+) -> StorageResult<String> {
+    serde_json::to_string(data).map_err(|e| StorageError::Serialization {
+        message: format!("Failed to serialize {}: {}", field_name, e),
+    })
+}
+
 /// Static migrator that embeds migrations at compile time
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
@@ -100,10 +123,7 @@ impl SqliteStorage {
 #[async_trait]
 impl Storage for SqliteStorage {
     async fn create_session(&self, session: &Session) -> StorageResult<()> {
-        let metadata = session
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&session.metadata, "session.metadata")?;
 
         sqlx::query(
             r#"
@@ -139,10 +159,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn update_session(&self, session: &Session) -> StorageResult<()> {
-        let metadata = session
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&session.metadata, "session.metadata")?;
 
         let result = sqlx::query(
             r#"
@@ -178,10 +195,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn create_thought(&self, thought: &Thought) -> StorageResult<()> {
-        let metadata = thought
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&thought.metadata, "thought.metadata")?;
 
         sqlx::query(
             r#"
@@ -269,11 +283,8 @@ impl Storage for SqliteStorage {
     }
 
     async fn log_invocation(&self, invocation: &Invocation) -> StorageResult<()> {
-        let input = serde_json::to_string(&invocation.input).unwrap_or_default();
-        let output = invocation
-            .output
-            .as_ref()
-            .map(|o| serde_json::to_string(o).unwrap_or_default());
+        let input = serialize_json_required(&invocation.input, "invocation.input")?;
+        let output = serialize_json(&invocation.output, "invocation.output")?;
 
         sqlx::query(
             r#"
@@ -299,10 +310,7 @@ impl Storage for SqliteStorage {
 
     // Branch operations
     async fn create_branch(&self, branch: &Branch) -> StorageResult<()> {
-        let metadata = branch
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&branch.metadata, "branch.metadata")?;
 
         sqlx::query(
             r#"
@@ -374,10 +382,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn update_branch(&self, branch: &Branch) -> StorageResult<()> {
-        let metadata = branch
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&branch.metadata, "branch.metadata")?;
 
         let result = sqlx::query(
             r#"
@@ -478,7 +483,7 @@ impl Storage for SqliteStorage {
 
     // Checkpoint operations
     async fn create_checkpoint(&self, checkpoint: &Checkpoint) -> StorageResult<()> {
-        let snapshot = serde_json::to_string(&checkpoint.snapshot).unwrap_or_default();
+        let snapshot = serialize_json_required(&checkpoint.snapshot, "checkpoint.snapshot")?;
 
         sqlx::query(
             r#"
@@ -557,10 +562,7 @@ impl Storage for SqliteStorage {
 
     // Graph node operations (GoT mode)
     async fn create_graph_node(&self, node: &GraphNode) -> StorageResult<()> {
-        let metadata = node
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&node.metadata, "graph_node.metadata")?;
 
         sqlx::query(
             r#"
@@ -665,10 +667,7 @@ impl Storage for SqliteStorage {
     }
 
     async fn update_graph_node(&self, node: &GraphNode) -> StorageResult<()> {
-        let metadata = node
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&node.metadata, "graph_node.metadata")?;
 
         let result = sqlx::query(
             r#"
@@ -709,10 +708,7 @@ impl Storage for SqliteStorage {
 
     // Graph edge operations (GoT mode)
     async fn create_graph_edge(&self, edge: &GraphEdge) -> StorageResult<()> {
-        let metadata = edge
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&edge.metadata, "graph_edge.metadata")?;
 
         sqlx::query(
             r#"
@@ -808,7 +804,7 @@ impl Storage for SqliteStorage {
 
     // State snapshot operations (backtracking)
     async fn create_snapshot(&self, snapshot: &StateSnapshot) -> StorageResult<()> {
-        let state_data = serde_json::to_string(&snapshot.state_data).unwrap_or_default();
+        let state_data = serialize_json_required(&snapshot.state_data, "snapshot.state_data")?;
 
         sqlx::query(
             r#"
@@ -891,10 +887,7 @@ impl Storage for SqliteStorage {
     // ========================================================================
 
     async fn create_detection(&self, detection: &Detection) -> StorageResult<()> {
-        let metadata = detection
-            .metadata
-            .as_ref()
-            .map(|m| serde_json::to_string(m).unwrap_or_default());
+        let metadata = serialize_json(&detection.metadata, "detection.metadata")?;
 
         sqlx::query(
             r#"
@@ -2198,5 +2191,72 @@ mod tests {
         let terminals = storage.get_terminal_nodes(&session.id).await.unwrap();
         assert_eq!(terminals.len(), 1);
         assert!(terminals[0].is_terminal);
+    }
+
+    // ============================================================================
+    // Serialize JSON Helper Tests
+    // ============================================================================
+
+    #[test]
+    fn test_serialize_json_with_some_value() {
+        let data: Option<serde_json::Value> = Some(serde_json::json!({"key": "value"}));
+        let result = super::serialize_json(&data, "test.field");
+
+        assert!(result.is_ok());
+        let serialized = result.unwrap();
+        assert!(serialized.is_some());
+        assert_eq!(serialized.unwrap(), r#"{"key":"value"}"#);
+    }
+
+    #[test]
+    fn test_serialize_json_with_none() {
+        let data: Option<serde_json::Value> = None;
+        let result = super::serialize_json(&data, "test.field");
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_serialize_json_with_complex_object() {
+        let data: Option<serde_json::Value> = Some(serde_json::json!({
+            "nested": {"inner": "value"},
+            "array": [1, 2, 3],
+            "number": 42.5,
+            "boolean": true
+        }));
+        let result = super::serialize_json(&data, "test.complex");
+
+        assert!(result.is_ok());
+        let serialized = result.unwrap().unwrap();
+        assert!(serialized.contains("nested"));
+        assert!(serialized.contains("array"));
+    }
+
+    #[test]
+    fn test_serialize_json_required_success() {
+        let data = serde_json::json!({"required": "data"});
+        let result = super::serialize_json_required(&data, "test.required");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), r#"{"required":"data"}"#);
+    }
+
+    #[test]
+    fn test_serialize_json_required_empty_object() {
+        let data = serde_json::json!({});
+        let result = super::serialize_json_required(&data, "test.empty");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "{}");
+    }
+
+    #[test]
+    fn test_serialize_json_required_null() {
+        let data = serde_json::Value::Null;
+        let result = super::serialize_json_required(&data, "test.null");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "null");
     }
 }

@@ -80,6 +80,13 @@ pub enum StorageError {
     /// Underlying SQLx error.
     #[error("SQLx error: {0}")]
     Sqlx(#[from] sqlx::Error),
+
+    /// JSON serialization failed.
+    #[error("Serialization failed: {message}")]
+    Serialization {
+        /// Description of the serialization issue.
+        message: String,
+    },
 }
 
 /// Langbase API errors for pipe communication.
@@ -258,6 +265,14 @@ mod tests {
             message: "version mismatch".to_string(),
         };
         assert_eq!(err.to_string(), "Migration failed: version mismatch");
+
+        let err = StorageError::Serialization {
+            message: "invalid utf-8 in metadata".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Serialization failed: invalid utf-8 in metadata"
+        );
     }
 
     #[test]

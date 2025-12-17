@@ -326,6 +326,9 @@ impl McpServer {
             // Phase 4 tools - Bias & Fallacy Detection
             get_detect_biases_tool(),
             get_detect_fallacies_tool(),
+            // Phase 5 tools - Workflow Presets
+            get_preset_list_tool(),
+            get_preset_run_tool(),
         ];
 
         JsonRpcResponse::success(
@@ -1054,6 +1057,56 @@ fn get_detect_fallacies_tool() -> Tool {
                     "description": "Check for informal logical fallacies (default: true)"
                 }
             },
+            "additionalProperties": false
+        }),
+    }
+}
+
+// ============================================================================
+// Phase 5 Tool Definitions - Workflow Presets
+// ============================================================================
+
+/// Get the preset list tool definition
+fn get_preset_list_tool() -> Tool {
+    Tool {
+        name: "reasoning_preset_list".to_string(),
+        description: "List available workflow presets. Presets are pre-defined multi-step reasoning workflows that compose existing modes into higher-level operations like code review, debug analysis, and architecture decisions.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Filter by category (e.g., 'code', 'architecture', 'research')"
+                }
+            },
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the preset run tool definition
+fn get_preset_run_tool() -> Tool {
+    Tool {
+        name: "reasoning_preset_run".to_string(),
+        description: "Execute a workflow preset. Runs a multi-step reasoning workflow with automatic step sequencing, dependency management, and result aggregation.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "preset_id": {
+                    "type": "string",
+                    "description": "ID of the preset to run (e.g., 'code-review', 'debug-analysis', 'architecture-decision')"
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": "Input parameters for the preset workflow",
+                    "additionalProperties": true
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context persistence"
+                }
+            },
+            "required": ["preset_id"],
             "additionalProperties": false
         }),
     }

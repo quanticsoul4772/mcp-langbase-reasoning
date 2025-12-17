@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Instant;
 use tracing::info;
 
@@ -11,6 +12,7 @@ use crate::modes::{
     GotGenerateParams, GotGetStateParams, GotInitParams, GotPruneParams, GotRefineParams,
     GotScoreParams, LinearParams, ReflectionParams, TreeParams,
 };
+use crate::presets::execute_preset;
 use crate::prompts::{BIAS_DETECTION_PROMPT, FALLACY_DETECTION_PROMPT};
 use crate::storage::{BranchState, Detection, DetectionType, Storage};
 
@@ -50,6 +52,9 @@ pub async fn handle_tool_call(
         // Phase 4 tools - Bias & Fallacy Detection
         "reasoning_detect_biases" => handle_detect_biases(state, arguments).await,
         "reasoning_detect_fallacies" => handle_detect_fallacies(state, arguments).await,
+        // Phase 5 tools - Workflow Presets
+        "reasoning_preset_list" => handle_preset_list(state, arguments).await,
+        "reasoning_preset_run" => handle_preset_run(state, arguments).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
@@ -695,6 +700,99 @@ async fn handle_detect_fallacies(
     };
 
     serde_json::to_value(response).map_err(McpError::Json)
+}
+
+// ============================================================================
+// Phase 5 Handlers - Workflow Presets
+// ============================================================================
+
+/// Parameters for preset list
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresetListParams {
+    /// Optional category filter
+    pub category: Option<String>,
+}
+
+/// Parameters for preset run
+#[derive(Debug, Clone, Deserialize)]
+pub struct PresetRunParams {
+    /// ID of the preset to run
+    pub preset_id: String,
+    /// Input parameters for the workflow
+    #[serde(default)]
+    pub inputs: HashMap<String, serde_json::Value>,
+    /// Optional session ID for context persistence
+    pub session_id: Option<String>,
+}
+
+/// Response for preset list
+#[derive(Debug, Clone, Serialize)]
+pub struct PresetListResponse {
+    /// Available presets
+    pub presets: Vec<crate::presets::PresetSummary>,
+    /// Total count
+    pub count: usize,
+    /// Available categories
+    pub categories: Vec<String>,
+}
+
+/// Handle reasoning_preset_list tool call
+async fn handle_preset_list(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    let params: PresetListParams = match arguments {
+        Some(args) => {
+            serde_json::from_value(args).map_err(|e| McpError::InvalidParameters {
+                tool_name: "reasoning_preset_list".to_string(),
+                message: e.to_string(),
+            })?
+        }
+        None => PresetListParams { category: None },
+    };
+
+    info!(category = ?params.category, "Listing presets");
+
+    let presets = state.preset_registry.list(params.category.as_deref());
+    let categories = state.preset_registry.categories();
+    let count = presets.len();
+
+    let response = PresetListResponse {
+        presets,
+        count,
+        categories,
+    };
+
+    serde_json::to_value(response).map_err(McpError::Json)
+}
+
+/// Handle reasoning_preset_run tool call
+async fn handle_preset_run(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    let params: PresetRunParams = parse_arguments("reasoning_preset_run", arguments)?;
+
+    info!(preset_id = %params.preset_id, "Running preset");
+
+    // Get the preset from registry
+    let preset = state
+        .preset_registry
+        .get(&params.preset_id)
+        .ok_or_else(|| McpError::InvalidParameters {
+            tool_name: "reasoning_preset_run".to_string(),
+            message: format!("Preset not found: {}", params.preset_id),
+        })?;
+
+    // Build inputs with session_id if provided
+    let mut inputs = params.inputs;
+    if let Some(session_id) = params.session_id {
+        inputs.insert("session_id".to_string(), serde_json::json!(session_id));
+    }
+
+    // Execute the preset using Box::pin to handle async recursion
+    let state_clone = state.clone();
+    let result = Box::pin(execute_preset(&state_clone, &preset, inputs))
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: format!("Preset execution failed: {}", e),
+        })?;
+
+    serde_json::to_value(result).map_err(McpError::Json)
 }
 
 // ============================================================================

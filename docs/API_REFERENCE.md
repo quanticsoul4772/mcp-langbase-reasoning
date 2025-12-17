@@ -857,6 +857,146 @@ Analyze content for logical fallacies including ad hominem, straw man, false dic
 
 ---
 
+### reasoning_preset_list
+
+List available workflow presets. Presets are composable multi-step reasoning workflows that combine existing tools into higher-level operations.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "category": {
+      "type": "string",
+      "description": "Filter by category (e.g., 'code', 'architecture', 'research')"
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+#### Response
+
+```json
+{
+  "presets": [
+    {
+      "id": "code-review",
+      "name": "Code Review Workflow",
+      "description": "Multi-step code analysis with bias and fallacy detection",
+      "category": "code",
+      "steps": 5,
+      "input_schema": {
+        "code": "string (required) - The code to review"
+      }
+    }
+  ],
+  "count": 3
+}
+```
+
+#### Built-in Presets
+
+| Preset ID | Category | Description |
+|-----------|----------|-------------|
+| `code-review` | code | 5-step code review: linear analysis → bias detection → fallacy detection → reflection → final synthesis |
+| `debug-analysis` | code | 4-step debugging: divergent exploration → tree branching → reflection → checkpoint save |
+| `architecture-decision` | architecture | 5-step decision: tree exploration → reflection → divergent perspectives → bias check → synthesis |
+
+---
+
+### reasoning_preset_run
+
+Execute a workflow preset with custom inputs. Runs all steps in sequence, passing results between steps based on dependencies and input mappings.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "preset_id": {
+      "type": "string",
+      "description": "ID of the preset to run"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Input values for the preset (varies by preset)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID for context continuity"
+    }
+  },
+  "required": ["preset_id"],
+  "additionalProperties": false
+}
+```
+
+#### Example: Running Code Review
+
+```json
+{
+  "preset_id": "code-review",
+  "inputs": {
+    "code": "function calculate(a, b) { return a + b; }"
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "preset_id": "code-review",
+  "status": "completed",
+  "session_id": "uuid",
+  "steps_completed": 5,
+  "total_steps": 5,
+  "results": {
+    "analysis": { "thought_id": "uuid", "content": "..." },
+    "bias_check": { "detections": [], "reasoning_quality": 0.9 },
+    "fallacy_check": { "detections": [], "argument_validity": 0.95 },
+    "reflection": { "thought_id": "uuid", "content": "..." },
+    "final": { "thought_id": "uuid", "content": "..." }
+  },
+  "execution_time_ms": 2500
+}
+```
+
+#### Preset Step Features
+
+Steps can have:
+
+| Feature | Description |
+|---------|-------------|
+| `depends_on` | Array of step IDs that must complete first |
+| `condition` | Condition to evaluate before running (gt, gte, lt, lte, eq, neq, contains, exists) |
+| `optional` | If true, failures don't stop the workflow |
+| `store_as` | Key to store result for use by later steps |
+| `input_map` | Maps preset inputs or step results to tool parameters |
+
+#### Error Handling
+
+If a non-optional step fails, execution stops and returns partial results:
+
+```json
+{
+  "preset_id": "code-review",
+  "status": "failed",
+  "steps_completed": 2,
+  "total_steps": 5,
+  "error": "Step 'reflection' failed: Langbase API unavailable",
+  "results": {
+    "analysis": { ... },
+    "bias_check": { ... }
+  }
+}
+```
+
+---
+
 ## Data Types
 
 ### Session
@@ -983,6 +1123,44 @@ Represents a detected cognitive bias or logical fallacy.
 | `excerpt` | `string?` | Relevant text excerpt |
 | `created_at` | `datetime` | ISO 8601 timestamp |
 | `metadata` | `object?` | Optional additional metadata |
+
+### WorkflowPreset
+
+Represents a composable reasoning workflow.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Unique preset identifier |
+| `name` | `string` | Human-readable preset name |
+| `description` | `string` | Description of what the preset does |
+| `category` | `string` | Category (code, architecture, research, etc.) |
+| `steps` | `PresetStep[]` | Ordered list of steps to execute |
+| `input_schema` | `object` | JSON Schema for required inputs |
+
+### PresetStep
+
+Represents a single step in a workflow preset.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Unique step identifier within preset |
+| `tool` | `string` | MCP tool name to invoke |
+| `description` | `string?` | Step description |
+| `input_map` | `object?` | Maps inputs to tool parameters |
+| `store_as` | `string?` | Key to store result for later steps |
+| `depends_on` | `string[]?` | Step IDs that must complete first |
+| `optional` | `boolean` | If true, failures don't stop workflow |
+| `condition` | `StepCondition?` | Condition to evaluate before running |
+
+### StepCondition
+
+Condition for conditional step execution.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `field` | `string` | Field path to check (e.g., "analysis.confidence") |
+| `operator` | `string` | Comparison operator (gt, gte, lt, lte, eq, neq, contains, exists) |
+| `value` | `any?` | Value to compare against (not needed for exists) |
 
 ---
 

@@ -11,6 +11,7 @@ This server delegates generative reasoning to versioned Langbase Pipes while mai
 - MCP compliant: Drop-in replacement for existing MCP clients (Claude Desktop, etc.)
 - Langbase backend: Versioned prompts, structured JSON outputs, lifecycle management
 - Multiple reasoning modes: Linear, tree, divergent, reflection, backtracking, auto, and Graph-of-Thoughts
+- Workflow presets: Composable multi-step reasoning workflows (code-review, debug-analysis, architecture-decision)
 - Local state: SQLite persistence for sessions, thoughts, branches, checkpoints, and graphs
 - Async I/O: Non-blocking stdio communication using Tokio
 - Retry logic: Configurable retries with exponential backoff for API calls
@@ -140,6 +141,13 @@ between microservices and monolithic architectures.
 | `reasoning_detect_biases` | Analyze content for cognitive biases (confirmation, anchoring, etc.) |
 | `reasoning_detect_fallacies` | Analyze content for logical fallacies (ad hominem, straw man, etc.) |
 
+### Workflow Preset Tools
+
+| Tool | Description |
+|------|-------------|
+| `reasoning_preset_list` | List available workflow presets by category |
+| `reasoning_preset_run` | Execute a workflow preset with custom inputs |
+
 ## Architecture
 
 ```
@@ -225,6 +233,12 @@ mcp-langbase-reasoning/
 │   │   ├── backtracking.rs  # Checkpoint and backtrack
 │   │   ├── auto.rs          # Auto mode selection
 │   │   └── got.rs           # Graph-of-Thoughts
+│   ├── presets/             # Workflow preset system
+│   │   ├── mod.rs           # Module exports
+│   │   ├── types.rs         # Preset data types
+│   │   ├── registry.rs      # Preset registry
+│   │   ├── builtins.rs      # Built-in presets
+│   │   └── executor.rs      # Preset execution engine
 │   ├── prompts.rs           # Centralized system prompts
 │   ├── server/              # MCP protocol handling
 │   └── storage/             # SQLite persistence

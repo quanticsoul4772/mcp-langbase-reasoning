@@ -116,6 +116,7 @@ pub struct ImprovedThought {
 }
 
 /// Reflection reasoning mode handler for meta-cognitive analysis.
+#[derive(Clone)]
 pub struct ReflectionMode {
     /// Storage backend for persisting data.
     storage: SqliteStorage,

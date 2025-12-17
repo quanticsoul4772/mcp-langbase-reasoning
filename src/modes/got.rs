@@ -561,6 +561,7 @@ pub struct GotStateResult {
 // ============================================================================
 
 /// Graph-of-Thoughts mode handler for managing complex reasoning graphs.
+#[derive(Clone)]
 pub struct GotMode {
     /// Storage backend for persisting graph data.
     storage: SqliteStorage,

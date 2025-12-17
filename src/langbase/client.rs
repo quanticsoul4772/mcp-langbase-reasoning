@@ -125,7 +125,10 @@ impl LangbaseClient {
         let status = response.status();
 
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_default();
+            let error_body = response.text().await.unwrap_or_else(|e| {
+                warn!(error = %e, status = %status, "Failed to read pipe run error response body");
+                "Unable to read error response".to_string()
+            });
             return Err(LangbaseError::Api {
                 status: status.as_u16(),
                 message: error_body,
@@ -170,7 +173,10 @@ impl LangbaseClient {
         let status = response.status();
 
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_default();
+            let error_body = response.text().await.unwrap_or_else(|e| {
+                warn!(error = %e, status = %status, "Failed to read pipe creation error response body");
+                "Unable to read error response".to_string()
+            });
             return Err(LangbaseError::Api {
                 status: status.as_u16(),
                 message: error_body,
@@ -211,7 +217,10 @@ impl LangbaseClient {
         let status = response.status();
 
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_default();
+            let error_body = response.text().await.unwrap_or_else(|e| {
+                warn!(error = %e, status = %status, "Failed to read pipe deletion error response body");
+                "Unable to read error response".to_string()
+            });
             return Err(LangbaseError::Api {
                 status: status.as_u16(),
                 message: error_body,

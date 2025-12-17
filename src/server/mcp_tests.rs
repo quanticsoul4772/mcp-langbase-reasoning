@@ -425,9 +425,12 @@ fn test_all_tools_count() {
         // Phase 4 - Detection tools
         get_detect_biases_tool(),
         get_detect_fallacies_tool(),
+        // Phase 5 - Preset tools
+        get_preset_list_tool(),
+        get_preset_run_tool(),
     ];
 
-    assert_eq!(tools.len(), 22, "Should have exactly 22 tools defined");
+    assert_eq!(tools.len(), 24, "Should have exactly 24 tools defined");
 }
 
 #[test]
@@ -486,6 +489,9 @@ fn test_tool_names_are_unique() {
         // Phase 4 - Detection tools
         get_detect_biases_tool(),
         get_detect_fallacies_tool(),
+        // Phase 5 - Preset tools
+        get_preset_list_tool(),
+        get_preset_run_tool(),
     ];
 
     let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
@@ -567,4 +573,50 @@ fn test_tool_call_result_with_error() {
     let json = serde_json::to_value(&result).unwrap();
 
     assert_eq!(json["isError"], true);
+}
+
+// ============================================================================
+// Phase 5 - Preset tool tests
+// ============================================================================
+
+#[test]
+fn test_preset_list_tool_definition() {
+    let tool = get_preset_list_tool();
+
+    assert_eq!(tool.name, "reasoning_preset_list");
+    assert!(tool.description.contains("workflow presets"));
+    assert!(tool.description.contains("code review"));
+
+    let schema = &tool.input_schema;
+    assert_eq!(schema["type"], "object");
+    assert!(schema["properties"]["category"].is_object());
+    assert_eq!(schema["properties"]["category"]["type"], "string");
+}
+
+#[test]
+fn test_preset_run_tool_definition() {
+    let tool = get_preset_run_tool();
+
+    assert_eq!(tool.name, "reasoning_preset_run");
+    assert!(tool.description.contains("Execute a workflow preset"));
+    assert!(tool.description.contains("multi-step"));
+
+    let schema = &tool.input_schema;
+    assert_eq!(schema["type"], "object");
+    assert!(schema["properties"]["preset_id"].is_object());
+    assert_eq!(schema["properties"]["preset_id"]["type"], "string");
+    assert!(schema["properties"]["inputs"].is_object());
+    assert_eq!(schema["properties"]["inputs"]["type"], "object");
+    assert!(schema["properties"]["session_id"].is_object());
+
+    // Check required fields
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(required.contains(&"preset_id"));
+    assert!(!required.contains(&"inputs"));
+    assert!(!required.contains(&"session_id"));
 }

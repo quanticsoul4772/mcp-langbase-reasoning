@@ -115,6 +115,7 @@ pub struct PerspectiveInfo {
 }
 
 /// Divergent reasoning mode handler for creative exploration.
+#[derive(Clone)]
 pub struct DivergentMode {
     /// Storage backend for persisting data.
     storage: SqliteStorage,

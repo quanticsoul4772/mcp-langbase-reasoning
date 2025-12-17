@@ -123,6 +123,7 @@ pub struct BranchInfo {
 }
 
 /// Tree reasoning mode handler for branching exploration.
+#[derive(Clone)]
 pub struct TreeMode {
     /// Storage backend for persisting branches and thoughts.
     storage: SqliteStorage,

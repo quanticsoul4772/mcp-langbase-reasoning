@@ -18,12 +18,14 @@ use crate::langbase::LangbaseClient;
 use crate::modes::{
     AutoMode, BacktrackingMode, DivergentMode, GotMode, LinearMode, ReflectionMode, TreeMode,
 };
+use crate::presets::PresetRegistry;
 use crate::storage::SqliteStorage;
 
 /// Application state shared across handlers.
 ///
 /// Contains all mode handlers and shared resources needed for
 /// processing reasoning requests.
+#[derive(Clone)]
 pub struct AppState {
     /// Application configuration.
     pub config: Config,
@@ -45,6 +47,8 @@ pub struct AppState {
     pub auto_mode: AutoMode,
     /// Graph-of-Thoughts mode handler.
     pub got_mode: GotMode,
+    /// Workflow preset registry.
+    pub preset_registry: Arc<PresetRegistry>,
 }
 
 impl AppState {
@@ -57,6 +61,7 @@ impl AppState {
         let backtracking_mode = BacktrackingMode::new(storage.clone(), langbase.clone(), &config);
         let auto_mode = AutoMode::new(storage.clone(), langbase.clone(), &config);
         let got_mode = GotMode::new(storage.clone(), langbase.clone(), &config);
+        let preset_registry = Arc::new(PresetRegistry::new());
 
         Self {
             config,
@@ -69,6 +74,7 @@ impl AppState {
             backtracking_mode,
             auto_mode,
             got_mode,
+            preset_registry,
         }
     }
 }

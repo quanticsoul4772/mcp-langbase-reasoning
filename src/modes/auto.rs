@@ -90,6 +90,7 @@ impl AutoResponse {
 }
 
 /// Auto mode router
+#[derive(Clone)]
 pub struct AutoMode {
     storage: SqliteStorage,
     langbase: LangbaseClient,

@@ -215,3 +215,94 @@ fn test_config_from_env_log_level() {
     // Restore default
     env::set_var("LOG_LEVEL", "info");
 }
+
+// ============================================================================
+// Detection Config Tests
+// ============================================================================
+
+#[test]
+#[serial]
+fn test_config_from_env_detection_config_none_by_default() {
+    setup_required_env();
+    // Don't set any detection env vars
+    env::remove_var("PIPE_DETECT_BIASES");
+    env::remove_var("PIPE_DETECT_FALLACIES");
+
+    let config = Config::from_env().unwrap();
+
+    // Detection should be None when no env vars are set
+    assert!(config.pipes.detection.is_none());
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_detection_config_bias_only() {
+    setup_required_env();
+    env::set_var("PIPE_DETECT_BIASES", "custom-bias-detector-v1");
+    env::remove_var("PIPE_DETECT_FALLACIES");
+
+    let config = Config::from_env().unwrap();
+
+    // Should create DetectionPipeConfig with just bias_pipe
+    let detection = config
+        .pipes
+        .detection
+        .expect("DetectionPipeConfig should be Some");
+    assert_eq!(
+        detection.bias_pipe,
+        Some("custom-bias-detector-v1".to_string())
+    );
+    assert!(detection.fallacy_pipe.is_none());
+
+    // Cleanup
+    env::remove_var("PIPE_DETECT_BIASES");
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_detection_config_fallacy_only() {
+    setup_required_env();
+    env::remove_var("PIPE_DETECT_BIASES");
+    env::set_var("PIPE_DETECT_FALLACIES", "custom-fallacy-detector-v1");
+
+    let config = Config::from_env().unwrap();
+
+    // Should create DetectionPipeConfig with just fallacy_pipe
+    let detection = config
+        .pipes
+        .detection
+        .expect("DetectionPipeConfig should be Some");
+    assert!(detection.bias_pipe.is_none());
+    assert_eq!(
+        detection.fallacy_pipe,
+        Some("custom-fallacy-detector-v1".to_string())
+    );
+
+    // Cleanup
+    env::remove_var("PIPE_DETECT_FALLACIES");
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_detection_config_both() {
+    setup_required_env();
+    env::set_var("PIPE_DETECT_BIASES", "bias-detector-v2");
+    env::set_var("PIPE_DETECT_FALLACIES", "fallacy-detector-v2");
+
+    let config = Config::from_env().unwrap();
+
+    // Should create DetectionPipeConfig with both pipes
+    let detection = config
+        .pipes
+        .detection
+        .expect("DetectionPipeConfig should be Some");
+    assert_eq!(detection.bias_pipe, Some("bias-detector-v2".to_string()));
+    assert_eq!(
+        detection.fallacy_pipe,
+        Some("fallacy-detector-v2".to_string())
+    );
+
+    // Cleanup
+    env::remove_var("PIPE_DETECT_BIASES");
+    env::remove_var("PIPE_DETECT_FALLACIES");
+}

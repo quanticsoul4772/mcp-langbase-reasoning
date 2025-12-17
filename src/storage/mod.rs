@@ -1,4 +1,13 @@
+//! Storage layer for reasoning session persistence.
+//!
+//! This module provides SQLite-based storage for sessions, thoughts, branches,
+//! checkpoints, graph nodes, and other reasoning artifacts.
+
 mod sqlite;
+
+#[cfg(test)]
+#[path = "types_tests.rs"]
+mod types_tests;
 
 pub use sqlite::SqliteStorage;
 
@@ -9,57 +18,83 @@ use uuid::Uuid;
 
 use crate::error::StorageResult;
 
-/// Session represents a reasoning context
+/// A reasoning session context that groups related thoughts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
+    /// Unique session identifier.
     pub id: String,
+    /// Reasoning mode (e.g., "linear", "tree", "got").
     pub mode: String,
+    /// When the session was created.
     pub created_at: DateTime<Utc>,
+    /// When the session was last updated.
     pub updated_at: DateTime<Utc>,
+    /// Optional metadata for the session.
     pub metadata: Option<serde_json::Value>,
-    /// Active branch for tree mode
+    /// Active branch for tree mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_branch_id: Option<String>,
 }
 
-/// Thought represents a single reasoning step
+/// A single reasoning step or thought within a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thought {
+    /// Unique thought identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// The thought content/text.
     pub content: String,
+    /// Confidence score (0.0-1.0).
     pub confidence: f64,
+    /// Reasoning mode that generated this thought.
     pub mode: String,
+    /// Parent thought ID for chained reasoning.
     pub parent_id: Option<String>,
-    /// Branch ID for tree mode
+    /// Branch ID for tree mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch_id: Option<String>,
+    /// When the thought was created.
     pub created_at: DateTime<Utc>,
+    /// Optional metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Branch represents a reasoning branch in tree mode
+/// A reasoning branch in tree mode, representing an exploration path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Branch {
+    /// Unique branch identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// Optional human-readable name.
     pub name: Option<String>,
+    /// Parent branch ID for nested branches.
     pub parent_branch_id: Option<String>,
+    /// Priority score for branch selection.
     pub priority: f64,
+    /// Confidence score for this branch.
     pub confidence: f64,
+    /// Current state of the branch.
     pub state: BranchState,
+    /// When the branch was created.
     pub created_at: DateTime<Utc>,
+    /// When the branch was last updated.
     pub updated_at: DateTime<Utc>,
+    /// Optional metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Branch state for tree mode
+/// State of a reasoning branch.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchState {
+    /// Branch is actively being explored.
     #[default]
     Active,
+    /// Branch has been completed successfully.
     Completed,
+    /// Branch has been abandoned.
     Abandoned,
 }
 
@@ -86,27 +121,39 @@ impl std::str::FromStr for BranchState {
     }
 }
 
-/// Cross-reference between branches
+/// Cross-reference between branches for linking related reasoning paths.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossRef {
+    /// Unique cross-reference identifier.
     pub id: String,
+    /// Source branch ID.
     pub from_branch_id: String,
+    /// Target branch ID.
     pub to_branch_id: String,
+    /// Type of relationship between branches.
     pub ref_type: CrossRefType,
+    /// Optional explanation for the cross-reference.
     pub reason: Option<String>,
+    /// Strength of the relationship (0.0-1.0).
     pub strength: f64,
+    /// When the cross-reference was created.
     pub created_at: DateTime<Utc>,
 }
 
-/// Type of cross-reference between branches
+/// Type of cross-reference between branches.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CrossRefType {
+    /// This branch supports the target branch's conclusions.
     #[default]
     Supports,
+    /// This branch contradicts the target branch's conclusions.
     Contradicts,
+    /// This branch extends or builds upon the target branch.
     Extends,
+    /// This branch offers an alternative approach to the target.
     Alternative,
+    /// This branch depends on the target branch's conclusions.
     Depends,
 }
 
@@ -137,45 +184,70 @@ impl std::str::FromStr for CrossRefType {
     }
 }
 
-/// Checkpoint for state snapshots
+/// Checkpoint for state snapshots enabling backtracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
+    /// Unique checkpoint identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// Optional branch ID for branch-specific checkpoints.
     pub branch_id: Option<String>,
+    /// Human-readable checkpoint name.
     pub name: String,
+    /// Optional description of the checkpoint state.
     pub description: Option<String>,
+    /// Serialized state snapshot data.
     pub snapshot: serde_json::Value,
+    /// When the checkpoint was created.
     pub created_at: DateTime<Utc>,
 }
 
-/// Graph node for Graph-of-Thoughts reasoning
+/// Graph node for Graph-of-Thoughts reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphNode {
+    /// Unique node identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// Node content/thought text.
     pub content: String,
+    /// Type of node in the reasoning graph.
     pub node_type: NodeType,
+    /// Quality score from evaluation (0.0-1.0).
     pub score: Option<f64>,
+    /// Depth level in the graph (0 = root).
     pub depth: i32,
+    /// Whether this is a terminal/conclusion node.
     pub is_terminal: bool,
+    /// Whether this is a root/starting node.
     pub is_root: bool,
+    /// Whether this node is active (not pruned).
     pub is_active: bool,
+    /// When the node was created.
     pub created_at: DateTime<Utc>,
+    /// Optional metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Type of graph node
+/// Type of graph node in Graph-of-Thoughts reasoning.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeType {
+    /// A standard reasoning thought.
     #[default]
     Thought,
+    /// A hypothesis to be tested.
     Hypothesis,
+    /// A conclusion drawn from reasoning.
     Conclusion,
+    /// An aggregation of multiple nodes.
     Aggregation,
+    /// The root/starting node.
     Root,
+    /// A refinement of a previous node.
     Refinement,
+    /// A terminal/final node.
     Terminal,
 }
 
@@ -210,28 +282,41 @@ impl std::str::FromStr for NodeType {
     }
 }
 
-/// Graph edge for Graph-of-Thoughts connections
+/// Graph edge for Graph-of-Thoughts connections between nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphEdge {
+    /// Unique edge identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// Source node ID.
     pub from_node: String,
+    /// Target node ID.
     pub to_node: String,
+    /// Type of relationship between nodes.
     pub edge_type: EdgeType,
+    /// Edge weight/strength (0.0-1.0).
     pub weight: f64,
+    /// When the edge was created.
     pub created_at: DateTime<Utc>,
+    /// Optional metadata.
     pub metadata: Option<serde_json::Value>,
 }
 
-/// Type of graph edge
+/// Type of graph edge in Graph-of-Thoughts reasoning.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeType {
+    /// Source node generates target node.
     #[default]
     Generates,
+    /// Source node refines/improves target node.
     Refines,
+    /// Source node aggregates target node.
     Aggregates,
+    /// Source node supports target node's conclusion.
     Supports,
+    /// Source node contradicts target node's conclusion.
     Contradicts,
 }
 
@@ -262,25 +347,35 @@ impl std::str::FromStr for EdgeType {
     }
 }
 
-/// State snapshot for backtracking
+/// State snapshot for backtracking and state restoration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateSnapshot {
+    /// Unique snapshot identifier.
     pub id: String,
+    /// Parent session ID.
     pub session_id: String,
+    /// Type of snapshot (full, incremental, branch).
     pub snapshot_type: SnapshotType,
+    /// Serialized state data.
     pub state_data: serde_json::Value,
+    /// Parent snapshot ID for incremental snapshots.
     pub parent_snapshot_id: Option<String>,
+    /// When the snapshot was created.
     pub created_at: DateTime<Utc>,
+    /// Optional description of the snapshot state.
     pub description: Option<String>,
 }
 
-/// Type of state snapshot
+/// Type of state snapshot for backtracking.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotType {
+    /// Complete state snapshot.
     #[default]
     Full,
+    /// Incremental changes since last snapshot.
     Incremental,
+    /// Branch-specific snapshot.
     Branch,
 }
 
@@ -305,6 +400,65 @@ impl std::str::FromStr for SnapshotType {
             _ => Err(format!("Unknown snapshot type: {}", s)),
         }
     }
+}
+
+/// Detection type for bias and fallacy analysis.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionType {
+    /// Cognitive bias detection.
+    #[default]
+    Bias,
+    /// Logical fallacy detection.
+    Fallacy,
+}
+
+impl std::fmt::Display for DetectionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DetectionType::Bias => write!(f, "bias"),
+            DetectionType::Fallacy => write!(f, "fallacy"),
+        }
+    }
+}
+
+impl std::str::FromStr for DetectionType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bias" => Ok(DetectionType::Bias),
+            "fallacy" => Ok(DetectionType::Fallacy),
+            _ => Err(format!("Unknown detection type: {}", s)),
+        }
+    }
+}
+
+/// Detection result from bias or fallacy analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Detection {
+    /// Unique detection identifier.
+    pub id: String,
+    /// Optional parent session ID.
+    pub session_id: Option<String>,
+    /// Optional thought ID being analyzed.
+    pub thought_id: Option<String>,
+    /// Type of detection (bias or fallacy).
+    pub detection_type: DetectionType,
+    /// Name of the detected issue (e.g., "confirmation_bias").
+    pub detected_issue: String,
+    /// Severity level (1-5, where 5 is most severe).
+    pub severity: i32,
+    /// Confidence in the detection (0.0-1.0).
+    pub confidence: f64,
+    /// Explanation of why this was detected.
+    pub explanation: String,
+    /// Optional remediation suggestion.
+    pub remediation: Option<String>,
+    /// When the detection was created.
+    pub created_at: DateTime<Utc>,
+    /// Optional metadata.
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl GraphNode {
@@ -402,10 +556,7 @@ impl GraphEdge {
 
 impl StateSnapshot {
     /// Create a new state snapshot
-    pub fn new(
-        session_id: impl Into<String>,
-        state_data: serde_json::Value,
-    ) -> Self {
+    pub fn new(session_id: impl Into<String>, state_data: serde_json::Value) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             session_id: session_id.into(),
@@ -436,18 +587,28 @@ impl StateSnapshot {
     }
 }
 
-/// Invocation log entry for debugging
+/// Invocation log entry for debugging and tracing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invocation {
+    /// Unique invocation identifier.
     pub id: String,
+    /// Optional parent session ID.
     pub session_id: Option<String>,
+    /// Name of the MCP tool invoked.
     pub tool_name: String,
+    /// Input parameters as JSON.
     pub input: serde_json::Value,
+    /// Output result as JSON (if successful).
     pub output: Option<serde_json::Value>,
+    /// Name of the Langbase pipe called.
     pub pipe_name: Option<String>,
+    /// Latency in milliseconds.
     pub latency_ms: Option<i64>,
+    /// Whether the invocation succeeded.
     pub success: bool,
+    /// Error message (if failed).
     pub error: Option<String>,
+    /// When the invocation occurred.
     pub created_at: DateTime<Utc>,
 }
 
@@ -674,643 +835,197 @@ impl Invocation {
     }
 }
 
-/// Storage trait for database operations
+impl Detection {
+    /// Create a new detection result
+    pub fn new(
+        detection_type: DetectionType,
+        detected_issue: impl Into<String>,
+        severity: i32,
+        confidence: f64,
+        explanation: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            session_id: None,
+            thought_id: None,
+            detection_type,
+            detected_issue: detected_issue.into(),
+            severity: severity.clamp(1, 5),
+            confidence: confidence.clamp(0.0, 1.0),
+            explanation: explanation.into(),
+            remediation: None,
+            created_at: Utc::now(),
+            metadata: None,
+        }
+    }
+
+    /// Set the session ID
+    pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Set the thought ID
+    pub fn with_thought(mut self, thought_id: impl Into<String>) -> Self {
+        self.thought_id = Some(thought_id.into());
+        self
+    }
+
+    /// Set the remediation suggestion
+    pub fn with_remediation(mut self, remediation: impl Into<String>) -> Self {
+        self.remediation = Some(remediation.into());
+        self
+    }
+
+    /// Set metadata
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+/// Storage trait for database operations.
+///
+/// This trait defines all persistence operations for reasoning sessions,
+/// thoughts, branches, checkpoints, graph nodes, and other artifacts.
 #[async_trait]
 pub trait Storage: Send + Sync {
     // Session operations
+
+    /// Create a new session.
     async fn create_session(&self, session: &Session) -> StorageResult<()>;
+    /// Get a session by ID.
     async fn get_session(&self, id: &str) -> StorageResult<Option<Session>>;
+    /// Update an existing session.
     async fn update_session(&self, session: &Session) -> StorageResult<()>;
+    /// Delete a session by ID.
     async fn delete_session(&self, id: &str) -> StorageResult<()>;
 
     // Thought operations
+
+    /// Create a new thought.
     async fn create_thought(&self, thought: &Thought) -> StorageResult<()>;
+    /// Get a thought by ID.
     async fn get_thought(&self, id: &str) -> StorageResult<Option<Thought>>;
+    /// Get all thoughts in a session.
     async fn get_session_thoughts(&self, session_id: &str) -> StorageResult<Vec<Thought>>;
+    /// Get all thoughts in a branch.
     async fn get_branch_thoughts(&self, branch_id: &str) -> StorageResult<Vec<Thought>>;
+    /// Get the most recent thought in a session.
     async fn get_latest_thought(&self, session_id: &str) -> StorageResult<Option<Thought>>;
 
     // Branch operations (tree mode)
+
+    /// Create a new branch.
     async fn create_branch(&self, branch: &Branch) -> StorageResult<()>;
+    /// Get a branch by ID.
     async fn get_branch(&self, id: &str) -> StorageResult<Option<Branch>>;
+    /// Get all branches in a session.
     async fn get_session_branches(&self, session_id: &str) -> StorageResult<Vec<Branch>>;
+    /// Get child branches of a parent branch.
     async fn get_child_branches(&self, parent_id: &str) -> StorageResult<Vec<Branch>>;
+    /// Update an existing branch.
     async fn update_branch(&self, branch: &Branch) -> StorageResult<()>;
+    /// Delete a branch by ID.
     async fn delete_branch(&self, id: &str) -> StorageResult<()>;
 
     // Cross-reference operations (tree mode)
+
+    /// Create a new cross-reference between branches.
     async fn create_cross_ref(&self, cross_ref: &CrossRef) -> StorageResult<()>;
+    /// Get cross-references originating from a branch.
     async fn get_cross_refs_from(&self, branch_id: &str) -> StorageResult<Vec<CrossRef>>;
+    /// Get cross-references pointing to a branch.
     async fn get_cross_refs_to(&self, branch_id: &str) -> StorageResult<Vec<CrossRef>>;
+    /// Delete a cross-reference by ID.
     async fn delete_cross_ref(&self, id: &str) -> StorageResult<()>;
 
     // Checkpoint operations (backtracking)
+
+    /// Create a new checkpoint.
     async fn create_checkpoint(&self, checkpoint: &Checkpoint) -> StorageResult<()>;
+    /// Get a checkpoint by ID.
     async fn get_checkpoint(&self, id: &str) -> StorageResult<Option<Checkpoint>>;
+    /// Get all checkpoints in a session.
     async fn get_session_checkpoints(&self, session_id: &str) -> StorageResult<Vec<Checkpoint>>;
+    /// Get all checkpoints for a branch.
     async fn get_branch_checkpoints(&self, branch_id: &str) -> StorageResult<Vec<Checkpoint>>;
+    /// Delete a checkpoint by ID.
     async fn delete_checkpoint(&self, id: &str) -> StorageResult<()>;
 
     // Invocation logging
+
+    /// Log a tool invocation for debugging.
     async fn log_invocation(&self, invocation: &Invocation) -> StorageResult<()>;
 
     // Graph node operations (GoT mode)
+
+    /// Create a new graph node.
     async fn create_graph_node(&self, node: &GraphNode) -> StorageResult<()>;
+    /// Get a graph node by ID.
     async fn get_graph_node(&self, id: &str) -> StorageResult<Option<GraphNode>>;
+    /// Get all graph nodes in a session.
     async fn get_session_graph_nodes(&self, session_id: &str) -> StorageResult<Vec<GraphNode>>;
+    /// Get active (non-pruned) graph nodes in a session.
     async fn get_active_graph_nodes(&self, session_id: &str) -> StorageResult<Vec<GraphNode>>;
+    /// Get root nodes in a session.
     async fn get_root_nodes(&self, session_id: &str) -> StorageResult<Vec<GraphNode>>;
+    /// Get terminal nodes in a session.
     async fn get_terminal_nodes(&self, session_id: &str) -> StorageResult<Vec<GraphNode>>;
+    /// Update an existing graph node.
     async fn update_graph_node(&self, node: &GraphNode) -> StorageResult<()>;
+    /// Delete a graph node by ID.
     async fn delete_graph_node(&self, id: &str) -> StorageResult<()>;
 
     // Graph edge operations (GoT mode)
+
+    /// Create a new graph edge.
     async fn create_graph_edge(&self, edge: &GraphEdge) -> StorageResult<()>;
+    /// Get a graph edge by ID.
     async fn get_graph_edge(&self, id: &str) -> StorageResult<Option<GraphEdge>>;
+    /// Get edges originating from a node.
     async fn get_edges_from(&self, node_id: &str) -> StorageResult<Vec<GraphEdge>>;
+    /// Get edges pointing to a node.
     async fn get_edges_to(&self, node_id: &str) -> StorageResult<Vec<GraphEdge>>;
+    /// Get all edges in a session.
     async fn get_session_edges(&self, session_id: &str) -> StorageResult<Vec<GraphEdge>>;
+    /// Delete a graph edge by ID.
     async fn delete_graph_edge(&self, id: &str) -> StorageResult<()>;
 
     // State snapshot operations (backtracking)
+
+    /// Create a new state snapshot.
     async fn create_snapshot(&self, snapshot: &StateSnapshot) -> StorageResult<()>;
+    /// Get a state snapshot by ID.
     async fn get_snapshot(&self, id: &str) -> StorageResult<Option<StateSnapshot>>;
+    /// Get all snapshots in a session.
     async fn get_session_snapshots(&self, session_id: &str) -> StorageResult<Vec<StateSnapshot>>;
+    /// Get the most recent snapshot in a session.
     async fn get_latest_snapshot(&self, session_id: &str) -> StorageResult<Option<StateSnapshot>>;
+    /// Delete a state snapshot by ID.
     async fn delete_snapshot(&self, id: &str) -> StorageResult<()>;
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    // Session tests
-    #[test]
-    fn test_session_new() {
-        let session = Session::new("linear");
-        assert!(!session.id.is_empty());
-        assert_eq!(session.mode, "linear");
-        assert!(session.metadata.is_none());
-        assert!(session.active_branch_id.is_none());
-    }
-
-    #[test]
-    fn test_session_with_active_branch() {
-        let session = Session::new("tree").with_active_branch("branch-123");
-        assert_eq!(session.mode, "tree");
-        assert_eq!(session.active_branch_id, Some("branch-123".to_string()));
-    }
-
-    // Thought tests
-    #[test]
-    fn test_thought_new() {
-        let thought = Thought::new("sess-1", "Test content", "linear");
-        assert!(!thought.id.is_empty());
-        assert_eq!(thought.session_id, "sess-1");
-        assert_eq!(thought.content, "Test content");
-        assert_eq!(thought.mode, "linear");
-        assert_eq!(thought.confidence, 0.8); // default
-        assert!(thought.parent_id.is_none());
-        assert!(thought.branch_id.is_none());
-    }
-
-    #[test]
-    fn test_thought_with_confidence() {
-        let thought = Thought::new("sess-1", "Test", "linear").with_confidence(0.95);
-        assert_eq!(thought.confidence, 0.95);
-    }
-
-    #[test]
-    fn test_thought_confidence_clamp() {
-        let high = Thought::new("sess-1", "Test", "linear").with_confidence(1.5);
-        assert_eq!(high.confidence, 1.0);
-
-        let low = Thought::new("sess-1", "Test", "linear").with_confidence(-0.5);
-        assert_eq!(low.confidence, 0.0);
-    }
-
-    #[test]
-    fn test_thought_with_parent() {
-        let thought = Thought::new("sess-1", "Test", "linear").with_parent("parent-123");
-        assert_eq!(thought.parent_id, Some("parent-123".to_string()));
-    }
-
-    #[test]
-    fn test_thought_with_branch() {
-        let thought = Thought::new("sess-1", "Test", "tree").with_branch("branch-456");
-        assert_eq!(thought.branch_id, Some("branch-456".to_string()));
-    }
-
-    #[test]
-    fn test_thought_with_metadata() {
-        let metadata = json!({"key": "value"});
-        let thought = Thought::new("sess-1", "Test", "linear").with_metadata(metadata.clone());
-        assert_eq!(thought.metadata, Some(metadata));
-    }
-
-    #[test]
-    fn test_thought_builder_chain() {
-        let thought = Thought::new("sess-1", "Complex thought", "tree")
-            .with_confidence(0.9)
-            .with_parent("parent-1")
-            .with_branch("branch-1")
-            .with_metadata(json!({"priority": "high"}));
-
-        assert_eq!(thought.confidence, 0.9);
-        assert_eq!(thought.parent_id, Some("parent-1".to_string()));
-        assert_eq!(thought.branch_id, Some("branch-1".to_string()));
-        assert!(thought.metadata.is_some());
-    }
-
-    // Branch tests
-    #[test]
-    fn test_branch_new() {
-        let branch = Branch::new("sess-1");
-        assert!(!branch.id.is_empty());
-        assert_eq!(branch.session_id, "sess-1");
-        assert!(branch.name.is_none());
-        assert!(branch.parent_branch_id.is_none());
-        assert_eq!(branch.priority, 1.0);
-        assert_eq!(branch.confidence, 0.8);
-        assert_eq!(branch.state, BranchState::Active);
-    }
-
-    #[test]
-    fn test_branch_with_name() {
-        let branch = Branch::new("sess-1").with_name("Main branch");
-        assert_eq!(branch.name, Some("Main branch".to_string()));
-    }
-
-    #[test]
-    fn test_branch_with_parent() {
-        let branch = Branch::new("sess-1").with_parent("parent-branch");
-        assert_eq!(branch.parent_branch_id, Some("parent-branch".to_string()));
-    }
-
-    #[test]
-    fn test_branch_with_priority() {
-        let branch = Branch::new("sess-1").with_priority(0.5);
-        assert_eq!(branch.priority, 0.5);
-    }
-
-    #[test]
-    fn test_branch_with_confidence() {
-        let branch = Branch::new("sess-1").with_confidence(0.95);
-        assert_eq!(branch.confidence, 0.95);
-    }
-
-    #[test]
-    fn test_branch_confidence_clamp() {
-        let high = Branch::new("sess-1").with_confidence(1.5);
-        assert_eq!(high.confidence, 1.0);
-
-        let low = Branch::new("sess-1").with_confidence(-0.5);
-        assert_eq!(low.confidence, 0.0);
-    }
-
-    #[test]
-    fn test_branch_with_state() {
-        let completed = Branch::new("sess-1").with_state(BranchState::Completed);
-        assert_eq!(completed.state, BranchState::Completed);
-
-        let abandoned = Branch::new("sess-1").with_state(BranchState::Abandoned);
-        assert_eq!(abandoned.state, BranchState::Abandoned);
-    }
-
-    // BranchState tests
-    #[test]
-    fn test_branch_state_display() {
-        assert_eq!(BranchState::Active.to_string(), "active");
-        assert_eq!(BranchState::Completed.to_string(), "completed");
-        assert_eq!(BranchState::Abandoned.to_string(), "abandoned");
-    }
-
-    #[test]
-    fn test_branch_state_from_str() {
-        assert_eq!("active".parse::<BranchState>().unwrap(), BranchState::Active);
-        assert_eq!("completed".parse::<BranchState>().unwrap(), BranchState::Completed);
-        assert_eq!("abandoned".parse::<BranchState>().unwrap(), BranchState::Abandoned);
-        assert_eq!("ACTIVE".parse::<BranchState>().unwrap(), BranchState::Active); // case insensitive
-    }
-
-    #[test]
-    fn test_branch_state_from_str_invalid() {
-        let result = "invalid".parse::<BranchState>();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown branch state"));
-    }
-
-    #[test]
-    fn test_branch_state_default() {
-        assert_eq!(BranchState::default(), BranchState::Active);
-    }
-
-    // CrossRef tests
-    #[test]
-    fn test_cross_ref_new() {
-        let cross_ref = CrossRef::new("branch-1", "branch-2", CrossRefType::Supports);
-        assert!(!cross_ref.id.is_empty());
-        assert_eq!(cross_ref.from_branch_id, "branch-1");
-        assert_eq!(cross_ref.to_branch_id, "branch-2");
-        assert_eq!(cross_ref.ref_type, CrossRefType::Supports);
-        assert!(cross_ref.reason.is_none());
-        assert_eq!(cross_ref.strength, 1.0);
-    }
-
-    #[test]
-    fn test_cross_ref_with_reason() {
-        let cross_ref =
-            CrossRef::new("b1", "b2", CrossRefType::Contradicts).with_reason("Opposing views");
-        assert_eq!(cross_ref.reason, Some("Opposing views".to_string()));
-    }
-
-    #[test]
-    fn test_cross_ref_with_strength() {
-        let cross_ref = CrossRef::new("b1", "b2", CrossRefType::Extends).with_strength(0.7);
-        assert_eq!(cross_ref.strength, 0.7);
-    }
-
-    #[test]
-    fn test_cross_ref_strength_clamp() {
-        let high = CrossRef::new("b1", "b2", CrossRefType::Supports).with_strength(1.5);
-        assert_eq!(high.strength, 1.0);
-
-        let low = CrossRef::new("b1", "b2", CrossRefType::Supports).with_strength(-0.5);
-        assert_eq!(low.strength, 0.0);
-    }
-
-    // CrossRefType tests
-    #[test]
-    fn test_cross_ref_type_display() {
-        assert_eq!(CrossRefType::Supports.to_string(), "supports");
-        assert_eq!(CrossRefType::Contradicts.to_string(), "contradicts");
-        assert_eq!(CrossRefType::Extends.to_string(), "extends");
-        assert_eq!(CrossRefType::Alternative.to_string(), "alternative");
-        assert_eq!(CrossRefType::Depends.to_string(), "depends");
-    }
-
-    #[test]
-    fn test_cross_ref_type_from_str() {
-        assert_eq!("supports".parse::<CrossRefType>().unwrap(), CrossRefType::Supports);
-        assert_eq!("contradicts".parse::<CrossRefType>().unwrap(), CrossRefType::Contradicts);
-        assert_eq!("extends".parse::<CrossRefType>().unwrap(), CrossRefType::Extends);
-        assert_eq!("alternative".parse::<CrossRefType>().unwrap(), CrossRefType::Alternative);
-        assert_eq!("depends".parse::<CrossRefType>().unwrap(), CrossRefType::Depends);
-        assert_eq!("SUPPORTS".parse::<CrossRefType>().unwrap(), CrossRefType::Supports); // case insensitive
-    }
-
-    #[test]
-    fn test_cross_ref_type_from_str_invalid() {
-        let result = "invalid".parse::<CrossRefType>();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown cross-ref type"));
-    }
-
-    // Checkpoint tests
-    #[test]
-    fn test_checkpoint_new() {
-        let snapshot = json!({"state": "saved"});
-        let checkpoint = Checkpoint::new("sess-1", "Checkpoint 1", snapshot.clone());
-        assert!(!checkpoint.id.is_empty());
-        assert_eq!(checkpoint.session_id, "sess-1");
-        assert_eq!(checkpoint.name, "Checkpoint 1");
-        assert!(checkpoint.branch_id.is_none());
-        assert!(checkpoint.description.is_none());
-        assert_eq!(checkpoint.snapshot, snapshot);
-    }
-
-    #[test]
-    fn test_checkpoint_with_branch() {
-        let checkpoint =
-            Checkpoint::new("sess-1", "CP", json!({})).with_branch("branch-123");
-        assert_eq!(checkpoint.branch_id, Some("branch-123".to_string()));
-    }
-
-    #[test]
-    fn test_checkpoint_with_description() {
-        let checkpoint = Checkpoint::new("sess-1", "CP", json!({}))
-            .with_description("Before major changes");
-        assert_eq!(
-            checkpoint.description,
-            Some("Before major changes".to_string())
-        );
-    }
-
-    // Invocation tests
-    #[test]
-    fn test_invocation_new() {
-        let input = json!({"content": "test"});
-        let invocation = Invocation::new("reasoning.linear", input.clone());
-        assert!(!invocation.id.is_empty());
-        assert_eq!(invocation.tool_name, "reasoning.linear");
-        assert_eq!(invocation.input, input);
-        assert!(invocation.session_id.is_none());
-        assert!(invocation.output.is_none());
-        assert!(invocation.pipe_name.is_none());
-        assert!(invocation.latency_ms.is_none());
-        assert!(invocation.success);
-        assert!(invocation.error.is_none());
-    }
-
-    #[test]
-    fn test_invocation_with_session() {
-        let invocation =
-            Invocation::new("reasoning.tree", json!({})).with_session("sess-123");
-        assert_eq!(invocation.session_id, Some("sess-123".to_string()));
-    }
-
-    #[test]
-    fn test_invocation_with_pipe() {
-        let invocation =
-            Invocation::new("reasoning.linear", json!({})).with_pipe("linear-reasoning-v1");
-        assert_eq!(invocation.pipe_name, Some("linear-reasoning-v1".to_string()));
-    }
-
-    #[test]
-    fn test_invocation_success() {
-        let output = json!({"result": "success"});
-        let invocation =
-            Invocation::new("reasoning.linear", json!({})).success(output.clone(), 150);
-        assert!(invocation.success);
-        assert_eq!(invocation.output, Some(output));
-        assert_eq!(invocation.latency_ms, Some(150));
-        assert!(invocation.error.is_none());
-    }
-
-    #[test]
-    fn test_invocation_failure() {
-        let invocation =
-            Invocation::new("reasoning.linear", json!({})).failure("API timeout", 5000);
-        assert!(!invocation.success);
-        assert_eq!(invocation.error, Some("API timeout".to_string()));
-        assert_eq!(invocation.latency_ms, Some(5000));
-        assert!(invocation.output.is_none());
-    }
-
-    #[test]
-    fn test_invocation_builder_chain() {
-        let invocation = Invocation::new("reasoning.tree", json!({"content": "test"}))
-            .with_session("sess-1")
-            .with_pipe("tree-reasoning-v1")
-            .success(json!({"thought": "result"}), 200);
-
-        assert_eq!(invocation.session_id, Some("sess-1".to_string()));
-        assert_eq!(invocation.pipe_name, Some("tree-reasoning-v1".to_string()));
-        assert!(invocation.success);
-        assert_eq!(invocation.latency_ms, Some(200));
-    }
-
-    // Phase 3: GraphNode tests
-    #[test]
-    fn test_graph_node_new() {
-        let node = GraphNode::new("sess-1", "Test content");
-        assert!(!node.id.is_empty());
-        assert_eq!(node.session_id, "sess-1");
-        assert_eq!(node.content, "Test content");
-        assert_eq!(node.node_type, NodeType::Thought);
-        assert!(node.score.is_none());
-        assert_eq!(node.depth, 0);
-        assert!(!node.is_terminal);
-        assert!(!node.is_root);
-        assert!(node.is_active);
-    }
-
-    #[test]
-    fn test_graph_node_with_type() {
-        let node = GraphNode::new("sess-1", "Hypothesis").with_type(NodeType::Hypothesis);
-        assert_eq!(node.node_type, NodeType::Hypothesis);
-    }
-
-    #[test]
-    fn test_graph_node_with_score() {
-        let node = GraphNode::new("sess-1", "Scored").with_score(0.85);
-        assert_eq!(node.score, Some(0.85));
-    }
-
-    #[test]
-    fn test_graph_node_score_clamp() {
-        let high = GraphNode::new("sess-1", "High").with_score(1.5);
-        assert_eq!(high.score, Some(1.0));
-
-        let low = GraphNode::new("sess-1", "Low").with_score(-0.5);
-        assert_eq!(low.score, Some(0.0));
-    }
-
-    #[test]
-    fn test_graph_node_with_depth() {
-        let node = GraphNode::new("sess-1", "Deep").with_depth(3);
-        assert_eq!(node.depth, 3);
-    }
-
-    #[test]
-    fn test_graph_node_as_terminal() {
-        let node = GraphNode::new("sess-1", "Terminal").as_terminal();
-        assert!(node.is_terminal);
-    }
-
-    #[test]
-    fn test_graph_node_as_root() {
-        let node = GraphNode::new("sess-1", "Root").as_root();
-        assert!(node.is_root);
-    }
-
-    #[test]
-    fn test_graph_node_as_inactive() {
-        let node = GraphNode::new("sess-1", "Pruned").as_inactive();
-        assert!(!node.is_active);
-    }
-
-    #[test]
-    fn test_graph_node_builder_chain() {
-        let node = GraphNode::new("sess-1", "Complex node")
-            .with_type(NodeType::Conclusion)
-            .with_score(0.9)
-            .with_depth(2)
-            .as_terminal();
-
-        assert_eq!(node.node_type, NodeType::Conclusion);
-        assert_eq!(node.score, Some(0.9));
-        assert_eq!(node.depth, 2);
-        assert!(node.is_terminal);
-    }
-
-    #[test]
-    fn test_graph_node_as_active() {
-        let node = GraphNode::new("sess-1", "Active").as_inactive().as_active();
-        assert!(node.is_active);
-    }
-
-    // NodeType tests
-    #[test]
-    fn test_node_type_display() {
-        assert_eq!(NodeType::Thought.to_string(), "thought");
-        assert_eq!(NodeType::Hypothesis.to_string(), "hypothesis");
-        assert_eq!(NodeType::Conclusion.to_string(), "conclusion");
-        assert_eq!(NodeType::Aggregation.to_string(), "aggregation");
-        assert_eq!(NodeType::Root.to_string(), "root");
-        assert_eq!(NodeType::Refinement.to_string(), "refinement");
-        assert_eq!(NodeType::Terminal.to_string(), "terminal");
-    }
-
-    #[test]
-    fn test_node_type_from_str() {
-        assert_eq!("thought".parse::<NodeType>().unwrap(), NodeType::Thought);
-        assert_eq!("hypothesis".parse::<NodeType>().unwrap(), NodeType::Hypothesis);
-        assert_eq!("conclusion".parse::<NodeType>().unwrap(), NodeType::Conclusion);
-        assert_eq!("aggregation".parse::<NodeType>().unwrap(), NodeType::Aggregation);
-        assert_eq!("root".parse::<NodeType>().unwrap(), NodeType::Root);
-        assert_eq!("refinement".parse::<NodeType>().unwrap(), NodeType::Refinement);
-        assert_eq!("terminal".parse::<NodeType>().unwrap(), NodeType::Terminal);
-        assert_eq!("THOUGHT".parse::<NodeType>().unwrap(), NodeType::Thought);
-    }
-
-    #[test]
-    fn test_node_type_from_str_invalid() {
-        let result = "invalid".parse::<NodeType>();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown node type"));
-    }
-
-    #[test]
-    fn test_node_type_default() {
-        assert_eq!(NodeType::default(), NodeType::Thought);
-    }
-
-    // GraphEdge tests
-    #[test]
-    fn test_graph_edge_new() {
-        let edge = GraphEdge::new("sess-1", "node-1", "node-2");
-        assert!(!edge.id.is_empty());
-        assert_eq!(edge.session_id, "sess-1");
-        assert_eq!(edge.from_node, "node-1");
-        assert_eq!(edge.to_node, "node-2");
-        assert_eq!(edge.edge_type, EdgeType::Generates);
-        assert_eq!(edge.weight, 1.0);
-    }
-
-    #[test]
-    fn test_graph_edge_with_type() {
-        let edge = GraphEdge::new("sess-1", "n1", "n2").with_type(EdgeType::Refines);
-        assert_eq!(edge.edge_type, EdgeType::Refines);
-    }
-
-    #[test]
-    fn test_graph_edge_with_weight() {
-        let edge = GraphEdge::new("sess-1", "n1", "n2").with_weight(0.75);
-        assert_eq!(edge.weight, 0.75);
-    }
-
-    #[test]
-    fn test_graph_edge_weight_clamp() {
-        let high = GraphEdge::new("sess-1", "n1", "n2").with_weight(1.5);
-        assert_eq!(high.weight, 1.0);
-
-        let low = GraphEdge::new("sess-1", "n1", "n2").with_weight(-0.5);
-        assert_eq!(low.weight, 0.0);
-    }
-
-    // EdgeType tests
-    #[test]
-    fn test_edge_type_display() {
-        assert_eq!(EdgeType::Generates.to_string(), "generates");
-        assert_eq!(EdgeType::Refines.to_string(), "refines");
-        assert_eq!(EdgeType::Aggregates.to_string(), "aggregates");
-        assert_eq!(EdgeType::Supports.to_string(), "supports");
-        assert_eq!(EdgeType::Contradicts.to_string(), "contradicts");
-    }
-
-    #[test]
-    fn test_edge_type_from_str() {
-        assert_eq!("generates".parse::<EdgeType>().unwrap(), EdgeType::Generates);
-        assert_eq!("refines".parse::<EdgeType>().unwrap(), EdgeType::Refines);
-        assert_eq!("aggregates".parse::<EdgeType>().unwrap(), EdgeType::Aggregates);
-        assert_eq!("supports".parse::<EdgeType>().unwrap(), EdgeType::Supports);
-        assert_eq!("contradicts".parse::<EdgeType>().unwrap(), EdgeType::Contradicts);
-        assert_eq!("GENERATES".parse::<EdgeType>().unwrap(), EdgeType::Generates);
-    }
-
-    #[test]
-    fn test_edge_type_from_str_invalid() {
-        let result = "invalid".parse::<EdgeType>();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown edge type"));
-    }
-
-    #[test]
-    fn test_edge_type_default() {
-        assert_eq!(EdgeType::default(), EdgeType::Generates);
-    }
-
-    // StateSnapshot tests
-    #[test]
-    fn test_state_snapshot_new() {
-        let data = json!({"state": "saved"});
-        let snapshot = StateSnapshot::new("sess-1", data.clone());
-        assert!(!snapshot.id.is_empty());
-        assert_eq!(snapshot.session_id, "sess-1");
-        assert_eq!(snapshot.snapshot_type, SnapshotType::Full);
-        assert_eq!(snapshot.state_data, data);
-        assert!(snapshot.parent_snapshot_id.is_none());
-        assert!(snapshot.description.is_none());
-    }
-
-    #[test]
-    fn test_state_snapshot_with_type() {
-        let snapshot = StateSnapshot::new("sess-1", json!({})).with_type(SnapshotType::Incremental);
-        assert_eq!(snapshot.snapshot_type, SnapshotType::Incremental);
-    }
-
-    #[test]
-    fn test_state_snapshot_with_parent() {
-        let snapshot = StateSnapshot::new("sess-1", json!({})).with_parent("snap-parent");
-        assert_eq!(snapshot.parent_snapshot_id, Some("snap-parent".to_string()));
-    }
-
-    #[test]
-    fn test_state_snapshot_with_description() {
-        let snapshot = StateSnapshot::new("sess-1", json!({}))
-            .with_description("Before major refactor");
-        assert_eq!(snapshot.description, Some("Before major refactor".to_string()));
-    }
-
-    #[test]
-    fn test_state_snapshot_builder_chain() {
-        let snapshot = StateSnapshot::new("sess-1", json!({"key": "value"}))
-            .with_type(SnapshotType::Branch)
-            .with_parent("parent-snap")
-            .with_description("Branch snapshot");
-
-        assert_eq!(snapshot.snapshot_type, SnapshotType::Branch);
-        assert_eq!(snapshot.parent_snapshot_id, Some("parent-snap".to_string()));
-        assert_eq!(snapshot.description, Some("Branch snapshot".to_string()));
-    }
-
-    // SnapshotType tests
-    #[test]
-    fn test_snapshot_type_display() {
-        assert_eq!(SnapshotType::Full.to_string(), "full");
-        assert_eq!(SnapshotType::Incremental.to_string(), "incremental");
-        assert_eq!(SnapshotType::Branch.to_string(), "branch");
-    }
-
-    #[test]
-    fn test_snapshot_type_from_str() {
-        assert_eq!("full".parse::<SnapshotType>().unwrap(), SnapshotType::Full);
-        assert_eq!("incremental".parse::<SnapshotType>().unwrap(), SnapshotType::Incremental);
-        assert_eq!("branch".parse::<SnapshotType>().unwrap(), SnapshotType::Branch);
-        assert_eq!("FULL".parse::<SnapshotType>().unwrap(), SnapshotType::Full);
-    }
-
-    #[test]
-    fn test_snapshot_type_from_str_invalid() {
-        let result = "invalid".parse::<SnapshotType>();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown snapshot type"));
-    }
-
-    #[test]
-    fn test_snapshot_type_default() {
-        assert_eq!(SnapshotType::default(), SnapshotType::Full);
-    }
+    // Detection operations (bias/fallacy analysis)
+
+    /// Create a new detection result.
+    async fn create_detection(&self, detection: &Detection) -> StorageResult<()>;
+    /// Get a detection by ID.
+    async fn get_detection(&self, id: &str) -> StorageResult<Option<Detection>>;
+    /// Get all detections in a session.
+    async fn get_session_detections(&self, session_id: &str) -> StorageResult<Vec<Detection>>;
+    /// Get all detections for a thought.
+    async fn get_thought_detections(&self, thought_id: &str) -> StorageResult<Vec<Detection>>;
+    /// Get all detections of a specific type.
+    async fn get_detections_by_type(
+        &self,
+        detection_type: DetectionType,
+    ) -> StorageResult<Vec<Detection>>;
+    /// Get detections of a specific type in a session.
+    async fn get_session_detections_by_type(
+        &self,
+        session_id: &str,
+        detection_type: DetectionType,
+    ) -> StorageResult<Vec<Detection>>;
+    /// Delete a detection by ID.
+    async fn delete_detection(&self, id: &str) -> StorageResult<()>;
 }

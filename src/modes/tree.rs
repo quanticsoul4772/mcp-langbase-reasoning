@@ -1,3 +1,11 @@
+//! Tree reasoning mode - branching exploration with multiple paths.
+//!
+//! This module provides tree-based reasoning for exploring multiple directions:
+//! - Multiple branch exploration (2-4 branches)
+//! - Branch focusing and navigation
+//! - Cross-references between branches
+//! - Recommended path identification
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info};
@@ -6,7 +14,10 @@ use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::TREE_REASONING_PROMPT;
-use crate::storage::{Branch, BranchState, CrossRef, CrossRefType, Invocation, Session, SqliteStorage, Storage, Thought};
+use crate::storage::{
+    Branch, BranchState, CrossRef, CrossRefType, Invocation, Session, SqliteStorage, Storage,
+    Thought,
+};
 
 /// Input parameters for tree reasoning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,60 +49,86 @@ fn default_num_branches() -> usize {
     3
 }
 
-/// Cross-reference input for tree reasoning
+/// Cross-reference input for tree reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossRefInput {
+    /// The target branch ID to reference.
     pub to_branch: String,
+    /// The type of reference (supports, contradicts, extends, alternative, depends).
     #[serde(rename = "type")]
     pub ref_type: String,
+    /// Optional reason for the cross-reference.
     pub reason: Option<String>,
+    /// Optional strength of the reference (0.0-1.0).
     pub strength: Option<f64>,
 }
 
-/// Response from tree reasoning Langbase pipe
+/// Response from tree reasoning Langbase pipe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeResponse {
+    /// The generated branches/paths.
     pub branches: Vec<TreeBranch>,
+    /// Index of the recommended branch (0-based).
     pub recommended_branch: usize,
+    /// Additional metadata from the response.
     #[serde(default)]
     pub metadata: serde_json::Value,
 }
 
-/// Individual branch in tree response
+/// Individual branch in tree response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeBranch {
+    /// The thought content for this branch.
     pub thought: String,
+    /// Confidence in this branch (0.0-1.0).
     pub confidence: f64,
+    /// Rationale for why this branch was generated.
     pub rationale: String,
 }
 
-/// Result of tree reasoning
+/// Result of tree reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TreeResult {
+    /// The session ID.
     pub session_id: String,
+    /// The current branch ID.
     pub branch_id: String,
+    /// The ID of the created thought.
     pub thought_id: String,
+    /// The thought content.
     pub content: String,
+    /// Confidence in the thought (0.0-1.0).
     pub confidence: f64,
+    /// Child branches created for exploration.
     pub child_branches: Vec<BranchInfo>,
+    /// Index of the recommended branch (0-based).
     pub recommended_branch_index: usize,
+    /// Parent branch ID, if this is an extension.
     pub parent_branch: Option<String>,
+    /// Number of cross-references created.
     pub cross_refs_created: usize,
 }
 
-/// Branch information in result
+/// Branch information in result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchInfo {
+    /// The branch ID.
     pub id: String,
+    /// Human-readable branch name.
     pub name: String,
+    /// Confidence in this branch (0.0-1.0).
     pub confidence: f64,
+    /// Rationale for this branch.
     pub rationale: String,
 }
 
-/// Tree reasoning mode handler
+/// Tree reasoning mode handler for branching exploration.
 pub struct TreeMode {
+    /// Storage backend for persisting branches and thoughts.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered reasoning.
     langbase: LangbaseClient,
+    /// The Langbase pipe name for tree reasoning.
     pipe_name: String,
 }
 
@@ -143,11 +180,11 @@ impl TreeMode {
             None => {
                 // Check if session has an active branch, or create root
                 match &session.active_branch_id {
-                    Some(active_id) => {
-                        self.storage.get_branch(active_id).await?.unwrap_or_else(|| {
-                            Branch::new(&session.id).with_name("Root")
-                        })
-                    }
+                    Some(active_id) => self
+                        .storage
+                        .get_branch(active_id)
+                        .await?
+                        .unwrap_or_else(|| Branch::new(&session.id).with_name("Root")),
                     None => {
                         let b = Branch::new(&session.id).with_name("Root");
                         self.storage.create_branch(&b).await?;
@@ -203,7 +240,11 @@ impl TreeMode {
                 .with_parent(&branch.id)
                 .with_name(format!("Option {}: {}", i + 1, truncate(&tb.thought, 30)))
                 .with_confidence(tb.confidence)
-                .with_priority(if i == tree_response.recommended_branch { 2.0 } else { 1.0 });
+                .with_priority(if i == tree_response.recommended_branch {
+                    2.0
+                } else {
+                    1.0
+                });
 
             self.storage.create_branch(&child).await?;
 
@@ -270,16 +311,24 @@ impl TreeMode {
 
     /// Focus on a specific branch, making it the active branch
     pub async fn focus_branch(&self, session_id: &str, branch_id: &str) -> AppResult<Branch> {
-        let branch = self.storage.get_branch(branch_id).await?
+        let branch = self
+            .storage
+            .get_branch(branch_id)
+            .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;
 
         // Verify branch belongs to session
         if branch.session_id != session_id {
-            return Err(ToolError::Session("Branch does not belong to this session".to_string()).into());
+            return Err(
+                ToolError::Session("Branch does not belong to this session".to_string()).into(),
+            );
         }
 
         // Update session's active branch
-        let session = self.storage.get_session(session_id).await?
+        let session = self
+            .storage
+            .get_session(session_id)
+            .await?
             .ok_or_else(|| ToolError::Session(format!("Session not found: {}", session_id)))?;
 
         let mut updated_session = session;
@@ -295,8 +344,15 @@ impl TreeMode {
     }
 
     /// Update branch state (complete, abandon)
-    pub async fn update_branch_state(&self, branch_id: &str, state: BranchState) -> AppResult<Branch> {
-        let mut branch = self.storage.get_branch(branch_id).await?
+    pub async fn update_branch_state(
+        &self,
+        branch_id: &str,
+        state: BranchState,
+    ) -> AppResult<Branch> {
+        let mut branch = self
+            .storage
+            .get_branch(branch_id)
+            .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;
 
         branch.state = state;
@@ -308,17 +364,15 @@ impl TreeMode {
 
     async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
         match session_id {
-            Some(id) => {
-                match self.storage.get_session(id).await? {
-                    Some(s) => Ok(s),
-                    None => {
-                        let mut new_session = Session::new("tree");
-                        new_session.id = id.clone();
-                        self.storage.create_session(&new_session).await?;
-                        Ok(new_session)
-                    }
+            Some(id) => match self.storage.get_session(id).await? {
+                Some(s) => Ok(s),
+                None => {
+                    let mut new_session = Session::new("tree");
+                    new_session.id = id.clone();
+                    self.storage.create_session(&new_session).await?;
+                    Ok(new_session)
                 }
-            }
+            },
             None => {
                 let session = Session::new("tree");
                 self.storage.create_session(&session).await?;
@@ -327,22 +381,25 @@ impl TreeMode {
         }
     }
 
-    fn build_messages(&self, content: &str, history: &[Thought], num_branches: usize) -> Vec<Message> {
+    fn build_messages(
+        &self,
+        content: &str,
+        history: &[Thought],
+        num_branches: usize,
+    ) -> Vec<Message> {
         let mut messages = Vec::new();
 
         // System prompt for tree reasoning
         let system_prompt = TREE_REASONING_PROMPT.replace(
             "2-4 distinct reasoning paths",
-            &format!("{} distinct reasoning paths", num_branches)
+            &format!("{} distinct reasoning paths", num_branches),
         );
         messages.push(Message::system(system_prompt));
 
         // Add history context if available
         if !history.is_empty() {
-            let history_text: Vec<String> = history
-                .iter()
-                .map(|t| format!("- {}", t.content))
-                .collect();
+            let history_text: Vec<String> =
+                history.iter().map(|t| format!("- {}", t.content)).collect();
 
             messages.push(Message::user(format!(
                 "Previous reasoning in this branch:\n{}\n\nNow explore this thought:",
@@ -370,10 +427,7 @@ impl TreeMode {
                 .and_then(|s| s.split("```").next())
                 .unwrap_or(completion)
         } else if completion.contains("```") {
-            completion
-                .split("```")
-                .nth(1)
-                .unwrap_or(completion)
+            completion.split("```").nth(1).unwrap_or(completion)
         } else {
             completion
         };
@@ -425,7 +479,11 @@ impl TreeParams {
     }
 
     /// Add a cross-reference
-    pub fn with_cross_ref(mut self, to_branch: impl Into<String>, ref_type: impl Into<String>) -> Self {
+    pub fn with_cross_ref(
+        mut self,
+        to_branch: impl Into<String>,
+        ref_type: impl Into<String>,
+    ) -> Self {
         self.cross_refs.push(CrossRefInput {
             to_branch: to_branch.into(),
             ref_type: ref_type.into(),
@@ -551,8 +609,7 @@ mod tests {
 
     #[test]
     fn test_tree_params_with_cross_ref() {
-        let params = TreeParams::new("Content")
-            .with_cross_ref("branch-target", "supports");
+        let params = TreeParams::new("Content").with_cross_ref("branch-target", "supports");
         assert_eq!(params.cross_refs.len(), 1);
         assert_eq!(params.cross_refs[0].to_branch, "branch-target");
         assert_eq!(params.cross_refs[0].ref_type, "supports");

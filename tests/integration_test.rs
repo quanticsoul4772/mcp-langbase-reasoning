@@ -49,6 +49,7 @@ fn create_test_config(mock_url: &str, db_path: std::path::PathBuf) -> Config {
             auto: None,
             backtracking: None,
             got: None,
+            detection: None,
         },
     }
 }
@@ -115,6 +116,79 @@ fn mock_reflection_response() -> ResponseTemplate {
             "metadata": {}
         }).to_string(),
         "threadId": "thread-abc"
+    }))
+}
+
+fn mock_bias_detection_response() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "success": true,
+        "completion": json!({
+            "detections": [
+                {
+                    "bias_type": "confirmation_bias",
+                    "severity": 3,
+                    "confidence": 0.85,
+                    "explanation": "The argument selectively cites evidence that supports the conclusion",
+                    "remediation": "Consider evidence that contradicts the conclusion",
+                    "excerpt": "All studies show that..."
+                },
+                {
+                    "bias_type": "anchoring_bias",
+                    "severity": 2,
+                    "confidence": 0.7,
+                    "explanation": "The initial estimate heavily influences the final conclusion",
+                    "remediation": "Re-evaluate from multiple starting points"
+                }
+            ],
+            "reasoning_quality": 0.6,
+            "overall_assessment": "The reasoning shows moderate bias with potential for improvement",
+            "metadata": {}
+        }).to_string(),
+        "threadId": "thread-bias-123"
+    }))
+}
+
+fn mock_fallacy_detection_response() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "success": true,
+        "completion": json!({
+            "detections": [
+                {
+                    "fallacy_type": "ad_hominem",
+                    "category": "informal",
+                    "severity": 4,
+                    "confidence": 0.9,
+                    "explanation": "The argument attacks the person rather than addressing their claims",
+                    "remediation": "Focus on the argument's content, not the speaker",
+                    "excerpt": "You can't trust him because..."
+                },
+                {
+                    "fallacy_type": "affirming_consequent",
+                    "category": "formal",
+                    "severity": 3,
+                    "confidence": 0.75,
+                    "explanation": "Invalid logical structure: If P then Q, Q, therefore P",
+                    "remediation": "Restructure the argument to avoid this logical error"
+                }
+            ],
+            "argument_validity": 0.4,
+            "overall_assessment": "The argument contains significant logical errors",
+            "metadata": {}
+        }).to_string(),
+        "threadId": "thread-fallacy-456"
+    }))
+}
+
+fn mock_empty_detection_response() -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "success": true,
+        "completion": json!({
+            "detections": [],
+            "reasoning_quality": 0.95,
+            "overall_assessment": "No significant biases detected",
+            "metadata": {}
+        }).to_string(),
+        "threadId": "thread-empty-789"
     }))
 }
 
@@ -280,7 +354,9 @@ mod tree_mode_integration {
 
         let branch_list = branches.unwrap();
         if !branch_list.is_empty() {
-            let focused = mode.focus_branch(&tree_result.session_id, &branch_list[0].id).await;
+            let focused = mode
+                .focus_branch(&tree_result.session_id, &branch_list[0].id)
+                .await;
             assert!(focused.is_ok());
         }
     }
@@ -509,7 +585,9 @@ mod multi_mode_integration {
 
         // Step 3: Focus on first branch (if available)
         if !branch_list.is_empty() {
-            let focus_result = mode.focus_branch(&tree_result.session_id, &branch_list[0].id).await;
+            let focus_result = mode
+                .focus_branch(&tree_result.session_id, &branch_list[0].id)
+                .await;
             assert!(focus_result.is_ok());
 
             // Verify branch state
@@ -531,11 +609,9 @@ mod error_handling_integration {
 
         Mock::given(method("POST"))
             .and(path("/v1/pipes/run"))
-            .respond_with(
-                ResponseTemplate::new(500).set_body_json(json!({
-                    "error": {"message": "Internal server error"}
-                })),
-            )
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "error": {"message": "Internal server error"}
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -655,8 +731,379 @@ mod storage_persistence_integration {
         assert!(session.unwrap().is_some());
 
         // Verify history is retrievable
-        let history = storage.get_session_thoughts(&linear_result.session_id).await;
+        let history = storage
+            .get_session_thoughts(&linear_result.session_id)
+            .await;
         assert!(history.is_ok());
         assert!(!history.unwrap().is_empty());
+    }
+}
+
+// ============================================================================
+// Bias & Fallacy Detection Integration Tests
+// ============================================================================
+
+#[cfg(test)]
+mod bias_detection_integration {
+    use super::*;
+    use mcp_langbase_reasoning::langbase::{BiasDetectionResponse, Message, PipeRequest};
+    use mcp_langbase_reasoning::storage::{Detection, DetectionType, Session};
+
+    #[tokio::test]
+    async fn test_bias_detection_parses_response_correctly() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/pipes/run"))
+            .respond_with(mock_bias_detection_response())
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config(&mock_server.uri(), db_path.clone());
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        // Call the pipe directly to test response parsing
+        let messages = vec![
+            Message::system("Detect biases"),
+            Message::user("Test content with potential biases"),
+        ];
+        let request = PipeRequest::new("detect-biases-v1", messages);
+        let response = langbase.call_pipe(request).await;
+
+        assert!(response.is_ok(), "Langbase call should succeed");
+        let pipe_response = response.unwrap();
+
+        // Parse the response
+        let bias_response = BiasDetectionResponse::from_completion(&pipe_response.completion);
+
+        assert_eq!(bias_response.detections.len(), 2);
+        assert_eq!(bias_response.detections[0].bias_type, "confirmation_bias");
+        assert_eq!(bias_response.detections[0].severity, 3);
+        assert!((bias_response.detections[0].confidence - 0.85).abs() < 0.01);
+        assert_eq!(bias_response.detections[1].bias_type, "anchoring_bias");
+        assert!((bias_response.reasoning_quality - 0.6).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_bias_detection_handles_empty_response() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/pipes/run"))
+            .respond_with(mock_empty_detection_response())
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config(&mock_server.uri(), db_path.clone());
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let messages = vec![
+            Message::system("Detect biases"),
+            Message::user("Clean content with no biases"),
+        ];
+        let request = PipeRequest::new("detect-biases-v1", messages);
+        let response = langbase.call_pipe(request).await;
+
+        assert!(response.is_ok());
+        let pipe_response = response.unwrap();
+        let bias_response = BiasDetectionResponse::from_completion(&pipe_response.completion);
+
+        assert!(bias_response.detections.is_empty());
+        assert!((bias_response.reasoning_quality - 0.95).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_bias_detection_stores_results() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let storage = create_test_storage(db_path).await;
+
+        // First create a session (FK constraint)
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        // Create and store a detection with valid session FK
+        let detection = Detection::new(
+            DetectionType::Bias,
+            "confirmation_bias",
+            3,
+            0.85,
+            "Selectively citing evidence",
+        )
+        .with_session(&session.id)
+        .with_remediation("Consider contradictory evidence");
+
+        let result = storage.create_detection(&detection).await;
+        assert!(
+            result.is_ok(),
+            "Detection creation failed: {:?}",
+            result.err()
+        );
+
+        // Retrieve and verify
+        let stored = storage.get_detection(&detection.id).await;
+        assert!(stored.is_ok());
+        let stored_detection = stored.unwrap();
+        assert!(stored_detection.is_some());
+
+        let d = stored_detection.unwrap();
+        assert_eq!(d.detected_issue, "confirmation_bias");
+        assert_eq!(d.severity, 3);
+        assert!((d.confidence - 0.85).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_bias_detection_retrieves_by_session() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let storage = create_test_storage(db_path).await;
+
+        // First create a session (FK constraint)
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+        let session_id = &session.id;
+
+        // Create multiple detections for the same session
+        let detection1 = Detection::new(
+            DetectionType::Bias,
+            "confirmation_bias",
+            3,
+            0.85,
+            "First bias",
+        )
+        .with_session(session_id);
+
+        let detection2 =
+            Detection::new(DetectionType::Bias, "anchoring_bias", 2, 0.7, "Second bias")
+                .with_session(session_id);
+
+        storage.create_detection(&detection1).await.unwrap();
+        storage.create_detection(&detection2).await.unwrap();
+
+        // Retrieve by session
+        let session_detections = storage.get_session_detections(session_id).await;
+        assert!(session_detections.is_ok());
+        assert_eq!(session_detections.unwrap().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod fallacy_detection_integration {
+    use super::*;
+    use mcp_langbase_reasoning::langbase::{FallacyDetectionResponse, Message, PipeRequest};
+    use mcp_langbase_reasoning::storage::{Detection, DetectionType, Session, Thought};
+
+    #[tokio::test]
+    async fn test_fallacy_detection_parses_response_correctly() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/pipes/run"))
+            .respond_with(mock_fallacy_detection_response())
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config(&mock_server.uri(), db_path.clone());
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let messages = vec![
+            Message::system("Detect fallacies"),
+            Message::user("Test argument with fallacies"),
+        ];
+        let request = PipeRequest::new("detect-fallacies-v1", messages);
+        let response = langbase.call_pipe(request).await;
+
+        assert!(response.is_ok());
+        let pipe_response = response.unwrap();
+        let fallacy_response = FallacyDetectionResponse::from_completion(&pipe_response.completion);
+
+        assert_eq!(fallacy_response.detections.len(), 2);
+        assert_eq!(fallacy_response.detections[0].fallacy_type, "ad_hominem");
+        assert_eq!(fallacy_response.detections[0].category, "informal");
+        assert_eq!(fallacy_response.detections[0].severity, 4);
+        assert_eq!(
+            fallacy_response.detections[1].fallacy_type,
+            "affirming_consequent"
+        );
+        assert_eq!(fallacy_response.detections[1].category, "formal");
+        assert!((fallacy_response.argument_validity - 0.4).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_fallacy_detection_stores_with_category() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let storage = create_test_storage(db_path).await;
+
+        // First create a session (FK constraint)
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        // Create and store a fallacy detection with category metadata
+        let detection = Detection::new(
+            DetectionType::Fallacy,
+            "ad_hominem",
+            4,
+            0.9,
+            "Attacks the person instead of the argument",
+        )
+        .with_session(&session.id)
+        .with_metadata(serde_json::json!({
+            "category": "informal",
+            "excerpt": "You can't trust him because..."
+        }));
+
+        let result = storage.create_detection(&detection).await;
+        assert!(
+            result.is_ok(),
+            "Detection creation failed: {:?}",
+            result.err()
+        );
+
+        // Retrieve and verify metadata
+        let stored = storage.get_detection(&detection.id).await;
+        assert!(stored.is_ok());
+        let stored_detection = stored.unwrap().unwrap();
+
+        assert!(stored_detection.metadata.is_some());
+        let meta = stored_detection.metadata.unwrap();
+        assert_eq!(meta["category"], "informal");
+    }
+
+    #[tokio::test]
+    async fn test_fallacy_detection_filters_by_type() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let storage = create_test_storage(db_path).await;
+
+        // First create a session (FK constraint)
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+        let session_id = &session.id;
+
+        // Create bias and fallacy detections
+        let bias = Detection::new(DetectionType::Bias, "confirmation_bias", 3, 0.8, "Bias")
+            .with_session(session_id);
+
+        let fallacy = Detection::new(DetectionType::Fallacy, "ad_hominem", 4, 0.9, "Fallacy")
+            .with_session(session_id);
+
+        storage.create_detection(&bias).await.unwrap();
+        storage.create_detection(&fallacy).await.unwrap();
+
+        // Retrieve by type
+        let fallacies = storage
+            .get_session_detections_by_type(session_id, DetectionType::Fallacy)
+            .await;
+        assert!(fallacies.is_ok());
+        let fallacy_list = fallacies.unwrap();
+        assert_eq!(fallacy_list.len(), 1);
+        assert_eq!(fallacy_list[0].detected_issue, "ad_hominem");
+
+        let biases = storage
+            .get_session_detections_by_type(session_id, DetectionType::Bias)
+            .await;
+        assert!(biases.is_ok());
+        let bias_list = biases.unwrap();
+        assert_eq!(bias_list.len(), 1);
+        assert_eq!(bias_list[0].detected_issue, "confirmation_bias");
+    }
+
+    #[tokio::test]
+    async fn test_fallacy_detection_retrieves_by_thought() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let storage = create_test_storage(db_path).await;
+
+        // First create a session and thought (FK constraints)
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        let thought = Thought::new(&session.id, "Test thought content", "linear");
+        storage.create_thought(&thought).await.unwrap();
+        let thought_id = &thought.id;
+
+        // Create detections for a specific thought
+        let detection1 = Detection::new(DetectionType::Fallacy, "straw_man", 3, 0.8, "Straw man")
+            .with_thought(thought_id);
+
+        let detection2 = Detection::new(
+            DetectionType::Fallacy,
+            "false_dichotomy",
+            2,
+            0.7,
+            "False choice",
+        )
+        .with_thought(thought_id);
+
+        storage.create_detection(&detection1).await.unwrap();
+        storage.create_detection(&detection2).await.unwrap();
+
+        // Retrieve by thought
+        let thought_detections = storage.get_thought_detections(thought_id).await;
+        assert!(thought_detections.is_ok());
+        assert_eq!(thought_detections.unwrap().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod detection_error_handling {
+    use super::*;
+    use mcp_langbase_reasoning::langbase::{BiasDetectionResponse, FallacyDetectionResponse};
+
+    #[tokio::test]
+    async fn test_bias_detection_handles_invalid_json() {
+        // Test fallback behavior for non-JSON responses
+        let invalid_response = "This is not valid JSON but some plain text analysis";
+        let bias_response = BiasDetectionResponse::from_completion(invalid_response);
+
+        // Should return empty detections with the raw text as assessment
+        assert!(bias_response.detections.is_empty());
+        assert_eq!(bias_response.overall_assessment, invalid_response);
+    }
+
+    #[tokio::test]
+    async fn test_fallacy_detection_handles_invalid_json() {
+        let invalid_response = "Plain text fallacy analysis";
+        let fallacy_response = FallacyDetectionResponse::from_completion(invalid_response);
+
+        // Should return empty detections with the raw text as assessment
+        assert!(fallacy_response.detections.is_empty());
+        assert_eq!(fallacy_response.overall_assessment, invalid_response);
+    }
+
+    #[tokio::test]
+    async fn test_detection_handles_langbase_error() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let db_path = dir.path().join("test.db");
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/pipes/run"))
+            .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+                "error": {"message": "Internal server error"}
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config(&mock_server.uri(), db_path.clone());
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        use mcp_langbase_reasoning::langbase::{Message, PipeRequest};
+        let messages = vec![Message::user("Test content")];
+        let request = PipeRequest::new("detect-biases-v1", messages);
+        let response = langbase.call_pipe(request).await;
+
+        assert!(response.is_err(), "Should return error on Langbase failure");
     }
 }

@@ -5,8 +5,8 @@ use std::str::FromStr;
 use tracing::{info, warn};
 
 use super::{
-    Branch, Checkpoint, CrossRef, GraphEdge, GraphNode, Invocation, Session, StateSnapshot,
-    Storage, Thought,
+    Branch, Checkpoint, CrossRef, Detection, DetectionType, GraphEdge, GraphNode, Invocation,
+    Session, StateSnapshot, Storage, Thought,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -58,9 +58,12 @@ impl SqliteStorage {
     async fn run_migrations(&self) -> StorageResult<()> {
         info!("Running database migrations...");
 
-        MIGRATOR.run(&self.pool).await.map_err(|e| StorageError::Migration {
-            message: format!("Failed to run migrations: {}", e),
-        })?;
+        MIGRATOR
+            .run(&self.pool)
+            .await
+            .map_err(|e| StorageError::Migration {
+                message: format!("Failed to run migrations: {}", e),
+            })?;
 
         info!("Database migrations completed successfully");
         Ok(())
@@ -73,10 +76,11 @@ impl SqliteStorage {
 
     /// Create an in-memory SQLite storage instance for testing
     pub async fn new_in_memory() -> StorageResult<Self> {
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .map_err(|e| StorageError::Connection {
+        let options = SqliteConnectOptions::from_str("sqlite::memory:").map_err(|e| {
+            StorageError::Connection {
                 message: format!("Invalid in-memory URL: {}", e),
-            })?;
+            }
+        })?;
 
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -881,6 +885,135 @@ impl Storage for SqliteStorage {
 
         Ok(())
     }
+
+    // ========================================================================
+    // Detection operations (bias/fallacy analysis)
+    // ========================================================================
+
+    async fn create_detection(&self, detection: &Detection) -> StorageResult<()> {
+        let metadata = detection
+            .metadata
+            .as_ref()
+            .map(|m| serde_json::to_string(m).unwrap_or_default());
+
+        sqlx::query(
+            r#"
+            INSERT INTO detections (id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&detection.id)
+        .bind(&detection.session_id)
+        .bind(&detection.thought_id)
+        .bind(detection.detection_type.to_string())
+        .bind(&detection.detected_issue)
+        .bind(detection.severity)
+        .bind(detection.confidence)
+        .bind(&detection.explanation)
+        .bind(&detection.remediation)
+        .bind(detection.created_at.to_rfc3339())
+        .bind(&metadata)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_detection(&self, id: &str) -> StorageResult<Option<Detection>> {
+        let row: Option<DetectionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata
+            FROM detections
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_detections(&self, session_id: &str) -> StorageResult<Vec<Detection>> {
+        let rows: Vec<DetectionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata
+            FROM detections
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_thought_detections(&self, thought_id: &str) -> StorageResult<Vec<Detection>> {
+        let rows: Vec<DetectionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata
+            FROM detections
+            WHERE thought_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(thought_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_detections_by_type(
+        &self,
+        detection_type: DetectionType,
+    ) -> StorageResult<Vec<Detection>> {
+        let rows: Vec<DetectionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata
+            FROM detections
+            WHERE detection_type = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(detection_type.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_session_detections_by_type(
+        &self,
+        session_id: &str,
+        detection_type: DetectionType,
+    ) -> StorageResult<Vec<Detection>> {
+        let rows: Vec<DetectionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, thought_id, detection_type, detected_issue, severity, confidence, explanation, remediation, created_at, metadata
+            FROM detections
+            WHERE session_id = ? AND detection_type = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .bind(detection_type.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_detection(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM detections WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -921,10 +1054,7 @@ fn parse_timestamp_with_logging(ts_str: &str, context: &str) -> chrono::DateTime
 }
 
 /// Parse enum with warning on failure
-fn parse_enum_with_logging<T: std::str::FromStr + Default>(
-    value: &str,
-    context: &str,
-) -> T {
+fn parse_enum_with_logging<T: std::str::FromStr + Default>(value: &str, context: &str) -> T {
     match value.parse() {
         Ok(parsed) => parsed,
         Err(_) => {
@@ -955,9 +1085,17 @@ impl From<SessionRow> for Session {
         Self {
             id: row.id.clone(),
             mode: row.mode,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("session {} created_at", row.id)),
-            updated_at: parse_timestamp_with_logging(&row.updated_at, &format!("session {} updated_at", row.id)),
-            metadata: row.metadata.and_then(|s| parse_metadata_with_logging(&s, &format!("session {} metadata", row.id))),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("session {} created_at", row.id),
+            ),
+            updated_at: parse_timestamp_with_logging(
+                &row.updated_at,
+                &format!("session {} updated_at", row.id),
+            ),
+            metadata: row.metadata.and_then(|s| {
+                parse_metadata_with_logging(&s, &format!("session {} metadata", row.id))
+            }),
             active_branch_id: row.active_branch_id,
         }
     }
@@ -986,8 +1124,13 @@ impl From<ThoughtRow> for Thought {
             mode: row.mode,
             parent_id: row.parent_id,
             branch_id: row.branch_id,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("thought {} created_at", row.id)),
-            metadata: row.metadata.and_then(|s| parse_metadata_with_logging(&s, &format!("thought {} metadata", row.id))),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("thought {} created_at", row.id),
+            ),
+            metadata: row.metadata.and_then(|s| {
+                parse_metadata_with_logging(&s, &format!("thought {} metadata", row.id))
+            }),
         }
     }
 }
@@ -1016,9 +1159,17 @@ impl From<BranchRow> for Branch {
             priority: row.priority,
             confidence: row.confidence,
             state: parse_enum_with_logging(&row.state, &format!("branch {} state", row.id)),
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("branch {} created_at", row.id)),
-            updated_at: parse_timestamp_with_logging(&row.updated_at, &format!("branch {} updated_at", row.id)),
-            metadata: row.metadata.and_then(|s| parse_metadata_with_logging(&s, &format!("branch {} metadata", row.id))),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("branch {} created_at", row.id),
+            ),
+            updated_at: parse_timestamp_with_logging(
+                &row.updated_at,
+                &format!("branch {} updated_at", row.id),
+            ),
+            metadata: row.metadata.and_then(|s| {
+                parse_metadata_with_logging(&s, &format!("branch {} metadata", row.id))
+            }),
         }
     }
 }
@@ -1040,10 +1191,16 @@ impl From<CrossRefRow> for CrossRef {
             id: row.id.clone(),
             from_branch_id: row.from_branch_id,
             to_branch_id: row.to_branch_id,
-            ref_type: parse_enum_with_logging(&row.ref_type, &format!("cross_ref {} ref_type", row.id)),
+            ref_type: parse_enum_with_logging(
+                &row.ref_type,
+                &format!("cross_ref {} ref_type", row.id),
+            ),
             reason: row.reason,
             strength: row.strength,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("cross_ref {} created_at", row.id)),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("cross_ref {} created_at", row.id),
+            ),
         }
     }
 }
@@ -1081,7 +1238,10 @@ impl From<CheckpointRow> for Checkpoint {
             name: row.name,
             description: row.description,
             snapshot,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("checkpoint {} created_at", row.id)),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("checkpoint {} created_at", row.id),
+            ),
         }
     }
 }
@@ -1108,14 +1268,22 @@ impl From<GraphNodeRow> for GraphNode {
             id: row.id.clone(),
             session_id: row.session_id,
             content: row.content,
-            node_type: parse_enum_with_logging(&row.node_type, &format!("graph_node {} node_type", row.id)),
+            node_type: parse_enum_with_logging(
+                &row.node_type,
+                &format!("graph_node {} node_type", row.id),
+            ),
             score: row.score,
             depth: row.depth,
             is_terminal: row.is_terminal,
             is_root: row.is_root,
             is_active: row.is_active,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("graph_node {} created_at", row.id)),
-            metadata: row.metadata.and_then(|s| parse_metadata_with_logging(&s, &format!("graph_node {} metadata", row.id))),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("graph_node {} created_at", row.id),
+            ),
+            metadata: row.metadata.and_then(|s| {
+                parse_metadata_with_logging(&s, &format!("graph_node {} metadata", row.id))
+            }),
         }
     }
 }
@@ -1139,10 +1307,18 @@ impl From<GraphEdgeRow> for GraphEdge {
             session_id: row.session_id,
             from_node: row.from_node,
             to_node: row.to_node,
-            edge_type: parse_enum_with_logging(&row.edge_type, &format!("graph_edge {} edge_type", row.id)),
+            edge_type: parse_enum_with_logging(
+                &row.edge_type,
+                &format!("graph_edge {} edge_type", row.id),
+            ),
             weight: row.weight,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("graph_edge {} created_at", row.id)),
-            metadata: row.metadata.and_then(|s| parse_metadata_with_logging(&s, &format!("graph_edge {} metadata", row.id))),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("graph_edge {} created_at", row.id),
+            ),
+            metadata: row.metadata.and_then(|s| {
+                parse_metadata_with_logging(&s, &format!("graph_edge {} metadata", row.id))
+            }),
         }
     }
 }
@@ -1176,11 +1352,61 @@ impl From<StateSnapshotRow> for StateSnapshot {
         Self {
             id: row.id.clone(),
             session_id: row.session_id,
-            snapshot_type: parse_enum_with_logging(&row.snapshot_type, &format!("state_snapshot {} snapshot_type", row.id)),
+            snapshot_type: parse_enum_with_logging(
+                &row.snapshot_type,
+                &format!("state_snapshot {} snapshot_type", row.id),
+            ),
             state_data,
             parent_snapshot_id: row.parent_snapshot_id,
-            created_at: parse_timestamp_with_logging(&row.created_at, &format!("state_snapshot {} created_at", row.id)),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("state_snapshot {} created_at", row.id),
+            ),
             description: row.description,
+        }
+    }
+}
+
+/// Row struct for Detection queries
+#[derive(Debug, sqlx::FromRow)]
+struct DetectionRow {
+    id: String,
+    session_id: Option<String>,
+    thought_id: Option<String>,
+    detection_type: String,
+    detected_issue: String,
+    severity: i32,
+    confidence: f64,
+    explanation: String,
+    remediation: Option<String>,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<DetectionRow> for Detection {
+    fn from(row: DetectionRow) -> Self {
+        let metadata = row.metadata.as_deref().and_then(|s| {
+            parse_metadata_with_logging(s, &format!("detection {} metadata", row.id))
+        });
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            thought_id: row.thought_id,
+            detection_type: parse_enum_with_logging(
+                &row.detection_type,
+                &format!("detection {} detection_type", row.id),
+            ),
+            detected_issue: row.detected_issue,
+            severity: row.severity,
+            confidence: row.confidence,
+            explanation: row.explanation,
+            remediation: row.remediation,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("detection {} created_at", row.id),
+            ),
+            metadata,
         }
     }
 }
@@ -1619,7 +1845,11 @@ mod tests {
         // Create session
         let session = Session::new("tree");
         let create_result = storage.create_session(&session).await;
-        assert!(create_result.is_ok(), "Failed to create session: {:?}", create_result.err());
+        assert!(
+            create_result.is_ok(),
+            "Failed to create session: {:?}",
+            create_result.err()
+        );
 
         // Get session
         let retrieved = storage.get_session(&session.id).await.unwrap();
@@ -1637,7 +1867,11 @@ mod tests {
         updated_session.active_branch_id = Some(branch.id.clone());
         updated_session.updated_at = chrono::Utc::now();
         let update_result = storage.update_session(&updated_session).await;
-        assert!(update_result.is_ok(), "Failed to update session: {:?}", update_result.err());
+        assert!(
+            update_result.is_ok(),
+            "Failed to update session: {:?}",
+            update_result.err()
+        );
 
         // Verify update
         let after_update = storage.get_session(&session.id).await.unwrap().unwrap();
@@ -1653,8 +1887,8 @@ mod tests {
         storage.create_session(&session).await.unwrap();
 
         // Create thought
-        let thought = Thought::new(&session.id, "Test thought content", "linear")
-            .with_confidence(0.85);
+        let thought =
+            Thought::new(&session.id, "Test thought content", "linear").with_confidence(0.85);
         let create_result = storage.create_thought(&thought).await;
         assert!(create_result.is_ok());
 
@@ -1714,8 +1948,12 @@ mod tests {
         storage.create_session(&session).await.unwrap();
 
         // Create checkpoint
-        let checkpoint = Checkpoint::new(&session.id, "test-checkpoint", serde_json::json!({"state": "saved"}))
-            .with_description("A test checkpoint");
+        let checkpoint = Checkpoint::new(
+            &session.id,
+            "test-checkpoint",
+            serde_json::json!({"state": "saved"}),
+        )
+        .with_description("A test checkpoint");
         let create_result = storage.create_checkpoint(&checkpoint).await;
         assert!(create_result.is_ok());
 
@@ -1734,10 +1972,15 @@ mod tests {
         let storage = SqliteStorage::new_in_memory().await.unwrap();
 
         // Create invocation (session_id is optional, so no need to create session first)
-        let invocation = Invocation::new("reasoning.linear", serde_json::json!({"content": "test"}))
-            .with_pipe("linear-v1");
+        let invocation =
+            Invocation::new("reasoning.linear", serde_json::json!({"content": "test"}))
+                .with_pipe("linear-v1");
         let result = storage.log_invocation(&invocation).await;
-        assert!(result.is_ok(), "Failed to log invocation: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to log invocation: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
@@ -1852,7 +2095,10 @@ mod tests {
         // Get snapshot
         let retrieved = storage.get_snapshot(&snapshot.id).await.unwrap();
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().description, Some("Test snapshot".to_string()));
+        assert_eq!(
+            retrieved.unwrap().description,
+            Some("Test snapshot".to_string())
+        );
 
         // Get latest
         let latest = storage.get_latest_snapshot(&session.id).await.unwrap();
@@ -1910,8 +2156,7 @@ mod tests {
         let parent = Thought::new(&session.id, "Parent thought", "linear");
         storage.create_thought(&parent).await.unwrap();
 
-        let child = Thought::new(&session.id, "Child thought", "linear")
-            .with_parent(&parent.id);
+        let child = Thought::new(&session.id, "Child thought", "linear").with_parent(&parent.id);
         storage.create_thought(&child).await.unwrap();
 
         let retrieved = storage.get_thought(&child.id).await.unwrap().unwrap();

@@ -1,3 +1,11 @@
+//! Divergent reasoning mode - creative exploration with multiple perspectives.
+//!
+//! This module provides creative reasoning capabilities:
+//! - Multiple perspective generation (2-5 perspectives)
+//! - Assumption challenging
+//! - Rebellion/contrarian mode for maximum creativity
+//! - Novelty and viability scoring
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info};
@@ -41,54 +49,78 @@ fn default_num_perspectives() -> usize {
     3
 }
 
-/// Response from divergent reasoning Langbase pipe
+/// Response from divergent reasoning Langbase pipe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DivergentResponse {
+    /// The generated perspectives.
     pub perspectives: Vec<Perspective>,
+    /// Synthesis combining insights from all perspectives.
     pub synthesis: String,
+    /// Additional metadata from the response.
     #[serde(default)]
     pub metadata: serde_json::Value,
 }
 
-/// Individual perspective in divergent response
+/// Individual perspective in divergent response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Perspective {
+    /// The thought content for this perspective.
     pub thought: String,
+    /// Novelty score for this perspective (0.0-1.0).
     pub novelty: f64,
+    /// Viability score for this perspective (0.0-1.0).
     pub viability: f64,
+    /// Assumptions that were challenged to generate this perspective.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assumptions_challenged: Option<Vec<String>>,
 }
 
-/// Result of divergent reasoning
+/// Result of divergent reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DivergentResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the main thought.
     pub thought_id: String,
+    /// Information about each generated perspective.
     pub perspectives: Vec<PerspectiveInfo>,
+    /// Synthesis combining all perspectives.
     pub synthesis: String,
+    /// The ID of the synthesis thought.
     pub synthesis_thought_id: String,
+    /// Average novelty score across all perspectives (0.0-1.0).
     pub total_novelty_score: f64,
+    /// Index of the most viable perspective (0-based).
     pub most_viable_perspective: usize,
+    /// Index of the most novel perspective (0-based).
     pub most_novel_perspective: usize,
+    /// Optional branch ID for tree mode integration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch_id: Option<String>,
 }
 
-/// Perspective information in result
+/// Perspective information in result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerspectiveInfo {
+    /// The ID of the perspective thought.
     pub thought_id: String,
+    /// The thought content.
     pub content: String,
+    /// Novelty score (0.0-1.0).
     pub novelty: f64,
+    /// Viability score (0.0-1.0).
     pub viability: f64,
+    /// Assumptions that were challenged.
     pub assumptions_challenged: Vec<String>,
 }
 
-/// Divergent reasoning mode handler
+/// Divergent reasoning mode handler for creative exploration.
 pub struct DivergentMode {
+    /// Storage backend for persisting data.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered reasoning.
     langbase: LangbaseClient,
+    /// The Langbase pipe name for divergent reasoning.
     pipe_name: String,
 }
 
@@ -214,13 +246,14 @@ impl DivergentMode {
         }
 
         // Create synthesis thought
-        let synthesis_thought = Thought::new(&session.id, &divergent_response.synthesis, "divergent")
-            .with_confidence(params.confidence)
-            .with_parent(&main_thought.id)
-            .with_metadata(serde_json::json!({
-                "is_synthesis": true,
-                "source_perspectives": perspectives.len()
-            }));
+        let synthesis_thought =
+            Thought::new(&session.id, &divergent_response.synthesis, "divergent")
+                .with_confidence(params.confidence)
+                .with_parent(&main_thought.id)
+                .with_metadata(serde_json::json!({
+                    "is_synthesis": true,
+                    "source_perspectives": perspectives.len()
+                }));
 
         let synthesis_thought = if let Some(ref branch_id) = params.branch_id {
             synthesis_thought.with_branch(branch_id)
@@ -268,17 +301,15 @@ impl DivergentMode {
 
     async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
         match session_id {
-            Some(id) => {
-                match self.storage.get_session(id).await? {
-                    Some(s) => Ok(s),
-                    None => {
-                        let mut new_session = Session::new("divergent");
-                        new_session.id = id.clone();
-                        self.storage.create_session(&new_session).await?;
-                        Ok(new_session)
-                    }
+            Some(id) => match self.storage.get_session(id).await? {
+                Some(s) => Ok(s),
+                None => {
+                    let mut new_session = Session::new("divergent");
+                    new_session.id = id.clone();
+                    self.storage.create_session(&new_session).await?;
+                    Ok(new_session)
                 }
-            }
+            },
             None => {
                 let session = Session::new("divergent");
                 self.storage.create_session(&session).await?;
@@ -311,7 +342,10 @@ impl DivergentMode {
         // Adjust number of perspectives in prompt
         system_prompt = system_prompt.replace(
             "Generate diverse, non-obvious perspectives",
-            &format!("Generate {} diverse, non-obvious perspectives", num_perspectives)
+            &format!(
+                "Generate {} diverse, non-obvious perspectives",
+                num_perspectives
+            ),
         );
 
         messages.push(Message::system(system_prompt));
@@ -350,10 +384,7 @@ impl DivergentMode {
                 .and_then(|s| s.split("```").next())
                 .unwrap_or(completion)
         } else if completion.contains("```") {
-            completion
-                .split("```")
-                .nth(1)
-                .unwrap_or(completion)
+            completion.split("```").nth(1).unwrap_or(completion)
         } else {
             completion
         };
@@ -677,14 +708,12 @@ mod tests {
     #[test]
     fn test_divergent_response_serialize() {
         let response = DivergentResponse {
-            perspectives: vec![
-                Perspective {
-                    thought: "Perspective 1".to_string(),
-                    novelty: 0.8,
-                    viability: 0.7,
-                    assumptions_challenged: None,
-                }
-            ],
+            perspectives: vec![Perspective {
+                thought: "Perspective 1".to_string(),
+                novelty: 0.8,
+                viability: 0.7,
+                assumptions_challenged: None,
+            }],
             synthesis: "Combined insight".to_string(),
             metadata: serde_json::json!({"key": "value"}),
         };

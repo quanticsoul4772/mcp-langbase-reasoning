@@ -1,14 +1,18 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Instant;
 use tracing::info;
 
 use super::SharedState;
 use crate::error::{McpError, McpResult};
+use crate::langbase::{BiasDetectionResponse, FallacyDetectionResponse, Message, PipeRequest};
 use crate::modes::{
     AutoParams, BacktrackingParams, DivergentParams, GotAggregateParams, GotFinalizeParams,
     GotGenerateParams, GotGetStateParams, GotInitParams, GotPruneParams, GotRefineParams,
     GotScoreParams, LinearParams, ReflectionParams, TreeParams,
 };
-use crate::storage::BranchState;
+use crate::prompts::{BIAS_DETECTION_PROMPT, FALLACY_DETECTION_PROMPT};
+use crate::storage::{BranchState, Detection, DetectionType, Storage};
 
 /// Route tool calls to appropriate handlers
 pub async fn handle_tool_call(
@@ -43,6 +47,9 @@ pub async fn handle_tool_call(
         "reasoning_got_prune" => handle_got_prune(state, arguments).await,
         "reasoning_got_finalize" => handle_got_finalize(state, arguments).await,
         "reasoning_got_state" => handle_got_state(state, arguments).await,
+        // Phase 4 tools - Bias & Fallacy Detection
+        "reasoning_detect_biases" => handle_detect_biases(state, arguments).await,
+        "reasoning_detect_fallacies" => handle_detect_fallacies(state, arguments).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
@@ -51,32 +58,18 @@ pub async fn handle_tool_call(
 
 /// Handle reasoning.linear tool call
 async fn handle_linear(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: LinearParams = parse_arguments("reasoning.linear", arguments)?;
-
-    let result = state
-        .linear_mode
-        .process(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler("reasoning.linear", arguments, |params: LinearParams| {
+        state.linear_mode.process(params)
+    })
+    .await
 }
 
 /// Handle reasoning.tree tool call
 async fn handle_tree(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: TreeParams = parse_arguments("reasoning.tree", arguments)?;
-
-    let result = state
-        .tree_mode
-        .process(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler("reasoning.tree", arguments, |params: TreeParams| {
+        state.tree_mode.process(params)
+    })
+    .await
 }
 
 /// Handle reasoning.tree.focus - focus on a specific branch
@@ -154,36 +147,29 @@ async fn handle_tree_complete(state: &SharedState, arguments: Option<Value>) -> 
 
 /// Handle reasoning.divergent tool call
 async fn handle_divergent(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: DivergentParams = parse_arguments("reasoning.divergent", arguments)?;
-
-    let result = state
-        .divergent_mode
-        .process(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.divergent",
+        arguments,
+        |params: DivergentParams| state.divergent_mode.process(params),
+    )
+    .await
 }
 
 /// Handle reasoning.reflection tool call
 async fn handle_reflection(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: ReflectionParams = parse_arguments("reasoning.reflection", arguments)?;
-
-    let result = state
-        .reflection_mode
-        .process(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.reflection",
+        arguments,
+        |params: ReflectionParams| state.reflection_mode.process(params),
+    )
+    .await
 }
 
 /// Handle reasoning.reflection.evaluate - evaluate a session's reasoning quality
-async fn handle_reflection_evaluate(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+async fn handle_reflection_evaluate(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
     #[derive(serde::Deserialize)]
     struct EvaluateParams {
         session_id: String,
@@ -208,21 +194,19 @@ async fn handle_reflection_evaluate(state: &SharedState, arguments: Option<Value
 
 /// Handle reasoning.backtrack tool call
 async fn handle_backtrack(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: BacktrackingParams = parse_arguments("reasoning.backtrack", arguments)?;
-
-    let result = state
-        .backtracking_mode
-        .process(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.backtrack",
+        arguments,
+        |params: BacktrackingParams| state.backtracking_mode.process(params),
+    )
+    .await
 }
 
 /// Handle reasoning.checkpoint.create tool call
-async fn handle_checkpoint_create(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+async fn handle_checkpoint_create(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
     #[derive(serde::Deserialize)]
     struct CreateParams {
         session_id: String,
@@ -234,7 +218,11 @@ async fn handle_checkpoint_create(state: &SharedState, arguments: Option<Value>)
 
     let result = state
         .backtracking_mode
-        .create_checkpoint(&params.session_id, &params.name, params.description.as_deref())
+        .create_checkpoint(
+            &params.session_id,
+            &params.name,
+            params.description.as_deref(),
+        )
         .await
         .map_err(|e| McpError::ExecutionFailed {
             message: e.to_string(),
@@ -269,17 +257,10 @@ async fn handle_checkpoint_list(state: &SharedState, arguments: Option<Value>) -
 
 /// Handle reasoning.auto tool call
 async fn handle_auto(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: AutoParams = parse_arguments("reasoning.auto", arguments)?;
-
-    let result = state
-        .auto_mode
-        .route(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler("reasoning.auto", arguments, |params: AutoParams| {
+        state.auto_mode.route(params)
+    })
+    .await
 }
 
 // ============================================================================
@@ -288,122 +269,432 @@ async fn handle_auto(state: &SharedState, arguments: Option<Value>) -> McpResult
 
 /// Handle reasoning.got.init tool call
 async fn handle_got_init(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotInitParams = parse_arguments("reasoning.got.init", arguments)?;
-
-    let result = state
-        .got_mode
-        .initialize(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler("reasoning.got.init", arguments, |params: GotInitParams| {
+        state.got_mode.initialize(params)
+    })
+    .await
 }
 
 /// Handle reasoning.got.generate tool call
 async fn handle_got_generate(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotGenerateParams = parse_arguments("reasoning.got.generate", arguments)?;
-
-    let result = state
-        .got_mode
-        .generate(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.generate",
+        arguments,
+        |params: GotGenerateParams| state.got_mode.generate(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.score tool call
 async fn handle_got_score(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotScoreParams = parse_arguments("reasoning.got.score", arguments)?;
-
-    let result = state
-        .got_mode
-        .score(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.score",
+        arguments,
+        |params: GotScoreParams| state.got_mode.score(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.aggregate tool call
 async fn handle_got_aggregate(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotAggregateParams = parse_arguments("reasoning.got.aggregate", arguments)?;
-
-    let result = state
-        .got_mode
-        .aggregate(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.aggregate",
+        arguments,
+        |params: GotAggregateParams| state.got_mode.aggregate(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.refine tool call
 async fn handle_got_refine(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotRefineParams = parse_arguments("reasoning.got.refine", arguments)?;
-
-    let result = state
-        .got_mode
-        .refine(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.refine",
+        arguments,
+        |params: GotRefineParams| state.got_mode.refine(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.prune tool call
 async fn handle_got_prune(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotPruneParams = parse_arguments("reasoning.got.prune", arguments)?;
-
-    let result = state
-        .got_mode
-        .prune(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.prune",
+        arguments,
+        |params: GotPruneParams| state.got_mode.prune(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.finalize tool call
 async fn handle_got_finalize(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotFinalizeParams = parse_arguments("reasoning.got.finalize", arguments)?;
-
-    let result = state
-        .got_mode
-        .finalize(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.got.finalize",
+        arguments,
+        |params: GotFinalizeParams| state.got_mode.finalize(params),
+    )
+    .await
 }
 
 /// Handle reasoning.got.state tool call
 async fn handle_got_state(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: GotGetStateParams = parse_arguments("reasoning.got.state", arguments)?;
+    execute_handler(
+        "reasoning.got.state",
+        arguments,
+        |params: GotGetStateParams| state.got_mode.get_state(params),
+    )
+    .await
+}
 
-    let result = state
-        .got_mode
-        .get_state(params)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
+// ============================================================================
+// Phase 4 Handlers - Bias & Fallacy Detection
+// ============================================================================
 
-    serde_json::to_value(result).map_err(McpError::Json)
+/// Parameters for bias detection
+#[derive(Debug, Clone, Deserialize)]
+pub struct DetectBiasesParams {
+    /// Content to analyze for biases
+    pub content: Option<String>,
+    /// ID of an existing thought to analyze
+    pub thought_id: Option<String>,
+    /// Session ID for context and persistence
+    pub session_id: Option<String>,
+    /// Specific bias types to check (optional)
+    pub check_types: Option<Vec<String>>,
+}
+
+/// Parameters for fallacy detection
+#[derive(Debug, Clone, Deserialize)]
+pub struct DetectFallaciesParams {
+    /// Content to analyze for fallacies
+    pub content: Option<String>,
+    /// ID of an existing thought to analyze
+    pub thought_id: Option<String>,
+    /// Session ID for context and persistence
+    pub session_id: Option<String>,
+    /// Check for formal logical fallacies (default: true)
+    #[serde(default = "default_true")]
+    pub check_formal: bool,
+    /// Check for informal logical fallacies (default: true)
+    #[serde(default = "default_true")]
+    pub check_informal: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Response for bias detection
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectBiasesResponse {
+    /// Detected biases
+    pub detections: Vec<Detection>,
+    /// Number of detections
+    pub detection_count: usize,
+    /// Length of analyzed content
+    pub analyzed_content_length: usize,
+    /// Overall assessment
+    pub overall_assessment: Option<String>,
+    /// Reasoning quality score (0.0-1.0)
+    pub reasoning_quality: Option<f64>,
+}
+
+/// Response for fallacy detection
+#[derive(Debug, Clone, Serialize)]
+pub struct DetectFallaciesResponse {
+    /// Detected fallacies
+    pub detections: Vec<Detection>,
+    /// Number of detections
+    pub detection_count: usize,
+    /// Length of analyzed content
+    pub analyzed_content_length: usize,
+    /// Overall assessment
+    pub overall_assessment: Option<String>,
+    /// Argument validity score (0.0-1.0)
+    pub argument_validity: Option<f64>,
+}
+
+/// Handle reasoning_detect_biases tool call
+async fn handle_detect_biases(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    let start = Instant::now();
+    let params: DetectBiasesParams = parse_arguments("reasoning_detect_biases", arguments)?;
+
+    // Validate: either content or thought_id must be provided
+    let (analysis_content, thought_id) = match (&params.content, &params.thought_id) {
+        (Some(content), _) => (content.clone(), params.thought_id.clone()),
+        (None, Some(thought_id)) => {
+            // Get thought content from storage
+            let thought = state
+                .storage
+                .get_thought(thought_id)
+                .await
+                .map_err(|e| McpError::ExecutionFailed {
+                    message: format!("Failed to get thought: {}", e),
+                })?
+                .ok_or_else(|| McpError::InvalidParameters {
+                    tool_name: "reasoning_detect_biases".to_string(),
+                    message: format!("Thought not found: {}", thought_id),
+                })?;
+            (thought.content, Some(thought_id.clone()))
+        }
+        (None, None) => {
+            return Err(McpError::InvalidParameters {
+                tool_name: "reasoning_detect_biases".to_string(),
+                message: "Either 'content' or 'thought_id' must be provided".to_string(),
+            });
+        }
+    };
+
+    // Get pipe name from config or use default
+    let pipe_name = state
+        .config
+        .pipes
+        .detection
+        .as_ref()
+        .and_then(|d| d.bias_pipe.clone())
+        .unwrap_or_else(|| "detect-biases-v1".to_string());
+
+    // Build messages for Langbase
+    let mut messages = vec![Message::system(BIAS_DETECTION_PROMPT)];
+
+    // Add specific bias types to check if provided
+    if let Some(check_types) = &params.check_types {
+        if !check_types.is_empty() {
+            messages.push(Message::user(format!(
+                "Focus specifically on detecting these bias types: {}\n\nContent to analyze:\n{}",
+                check_types.join(", "),
+                analysis_content
+            )));
+        } else {
+            messages.push(Message::user(format!(
+                "Analyze the following content for cognitive biases:\n\n{}",
+                analysis_content
+            )));
+        }
+    } else {
+        messages.push(Message::user(format!(
+            "Analyze the following content for cognitive biases:\n\n{}",
+            analysis_content
+        )));
+    }
+
+    // Call Langbase pipe
+    let request = PipeRequest::new(&pipe_name, messages);
+    let response =
+        state
+            .langbase
+            .call_pipe(request)
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Langbase call failed: {}", e),
+            })?;
+
+    // Parse response
+    let bias_response = BiasDetectionResponse::from_completion(&response.completion);
+
+    // Convert to Detection structs and persist
+    let mut detections = Vec::new();
+    for detected in &bias_response.detections {
+        let mut detection = Detection::new(
+            DetectionType::Bias,
+            &detected.bias_type,
+            detected.severity,
+            detected.confidence,
+            &detected.explanation,
+        );
+
+        if let Some(session_id) = &params.session_id {
+            detection = detection.with_session(session_id);
+        }
+        if let Some(tid) = &thought_id {
+            detection = detection.with_thought(tid);
+        }
+        if let Some(remediation) = &detected.remediation {
+            detection = detection.with_remediation(remediation);
+        }
+        if let Some(excerpt) = &detected.excerpt {
+            detection = detection.with_metadata(serde_json::json!({ "excerpt": excerpt }));
+        }
+
+        // Persist to storage
+        state
+            .storage
+            .create_detection(&detection)
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Failed to save detection: {}", e),
+            })?;
+
+        detections.push(detection);
+    }
+
+    let latency = start.elapsed().as_millis();
+    info!(
+        detection_count = detections.len(),
+        latency_ms = latency,
+        "Bias detection completed"
+    );
+
+    let response = DetectBiasesResponse {
+        detections,
+        detection_count: bias_response.detections.len(),
+        analyzed_content_length: analysis_content.len(),
+        overall_assessment: Some(bias_response.overall_assessment),
+        reasoning_quality: Some(bias_response.reasoning_quality),
+    };
+
+    serde_json::to_value(response).map_err(McpError::Json)
+}
+
+/// Handle reasoning_detect_fallacies tool call
+async fn handle_detect_fallacies(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    let start = Instant::now();
+    let params: DetectFallaciesParams = parse_arguments("reasoning_detect_fallacies", arguments)?;
+
+    // Validate: either content or thought_id must be provided
+    let (analysis_content, thought_id) = match (&params.content, &params.thought_id) {
+        (Some(content), _) => (content.clone(), params.thought_id.clone()),
+        (None, Some(thought_id)) => {
+            // Get thought content from storage
+            let thought = state
+                .storage
+                .get_thought(thought_id)
+                .await
+                .map_err(|e| McpError::ExecutionFailed {
+                    message: format!("Failed to get thought: {}", e),
+                })?
+                .ok_or_else(|| McpError::InvalidParameters {
+                    tool_name: "reasoning_detect_fallacies".to_string(),
+                    message: format!("Thought not found: {}", thought_id),
+                })?;
+            (thought.content, Some(thought_id.clone()))
+        }
+        (None, None) => {
+            return Err(McpError::InvalidParameters {
+                tool_name: "reasoning_detect_fallacies".to_string(),
+                message: "Either 'content' or 'thought_id' must be provided".to_string(),
+            });
+        }
+    };
+
+    // Log what types we're checking
+    info!(
+        check_formal = %params.check_formal,
+        check_informal = %params.check_informal,
+        "Detecting fallacies"
+    );
+
+    // Get pipe name from config or use default
+    let pipe_name = state
+        .config
+        .pipes
+        .detection
+        .as_ref()
+        .and_then(|d| d.fallacy_pipe.clone())
+        .unwrap_or_else(|| "detect-fallacies-v1".to_string());
+
+    // Build messages for Langbase
+    let mut messages = vec![Message::system(FALLACY_DETECTION_PROMPT)];
+
+    // Build instruction based on what types to check
+    let check_instruction = match (params.check_formal, params.check_informal) {
+        (true, true) => "Check for both formal and informal logical fallacies.".to_string(),
+        (true, false) => "Focus only on formal logical fallacies (structural errors).".to_string(),
+        (false, true) => {
+            "Focus only on informal logical fallacies (content/context errors).".to_string()
+        }
+        (false, false) => {
+            return Err(McpError::InvalidParameters {
+                tool_name: "reasoning_detect_fallacies".to_string(),
+                message: "At least one of check_formal or check_informal must be true".to_string(),
+            });
+        }
+    };
+
+    messages.push(Message::user(format!(
+        "{}\n\nContent to analyze:\n{}",
+        check_instruction, analysis_content
+    )));
+
+    // Call Langbase pipe
+    let request = PipeRequest::new(&pipe_name, messages);
+    let response =
+        state
+            .langbase
+            .call_pipe(request)
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Langbase call failed: {}", e),
+            })?;
+
+    // Parse response
+    let fallacy_response = FallacyDetectionResponse::from_completion(&response.completion);
+
+    // Convert to Detection structs and persist
+    let mut detections = Vec::new();
+    for detected in &fallacy_response.detections {
+        // Filter based on check_formal/check_informal params
+        let is_formal = detected.category.to_lowercase() == "formal";
+        if (is_formal && !params.check_formal) || (!is_formal && !params.check_informal) {
+            continue;
+        }
+
+        let mut detection = Detection::new(
+            DetectionType::Fallacy,
+            &detected.fallacy_type,
+            detected.severity,
+            detected.confidence,
+            &detected.explanation,
+        );
+
+        if let Some(session_id) = &params.session_id {
+            detection = detection.with_session(session_id);
+        }
+        if let Some(tid) = &thought_id {
+            detection = detection.with_thought(tid);
+        }
+        if let Some(remediation) = &detected.remediation {
+            detection = detection.with_remediation(remediation);
+        }
+
+        // Store category and excerpt in metadata
+        let mut meta = serde_json::Map::new();
+        meta.insert("category".to_string(), serde_json::json!(detected.category));
+        if let Some(excerpt) = &detected.excerpt {
+            meta.insert("excerpt".to_string(), serde_json::json!(excerpt));
+        }
+        detection = detection.with_metadata(serde_json::Value::Object(meta));
+
+        // Persist to storage
+        state
+            .storage
+            .create_detection(&detection)
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Failed to save detection: {}", e),
+            })?;
+
+        detections.push(detection);
+    }
+
+    let latency = start.elapsed().as_millis();
+    info!(
+        detection_count = detections.len(),
+        latency_ms = latency,
+        "Fallacy detection completed"
+    );
+
+    let response = DetectFallaciesResponse {
+        detections,
+        detection_count: fallacy_response.detections.len(),
+        analyzed_content_length: analysis_content.len(),
+        overall_assessment: Some(fallacy_response.overall_assessment),
+        argument_validity: Some(fallacy_response.argument_validity),
+    };
+
+    serde_json::to_value(response).map_err(McpError::Json)
 }
 
 // ============================================================================
@@ -425,6 +716,41 @@ fn parse_arguments<T: serde::de::DeserializeOwned>(
             message: "Missing arguments".to_string(),
         }),
     }
+}
+
+/// Generic handler that executes a mode operation with consistent error handling.
+///
+/// This helper reduces boilerplate by handling:
+/// - Argument parsing with typed deserialization
+/// - Error conversion to McpError
+/// - Result serialization to JSON Value
+///
+/// # Type Parameters
+/// - `P`: Parameter type (must implement DeserializeOwned)
+/// - `R`: Result type (must implement Serialize)
+/// - `E`: Error type (must implement Display)
+/// - `F`: Async operation that takes P and returns Result<R, E>
+async fn execute_handler<P, R, E, F, Fut>(
+    tool_name: &str,
+    arguments: Option<Value>,
+    operation: F,
+) -> McpResult<Value>
+where
+    P: serde::de::DeserializeOwned,
+    R: Serialize,
+    E: std::fmt::Display,
+    F: FnOnce(P) -> Fut,
+    Fut: std::future::Future<Output = Result<R, E>>,
+{
+    let params: P = parse_arguments(tool_name, arguments)?;
+
+    let result = operation(params)
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: e.to_string(),
+        })?;
+
+    serde_json::to_value(result).map_err(McpError::Json)
 }
 
 #[cfg(test)]
@@ -646,5 +972,136 @@ mod tests {
         assert_eq!(params.max_iterations, 5);
         assert_eq!(params.quality_threshold, 0.9);
         assert!(params.include_chain);
+    }
+
+    // ============================================================================
+    // Phase 4 - Detection parameter parsing tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_detect_biases_params_with_content() {
+        let args = Some(json!({
+            "content": "I think this is obviously the best solution because everyone agrees."
+        }));
+
+        let result: McpResult<DetectBiasesParams> =
+            parse_arguments("reasoning_detect_biases", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(
+            params.content,
+            Some(
+                "I think this is obviously the best solution because everyone agrees.".to_string()
+            )
+        );
+        assert!(params.thought_id.is_none());
+        assert!(params.session_id.is_none());
+        assert!(params.check_types.is_none());
+    }
+
+    #[test]
+    fn test_parse_detect_biases_params_with_thought_id() {
+        let args = Some(json!({
+            "thought_id": "thought-123",
+            "session_id": "sess-456"
+        }));
+
+        let result: McpResult<DetectBiasesParams> =
+            parse_arguments("reasoning_detect_biases", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(params.content.is_none());
+        assert_eq!(params.thought_id, Some("thought-123".to_string()));
+        assert_eq!(params.session_id, Some("sess-456".to_string()));
+    }
+
+    #[test]
+    fn test_parse_detect_biases_params_with_check_types() {
+        let args = Some(json!({
+            "content": "Some content to analyze",
+            "check_types": ["confirmation_bias", "anchoring_bias"]
+        }));
+
+        let result: McpResult<DetectBiasesParams> =
+            parse_arguments("reasoning_detect_biases", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(params.check_types.is_some());
+        let check_types = params.check_types.unwrap();
+        assert_eq!(check_types.len(), 2);
+        assert!(check_types.contains(&"confirmation_bias".to_string()));
+        assert!(check_types.contains(&"anchoring_bias".to_string()));
+    }
+
+    #[test]
+    fn test_parse_detect_fallacies_params_with_content() {
+        let args = Some(json!({
+            "content": "You can't trust his argument because he's not a scientist."
+        }));
+
+        let result: McpResult<DetectFallaciesParams> =
+            parse_arguments("reasoning_detect_fallacies", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(
+            params.content,
+            Some("You can't trust his argument because he's not a scientist.".to_string())
+        );
+        assert!(params.thought_id.is_none());
+        // Defaults should be true
+        assert!(params.check_formal);
+        assert!(params.check_informal);
+    }
+
+    #[test]
+    fn test_parse_detect_fallacies_params_with_thought_id() {
+        let args = Some(json!({
+            "thought_id": "thought-789"
+        }));
+
+        let result: McpResult<DetectFallaciesParams> =
+            parse_arguments("reasoning_detect_fallacies", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(params.content.is_none());
+        assert_eq!(params.thought_id, Some("thought-789".to_string()));
+    }
+
+    #[test]
+    fn test_parse_detect_fallacies_params_with_custom_checks() {
+        let args = Some(json!({
+            "content": "Some argument",
+            "check_formal": false,
+            "check_informal": true
+        }));
+
+        let result: McpResult<DetectFallaciesParams> =
+            parse_arguments("reasoning_detect_fallacies", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(!params.check_formal);
+        assert!(params.check_informal);
+    }
+
+    #[test]
+    fn test_parse_detect_fallacies_params_defaults() {
+        let args = Some(json!({
+            "content": "Test content"
+        }));
+
+        let result: McpResult<DetectFallaciesParams> =
+            parse_arguments("reasoning_detect_fallacies", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        // Default values should be true
+        assert!(params.check_formal);
+        assert!(params.check_informal);
     }
 }

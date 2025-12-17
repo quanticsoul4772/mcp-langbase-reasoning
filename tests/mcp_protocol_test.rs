@@ -116,7 +116,9 @@ mod tools_list_tests {
 
         assert_valid_jsonrpc_response(&response);
 
-        let tools = response["result"]["tools"].as_array().expect("tools should be array");
+        let tools = response["result"]["tools"]
+            .as_array()
+            .expect("tools should be array");
         assert!(!tools.is_empty(), "Should have at least one tool");
 
         let linear_tool = &tools[0];

@@ -8,9 +8,7 @@ use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::BACKTRACKING_PROMPT;
-use crate::storage::{
-    Checkpoint, SnapshotType, SqliteStorage, StateSnapshot, Storage, Thought,
-};
+use crate::storage::{Checkpoint, SnapshotType, SqliteStorage, StateSnapshot, Storage, Thought};
 
 /// Input parameters for backtracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,15 +30,22 @@ fn default_confidence() -> f64 {
     0.8
 }
 
-/// Result of backtracking operation
+/// Result of backtracking operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktrackingResult {
+    /// The ID of the new thought created after backtracking.
     pub thought_id: String,
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the checkpoint that was restored.
     pub checkpoint_restored: String,
+    /// The new thought content generated after restoration.
     pub content: String,
+    /// Confidence in the new thought (0.0-1.0).
     pub confidence: f64,
+    /// Optional new branch ID if branching from checkpoint.
     pub new_branch_id: Option<String>,
+    /// The ID of the state snapshot created for this backtrack.
     pub snapshot_id: String,
 }
 
@@ -84,10 +89,13 @@ impl BacktrackingResponse {
     }
 }
 
-/// Backtracking mode handler
+/// Backtracking mode handler for checkpoint-based exploration.
 pub struct BacktrackingMode {
+    /// Storage backend for persisting data.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered reasoning.
     langbase: LangbaseClient,
+    /// The Langbase pipe name for backtracking.
     pipe_name: String,
 }
 
@@ -131,12 +139,13 @@ impl BacktrackingMode {
                     }
                     .into());
                 }
-                self.storage.get_session(id).await?.ok_or_else(|| {
-                    ToolError::Validation {
+                self.storage
+                    .get_session(id)
+                    .await?
+                    .ok_or_else(|| ToolError::Validation {
                         field: "session_id".to_string(),
                         reason: format!("Session not found: {}", id),
-                    }
-                })?
+                    })?
             }
             None => self
                 .storage
@@ -144,7 +153,10 @@ impl BacktrackingMode {
                 .await?
                 .ok_or_else(|| ToolError::Validation {
                     field: "checkpoint_id".to_string(),
-                    reason: format!("Session for checkpoint not found: {}", checkpoint.session_id),
+                    reason: format!(
+                        "Session for checkpoint not found: {}",
+                        checkpoint.session_id
+                    ),
                 })?,
         };
 
@@ -570,8 +582,7 @@ mod tests {
 
     #[test]
     fn test_backtracking_params_unicode_direction() {
-        let params = BacktrackingParams::new("cp-1")
-            .with_direction("探索新方向 🔄");
+        let params = BacktrackingParams::new("cp-1").with_direction("探索新方向 🔄");
 
         assert_eq!(params.new_direction, Some("探索新方向 🔄".to_string()));
     }

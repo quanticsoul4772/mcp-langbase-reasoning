@@ -17,10 +17,16 @@ use tracing::{debug, info, warn};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
-use crate::prompts::{GOT_AGGREGATE_PROMPT, GOT_GENERATE_PROMPT, GOT_REFINE_PROMPT, GOT_SCORE_PROMPT};
+use crate::prompts::{
+    GOT_AGGREGATE_PROMPT, GOT_GENERATE_PROMPT, GOT_REFINE_PROMPT, GOT_SCORE_PROMPT,
+};
 use crate::storage::{
     EdgeType, GraphEdge, GraphNode, Invocation, NodeType, Session, SqliteStorage, Storage,
 };
+
+#[cfg(test)]
+#[path = "got_tests.rs"]
+mod got_tests;
 
 /// Configuration for GoT operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,9 +95,13 @@ pub struct GotInitParams {
 /// Result of initializing a GoT graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotInitResult {
+    /// The session ID for the graph.
     pub session_id: String,
+    /// The ID of the root node created.
     pub root_node_id: String,
+    /// The initial thought content.
     pub content: String,
+    /// The effective configuration for this graph.
     pub config: GotConfig,
 }
 
@@ -115,22 +125,31 @@ pub struct GotGenerateParams {
     pub problem: Option<String>,
 }
 
-/// A generated continuation
+/// A generated continuation from a source node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneratedContinuation {
+    /// The ID of the newly created node.
     pub node_id: String,
+    /// The thought content of this continuation.
     pub content: String,
+    /// Confidence score for this continuation (0.0-1.0).
     pub confidence: f64,
+    /// Novelty score indicating how different this is from the source (0.0-1.0).
     pub novelty: f64,
+    /// Explanation for why this continuation was generated.
     pub rationale: String,
 }
 
-/// Result of generating continuations
+/// Result of generating continuations from a node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotGenerateResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the node that continuations were generated from.
     pub source_node_id: String,
+    /// The generated continuations.
     pub continuations: Vec<GeneratedContinuation>,
+    /// The number of continuations requested (k).
     pub count: usize,
 }
 
@@ -173,7 +192,8 @@ impl GenerateResponse {
                         thought: completion.to_string(),
                         confidence: 0.7,
                         novelty: 0.5,
-                        rationale: "Generated from plain text response (parse fallback)".to_string(),
+                        rationale: "Generated from plain text response (parse fallback)"
+                            .to_string(),
                     }],
                     metadata: None,
                 }
@@ -198,23 +218,33 @@ pub struct GotScoreParams {
     pub problem: Option<String>,
 }
 
-/// Score breakdown for a node
+/// Score breakdown for a node across multiple quality dimensions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoreBreakdown {
+    /// How relevant the thought is to the problem (0.0-1.0).
     pub relevance: f64,
+    /// How logically valid and sound the reasoning is (0.0-1.0).
     pub validity: f64,
+    /// How deep and substantive the analysis is (0.0-1.0).
     pub depth: f64,
+    /// How novel or creative the thought is (0.0-1.0).
     pub novelty: f64,
 }
 
-/// Result of scoring a node
+/// Result of scoring a node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotScoreResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the scored node.
     pub node_id: String,
+    /// The overall quality score (0.0-1.0).
     pub overall_score: f64,
+    /// Detailed breakdown of the score across dimensions.
     pub breakdown: ScoreBreakdown,
+    /// Whether this node is a good candidate for a terminal conclusion.
     pub is_terminal_candidate: bool,
+    /// Explanation for the assigned score.
     pub rationale: String,
 }
 
@@ -291,15 +321,22 @@ pub struct GotAggregateParams {
     pub problem: Option<String>,
 }
 
-/// Result of aggregating nodes
+/// Result of aggregating multiple nodes into a unified insight.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotAggregateResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the newly created aggregated node.
     pub aggregated_node_id: String,
+    /// The synthesized thought content.
     pub content: String,
+    /// Confidence in the aggregated result (0.0-1.0).
     pub confidence: f64,
+    /// IDs of the source nodes that were aggregated.
     pub source_nodes: Vec<String>,
+    /// Description of how the synthesis was performed.
     pub synthesis_approach: String,
+    /// Conflicts or contradictions that were resolved during aggregation.
     pub conflicts_resolved: Vec<String>,
 }
 
@@ -359,15 +396,22 @@ pub struct GotRefineParams {
     pub problem: Option<String>,
 }
 
-/// Result of refining a node
+/// Result of refining a node through self-critique.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotRefineResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the original node that was refined.
     pub original_node_id: String,
+    /// The ID of the newly created refined node.
     pub refined_node_id: String,
+    /// The improved thought content.
     pub content: String,
+    /// Confidence in the refined result (0.0-1.0).
     pub confidence: f64,
+    /// List of improvements made during refinement.
     pub improvements_made: Vec<String>,
+    /// Change in quality score (positive means improvement).
     pub quality_delta: f64,
 }
 
@@ -425,13 +469,18 @@ pub struct GotPruneParams {
     pub threshold: Option<f64>,
 }
 
-/// Result of pruning nodes
+/// Result of pruning low-scoring nodes from the graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotPruneResult {
+    /// The session ID.
     pub session_id: String,
+    /// Number of nodes that were pruned.
     pub pruned_count: usize,
+    /// Number of nodes remaining after pruning.
     pub remaining_count: usize,
+    /// The score threshold that was used for pruning.
     pub threshold_used: f64,
+    /// IDs of the nodes that were pruned.
     pub pruned_node_ids: Vec<String>,
 }
 
@@ -449,20 +498,27 @@ pub struct GotFinalizeParams {
     pub terminal_node_ids: Vec<String>,
 }
 
-/// A terminal conclusion node
+/// A terminal conclusion node representing a final insight.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConclusion {
+    /// The ID of the terminal node.
     pub node_id: String,
+    /// The thought content of the conclusion.
     pub content: String,
+    /// The quality score of this node, if scored.
     pub score: Option<f64>,
+    /// The depth in the graph where this conclusion resides.
     pub depth: i32,
 }
 
-/// Result of finalizing the graph
+/// Result of finalizing the graph and extracting conclusions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotFinalizeResult {
+    /// The session ID.
     pub session_id: String,
+    /// Number of terminal nodes marked as conclusions.
     pub terminal_count: usize,
+    /// The final conclusions extracted from the graph.
     pub conclusions: Vec<TerminalConclusion>,
 }
 
@@ -477,17 +533,26 @@ pub struct GotGetStateParams {
     pub session_id: String,
 }
 
-/// Graph state summary
+/// Graph state summary showing the current structure and status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GotStateResult {
+    /// The session ID.
     pub session_id: String,
+    /// Total number of nodes in the graph.
     pub total_nodes: usize,
+    /// Number of currently active (explorable) nodes.
     pub active_nodes: usize,
+    /// Number of terminal (conclusion) nodes.
     pub terminal_nodes: usize,
+    /// Total number of edges connecting nodes.
     pub total_edges: usize,
+    /// Maximum depth reached in the graph.
     pub max_depth: i32,
+    /// IDs of all root nodes.
     pub root_node_ids: Vec<String>,
+    /// IDs of all currently active nodes.
     pub active_node_ids: Vec<String>,
+    /// IDs of all terminal nodes.
     pub terminal_node_ids: Vec<String>,
 }
 
@@ -495,14 +560,21 @@ pub struct GotStateResult {
 // GoT Mode Handler
 // ============================================================================
 
-/// Graph-of-Thoughts mode handler
+/// Graph-of-Thoughts mode handler for managing complex reasoning graphs.
 pub struct GotMode {
+    /// Storage backend for persisting graph data.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered operations.
     langbase: LangbaseClient,
+    /// Pipe name for the generate operation.
     generate_pipe: String,
+    /// Pipe name for the score operation.
     score_pipe: String,
+    /// Pipe name for the aggregate operation.
     aggregate_pipe: String,
+    /// Pipe name for the refine operation.
     refine_pipe: String,
+    /// Configuration for GoT operations.
     config: GotConfig,
 }
 
@@ -617,20 +689,27 @@ impl GotMode {
 
         // Get source node (specified or first active)
         let source_node = match &params.node_id {
-            Some(id) => self
-                .storage
-                .get_graph_node(id)
-                .await?
-                .ok_or_else(|| ToolError::Validation {
-                    field: "node_id".to_string(),
-                    reason: format!("Node not found: {}", id),
-                })?,
+            Some(id) => {
+                self.storage
+                    .get_graph_node(id)
+                    .await?
+                    .ok_or_else(|| ToolError::Validation {
+                        field: "node_id".to_string(),
+                        reason: format!("Node not found: {}", id),
+                    })?
+            }
             None => {
-                let active = self.storage.get_active_graph_nodes(&params.session_id).await?;
-                active.into_iter().next().ok_or_else(|| ToolError::Validation {
-                    field: "session_id".to_string(),
-                    reason: "No active nodes in session".to_string(),
-                })?
+                let active = self
+                    .storage
+                    .get_active_graph_nodes(&params.session_id)
+                    .await?;
+                active
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| ToolError::Validation {
+                        field: "session_id".to_string(),
+                        reason: "No active nodes in session".to_string(),
+                    })?
             }
         };
 
@@ -645,16 +724,14 @@ impl GotMode {
         if source_node.depth >= self.config.max_depth as i32 {
             return Err(ToolError::Validation {
                 field: "depth".to_string(),
-                reason: format!(
-                    "Maximum depth {} reached",
-                    self.config.max_depth
-                ),
+                reason: format!("Maximum depth {} reached", self.config.max_depth),
             }
             .into());
         }
 
         // Build messages for Langbase
-        let messages = self.build_generate_messages(&source_node, params.k, params.problem.as_deref());
+        let messages =
+            self.build_generate_messages(&source_node, params.k, params.problem.as_deref());
 
         // Log invocation
         let mut invocation = Invocation::new(
@@ -831,14 +908,14 @@ impl GotMode {
         // Get all nodes
         let mut nodes = Vec::new();
         for id in &params.node_ids {
-            let node = self
-                .storage
-                .get_graph_node(id)
-                .await?
-                .ok_or_else(|| ToolError::Validation {
-                    field: "node_ids".to_string(),
-                    reason: format!("Node not found: {}", id),
-                })?;
+            let node =
+                self.storage
+                    .get_graph_node(id)
+                    .await?
+                    .ok_or_else(|| ToolError::Validation {
+                        field: "node_ids".to_string(),
+                        reason: format!("Node not found: {}", id),
+                    })?;
             nodes.push(node);
         }
 
@@ -1023,7 +1100,10 @@ impl GotMode {
         let threshold = params.threshold.unwrap_or(self.config.prune_threshold);
 
         // Get all nodes for session
-        let nodes = self.storage.get_session_graph_nodes(&params.session_id).await?;
+        let nodes = self
+            .storage
+            .get_session_graph_nodes(&params.session_id)
+            .await?;
 
         // Find nodes to prune (low score, not root, not terminal)
         let mut pruned_ids = Vec::new();
@@ -1086,11 +1166,11 @@ impl GotMode {
 
         let nodes_to_finalize = if params.terminal_node_ids.is_empty() {
             // Auto-select best active nodes as terminal
-            let active = self.storage.get_active_graph_nodes(&params.session_id).await?;
-            let mut scored: Vec<_> = active
-                .into_iter()
-                .filter(|n| n.score.is_some())
-                .collect();
+            let active = self
+                .storage
+                .get_active_graph_nodes(&params.session_id)
+                .await?;
+            let mut scored: Vec<_> = active.into_iter().filter(|n| n.score.is_some()).collect();
             scored.sort_by(|a, b| {
                 b.score
                     .unwrap_or(0.0)
@@ -1103,14 +1183,12 @@ impl GotMode {
             // Use specified nodes
             let mut nodes = Vec::new();
             for id in &params.terminal_node_ids {
-                let node = self
-                    .storage
-                    .get_graph_node(id)
-                    .await?
-                    .ok_or_else(|| ToolError::Validation {
+                let node = self.storage.get_graph_node(id).await?.ok_or_else(|| {
+                    ToolError::Validation {
                         field: "terminal_node_ids".to_string(),
                         reason: format!("Node not found: {}", id),
-                    })?;
+                    }
+                })?;
                 nodes.push(node);
             }
             nodes
@@ -1150,7 +1228,10 @@ impl GotMode {
 
     /// Get current graph state
     pub async fn get_state(&self, params: GotGetStateParams) -> AppResult<GotStateResult> {
-        let nodes = self.storage.get_session_graph_nodes(&params.session_id).await?;
+        let nodes = self
+            .storage
+            .get_session_graph_nodes(&params.session_id)
+            .await?;
         let edges = self.storage.get_session_edges(&params.session_id).await?;
 
         let active_nodes: Vec<_> = nodes.iter().filter(|n| n.is_active).collect();
@@ -1177,7 +1258,8 @@ impl GotMode {
         let edges = self.storage.get_session_edges(session_id).await?;
 
         // Build adjacency list
-        let mut adj: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut adj: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         for edge in &edges {
             adj.entry(edge.from_node.clone())
                 .or_default()
@@ -1214,9 +1296,7 @@ impl GotMode {
         }
 
         for node in &nodes {
-            if !visited.contains(&node.id)
-                && dfs(&node.id, &adj, &mut visited, &mut rec_stack)
-            {
+            if !visited.contains(&node.id) && dfs(&node.id, &adj, &mut visited, &mut rec_stack) {
                 return Ok(true);
             }
         }
@@ -1319,6 +1399,7 @@ impl GotMode {
 // ============================================================================
 
 impl GotInitParams {
+    /// Create new initialization parameters with the given content.
     pub fn new(content: impl Into<String>) -> Self {
         Self {
             content: content.into(),
@@ -1328,16 +1409,19 @@ impl GotInitParams {
         }
     }
 
+    /// Set the problem context.
     pub fn with_problem(mut self, problem: impl Into<String>) -> Self {
         self.problem = Some(problem.into());
         self
     }
 
+    /// Set the session ID.
     pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
         self.session_id = Some(session_id.into());
         self
     }
 
+    /// Set the configuration overrides.
     pub fn with_config(mut self, config: GotConfig) -> Self {
         self.config = Some(config);
         self
@@ -1345,6 +1429,7 @@ impl GotInitParams {
 }
 
 impl GotGenerateParams {
+    /// Create new generate parameters for the given session.
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1354,16 +1439,19 @@ impl GotGenerateParams {
         }
     }
 
+    /// Set the specific node to generate from.
     pub fn with_node(mut self, node_id: impl Into<String>) -> Self {
         self.node_id = Some(node_id.into());
         self
     }
 
+    /// Set the number of continuations to generate.
     pub fn with_k(mut self, k: usize) -> Self {
         self.k = k;
         self
     }
 
+    /// Set the problem context.
     pub fn with_problem(mut self, problem: impl Into<String>) -> Self {
         self.problem = Some(problem.into());
         self
@@ -1371,6 +1459,7 @@ impl GotGenerateParams {
 }
 
 impl GotScoreParams {
+    /// Create new score parameters for the given session and node.
     pub fn new(session_id: impl Into<String>, node_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1379,6 +1468,7 @@ impl GotScoreParams {
         }
     }
 
+    /// Set the problem context.
     pub fn with_problem(mut self, problem: impl Into<String>) -> Self {
         self.problem = Some(problem.into());
         self
@@ -1386,6 +1476,7 @@ impl GotScoreParams {
 }
 
 impl GotAggregateParams {
+    /// Create new aggregate parameters for the given session and nodes.
     pub fn new(session_id: impl Into<String>, node_ids: Vec<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1394,6 +1485,7 @@ impl GotAggregateParams {
         }
     }
 
+    /// Set the problem context.
     pub fn with_problem(mut self, problem: impl Into<String>) -> Self {
         self.problem = Some(problem.into());
         self
@@ -1401,6 +1493,7 @@ impl GotAggregateParams {
 }
 
 impl GotRefineParams {
+    /// Create new refine parameters for the given session and node.
     pub fn new(session_id: impl Into<String>, node_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1409,6 +1502,7 @@ impl GotRefineParams {
         }
     }
 
+    /// Set the problem context.
     pub fn with_problem(mut self, problem: impl Into<String>) -> Self {
         self.problem = Some(problem.into());
         self
@@ -1416,6 +1510,7 @@ impl GotRefineParams {
 }
 
 impl GotPruneParams {
+    /// Create new prune parameters for the given session.
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1423,6 +1518,7 @@ impl GotPruneParams {
         }
     }
 
+    /// Set the score threshold for pruning.
     pub fn with_threshold(mut self, threshold: f64) -> Self {
         self.threshold = Some(threshold);
         self
@@ -1430,6 +1526,7 @@ impl GotPruneParams {
 }
 
 impl GotFinalizeParams {
+    /// Create new finalize parameters for the given session.
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
@@ -1437,6 +1534,7 @@ impl GotFinalizeParams {
         }
     }
 
+    /// Set the specific nodes to mark as terminal conclusions.
     pub fn with_terminal_nodes(mut self, node_ids: Vec<String>) -> Self {
         self.terminal_node_ids = node_ids;
         self
@@ -1444,605 +1542,10 @@ impl GotFinalizeParams {
 }
 
 impl GotGetStateParams {
+    /// Create new get state parameters for the given session.
     pub fn new(session_id: impl Into<String>) -> Self {
         Self {
             session_id: session_id.into(),
         }
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_got_config_default() {
-        let config = GotConfig::default();
-        assert_eq!(config.max_nodes, 100);
-        assert_eq!(config.max_depth, 10);
-        assert_eq!(config.default_k, 3);
-        assert!((config.prune_threshold - 0.3).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_got_init_params_new() {
-        let params = GotInitParams::new("Test thought");
-        assert_eq!(params.content, "Test thought");
-        assert!(params.problem.is_none());
-        assert!(params.session_id.is_none());
-        assert!(params.config.is_none());
-    }
-
-    #[test]
-    fn test_got_init_params_with_problem() {
-        let params = GotInitParams::new("Test").with_problem("Solve X");
-        assert_eq!(params.problem, Some("Solve X".to_string()));
-    }
-
-    #[test]
-    fn test_got_init_params_with_session() {
-        let params = GotInitParams::new("Test").with_session("sess-123");
-        assert_eq!(params.session_id, Some("sess-123".to_string()));
-    }
-
-    #[test]
-    fn test_got_generate_params_new() {
-        let params = GotGenerateParams::new("sess-123");
-        assert_eq!(params.session_id, "sess-123");
-        assert!(params.node_id.is_none());
-        assert_eq!(params.k, 3);
-    }
-
-    #[test]
-    fn test_got_generate_params_with_node() {
-        let params = GotGenerateParams::new("sess-123").with_node("node-1");
-        assert_eq!(params.node_id, Some("node-1".to_string()));
-    }
-
-    #[test]
-    fn test_got_generate_params_with_k() {
-        let params = GotGenerateParams::new("sess-123").with_k(5);
-        assert_eq!(params.k, 5);
-    }
-
-    #[test]
-    fn test_got_score_params_new() {
-        let params = GotScoreParams::new("sess-123", "node-1");
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, "node-1");
-        assert!(params.problem.is_none());
-    }
-
-    #[test]
-    fn test_got_aggregate_params_new() {
-        let params = GotAggregateParams::new(
-            "sess-123",
-            vec!["node-1".to_string(), "node-2".to_string()],
-        );
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_ids.len(), 2);
-    }
-
-    #[test]
-    fn test_got_refine_params_new() {
-        let params = GotRefineParams::new("sess-123", "node-1");
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, "node-1");
-    }
-
-    #[test]
-    fn test_got_prune_params_new() {
-        let params = GotPruneParams::new("sess-123");
-        assert_eq!(params.session_id, "sess-123");
-        assert!(params.threshold.is_none());
-    }
-
-    #[test]
-    fn test_got_prune_params_with_threshold() {
-        let params = GotPruneParams::new("sess-123").with_threshold(0.5);
-        assert_eq!(params.threshold, Some(0.5));
-    }
-
-    #[test]
-    fn test_got_finalize_params_new() {
-        let params = GotFinalizeParams::new("sess-123");
-        assert_eq!(params.session_id, "sess-123");
-        assert!(params.terminal_node_ids.is_empty());
-    }
-
-    #[test]
-    fn test_got_finalize_params_with_terminal_nodes() {
-        let params = GotFinalizeParams::new("sess-123")
-            .with_terminal_nodes(vec!["node-1".to_string(), "node-2".to_string()]);
-        assert_eq!(params.terminal_node_ids.len(), 2);
-    }
-
-    #[test]
-    fn test_generate_response_from_json() {
-        let json = r#"{"continuations": [{"thought": "Idea 1", "confidence": 0.9, "novelty": 0.8, "rationale": "Test"}]}"#;
-        let resp = GenerateResponse::from_completion(json);
-        assert_eq!(resp.continuations.len(), 1);
-        assert_eq!(resp.continuations[0].thought, "Idea 1");
-        assert_eq!(resp.continuations[0].confidence, 0.9);
-    }
-
-    #[test]
-    fn test_generate_response_from_plain_text() {
-        let text = "Plain text response";
-        let resp = GenerateResponse::from_completion(text);
-        assert_eq!(resp.continuations.len(), 1);
-        assert_eq!(resp.continuations[0].thought, "Plain text response");
-    }
-
-    #[test]
-    fn test_score_response_from_json() {
-        let json = r#"{"overall_score": 0.85, "breakdown": {"relevance": 0.9, "validity": 0.8, "depth": 0.7, "novelty": 0.6}, "is_terminal_candidate": true, "rationale": "Good"}"#;
-        let resp = ScoreResponse::from_completion(json);
-        assert_eq!(resp.overall_score, 0.85);
-        assert!(resp.is_terminal_candidate);
-        assert_eq!(resp.breakdown.relevance, 0.9);
-    }
-
-    #[test]
-    fn test_score_response_from_plain_text() {
-        let text = "Invalid";
-        let resp = ScoreResponse::from_completion(text);
-        assert_eq!(resp.overall_score, 0.5);
-        assert!(!resp.is_terminal_candidate);
-    }
-
-    #[test]
-    fn test_aggregate_response_from_json() {
-        let json = r#"{"aggregated_thought": "Combined insight", "confidence": 0.88, "synthesis_approach": "Merge"}"#;
-        let resp = AggregateResponse::from_completion(json);
-        assert_eq!(resp.aggregated_thought, "Combined insight");
-        assert_eq!(resp.confidence, 0.88);
-    }
-
-    #[test]
-    fn test_refine_response_from_json() {
-        let json = r#"{"refined_thought": "Improved", "confidence": 0.9, "improvements_made": ["Clarity"], "quality_delta": 0.15}"#;
-        let resp = RefineResponse::from_completion(json);
-        assert_eq!(resp.refined_thought, "Improved");
-        assert_eq!(resp.quality_delta, 0.15);
-        assert_eq!(resp.improvements_made.len(), 1);
-    }
-
-    #[test]
-    fn test_got_state_result_serialize() {
-        let result = GotStateResult {
-            session_id: "sess-123".to_string(),
-            total_nodes: 10,
-            active_nodes: 3,
-            terminal_nodes: 2,
-            total_edges: 12,
-            max_depth: 4,
-            root_node_ids: vec!["root-1".to_string()],
-            active_node_ids: vec!["a1".to_string(), "a2".to_string(), "a3".to_string()],
-            terminal_node_ids: vec!["t1".to_string(), "t2".to_string()],
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"total_nodes\":10"));
-        assert!(json.contains("\"max_depth\":4"));
-    }
-
-    // ============================================================================
-    // Additional Response Parsing Tests
-    // ============================================================================
-
-    #[test]
-    fn test_generate_response_multiple_continuations() {
-        let json = r#"{
-            "continuations": [
-                {"thought": "Idea 1", "confidence": 0.9, "novelty": 0.8, "rationale": "First approach"},
-                {"thought": "Idea 2", "confidence": 0.7, "novelty": 0.9, "rationale": "Second approach"},
-                {"thought": "Idea 3", "confidence": 0.8, "novelty": 0.6, "rationale": "Third approach"}
-            ]
-        }"#;
-        let resp = GenerateResponse::from_completion(json);
-        assert_eq!(resp.continuations.len(), 3);
-        assert_eq!(resp.continuations[1].thought, "Idea 2");
-        assert_eq!(resp.continuations[2].novelty, 0.6);
-    }
-
-    #[test]
-    fn test_generate_response_with_metadata() {
-        let json = r#"{
-            "continuations": [{"thought": "Test", "confidence": 0.8, "novelty": 0.5, "rationale": "Reason"}],
-            "metadata": {"source": "test", "version": 1}
-        }"#;
-        let resp = GenerateResponse::from_completion(json);
-        assert!(resp.metadata.is_some());
-        assert_eq!(resp.continuations.len(), 1);
-    }
-
-    #[test]
-    fn test_generate_response_with_defaults() {
-        let json = r#"{"continuations": [{"thought": "Minimal"}]}"#;
-        let resp = GenerateResponse::from_completion(json);
-        assert_eq!(resp.continuations[0].confidence, 0.7); // default
-        assert_eq!(resp.continuations[0].novelty, 0.0); // default
-    }
-
-    #[test]
-    fn test_score_response_partial_breakdown() {
-        let json = r#"{
-            "overall_score": 0.75,
-            "breakdown": {"relevance": 0.8},
-            "is_terminal_candidate": false,
-            "rationale": "Partial"
-        }"#;
-        let resp = ScoreResponse::from_completion(json);
-        assert_eq!(resp.overall_score, 0.75);
-        assert_eq!(resp.breakdown.relevance, 0.8);
-        assert_eq!(resp.breakdown.validity, 0.5); // default from default_score()
-    }
-
-    #[test]
-    fn test_aggregate_response_plain_text() {
-        let text = "Non-JSON aggregate response";
-        let resp = AggregateResponse::from_completion(text);
-        assert_eq!(resp.aggregated_thought, text);
-        assert_eq!(resp.confidence, 0.7); // default
-    }
-
-    #[test]
-    fn test_refine_response_plain_text() {
-        let text = "Improved thought content";
-        let resp = RefineResponse::from_completion(text);
-        assert_eq!(resp.refined_thought, text);
-        // Fallback includes a default improvement
-        assert_eq!(resp.improvements_made.len(), 1);
-        assert!(resp.improvements_made[0].contains("fallback"));
-    }
-
-    #[test]
-    fn test_refine_response_with_all_fields() {
-        let json = r#"{
-            "refined_thought": "Better version",
-            "confidence": 0.95,
-            "improvements_made": ["Clarity", "Structure", "Evidence"],
-            "quality_delta": 0.25
-        }"#;
-        let resp = RefineResponse::from_completion(json);
-        assert_eq!(resp.refined_thought, "Better version");
-        assert_eq!(resp.confidence, 0.95);
-        assert_eq!(resp.improvements_made.len(), 3);
-        assert_eq!(resp.quality_delta, 0.25);
-    }
-
-    // ============================================================================
-    // Result Type Tests
-    // ============================================================================
-
-    #[test]
-    fn test_got_init_result_serialize() {
-        let result = GotInitResult {
-            session_id: "sess-abc".to_string(),
-            root_node_id: "node-root".to_string(),
-            content: "Initial thought".to_string(),
-            config: GotConfig::default(),
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("sess-abc"));
-        assert!(json.contains("node-root"));
-        assert!(json.contains("Initial thought"));
-    }
-
-    #[test]
-    fn test_got_generate_result_serialize() {
-        let result = GotGenerateResult {
-            session_id: "sess-123".to_string(),
-            source_node_id: "node-1".to_string(),
-            continuations: vec![
-                GeneratedContinuation {
-                    node_id: "node-2".to_string(),
-                    content: "Continuation 1".to_string(),
-                    confidence: 0.85,
-                    novelty: 0.7,
-                    rationale: "Reason 1".to_string(),
-                },
-            ],
-            count: 1,
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"count\":1"));
-        assert!(json.contains("Continuation 1"));
-    }
-
-    #[test]
-    fn test_got_score_result_serialize() {
-        let result = GotScoreResult {
-            session_id: "sess-123".to_string(),
-            node_id: "node-1".to_string(),
-            overall_score: 0.82,
-            breakdown: ScoreBreakdown {
-                relevance: 0.9,
-                validity: 0.8,
-                depth: 0.7,
-                novelty: 0.8,
-            },
-            is_terminal_candidate: true,
-            rationale: "High quality".to_string(),
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("0.82"));
-        assert!(json.contains("is_terminal_candidate"));
-    }
-
-    #[test]
-    fn test_got_aggregate_result_serialize() {
-        let result = GotAggregateResult {
-            session_id: "sess-123".to_string(),
-            aggregated_node_id: "n-agg".to_string(),
-            content: "Synthesized insight".to_string(),
-            confidence: 0.88,
-            source_nodes: vec!["n1".to_string(), "n2".to_string()],
-            synthesis_approach: "Consensus".to_string(),
-            conflicts_resolved: vec!["Disagreement on priority".to_string()],
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("Synthesized insight"));
-        assert!(json.contains("Consensus"));
-        assert!(json.contains("conflicts_resolved"));
-    }
-
-    #[test]
-    fn test_got_refine_result_serialize() {
-        let result = GotRefineResult {
-            session_id: "sess-123".to_string(),
-            original_node_id: "n1".to_string(),
-            refined_node_id: "n1-refined".to_string(),
-            content: "Refined content with improvements".to_string(),
-            confidence: 0.9,
-            improvements_made: vec!["Clarity".to_string(), "Depth".to_string()],
-            quality_delta: 0.15,
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("quality_delta"));
-        assert!(json.contains("Refined content"));
-        assert!(json.contains("improvements_made"));
-    }
-
-    #[test]
-    fn test_got_prune_result_serialize() {
-        let result = GotPruneResult {
-            session_id: "sess-123".to_string(),
-            pruned_count: 5,
-            remaining_count: 15,
-            threshold_used: 0.3,
-            pruned_node_ids: vec!["p1".to_string(), "p2".to_string()],
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("\"pruned_count\":5"));
-        assert!(json.contains("\"remaining_count\":15"));
-        assert!(json.contains("threshold_used"));
-    }
-
-    #[test]
-    fn test_got_finalize_result_serialize() {
-        let result = GotFinalizeResult {
-            session_id: "sess-123".to_string(),
-            terminal_count: 2,
-            conclusions: vec![
-                TerminalConclusion {
-                    node_id: "t1".to_string(),
-                    content: "First conclusion".to_string(),
-                    score: Some(0.9),
-                    depth: 5,
-                },
-            ],
-        };
-        let json = serde_json::to_string(&result).unwrap();
-        assert!(json.contains("First conclusion"));
-        assert!(json.contains("terminal_count"));
-    }
-
-    // ============================================================================
-    // Config Serialization Tests
-    // ============================================================================
-
-    #[test]
-    fn test_got_config_serialize() {
-        let config = GotConfig {
-            max_nodes: 50,
-            max_depth: 5,
-            default_k: 4,
-            prune_threshold: 0.4,
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("\"max_nodes\":50"));
-        assert!(json.contains("\"max_depth\":5"));
-        assert!(json.contains("\"default_k\":4"));
-    }
-
-    #[test]
-    fn test_got_config_deserialize() {
-        let json = r#"{"max_nodes": 200, "max_depth": 15}"#;
-        let config: GotConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.max_nodes, 200);
-        assert_eq!(config.max_depth, 15);
-        assert_eq!(config.default_k, 3); // default
-        assert!((config.prune_threshold - 0.3).abs() < f64::EPSILON); // default
-    }
-
-    // ============================================================================
-    // Builder Pattern Tests
-    // ============================================================================
-
-    #[test]
-    fn test_got_init_params_builder_chain() {
-        let params = GotInitParams::new("Content")
-            .with_problem("Problem")
-            .with_session("sess-1")
-            .with_config(GotConfig {
-                max_nodes: 50,
-                ..Default::default()
-            });
-
-        assert_eq!(params.content, "Content");
-        assert_eq!(params.problem, Some("Problem".to_string()));
-        assert_eq!(params.session_id, Some("sess-1".to_string()));
-        assert!(params.config.is_some());
-        assert_eq!(params.config.unwrap().max_nodes, 50);
-    }
-
-    #[test]
-    fn test_got_generate_params_builder_chain() {
-        let params = GotGenerateParams::new("sess-123")
-            .with_node("node-1")
-            .with_k(5)
-            .with_problem("Find solutions");
-
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, Some("node-1".to_string()));
-        assert_eq!(params.k, 5);
-        assert_eq!(params.problem, Some("Find solutions".to_string()));
-    }
-
-    #[test]
-    fn test_got_score_params_builder() {
-        let params = GotScoreParams::new("sess-123", "node-1")
-            .with_problem("Evaluate quality");
-
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, "node-1");
-        assert_eq!(params.problem, Some("Evaluate quality".to_string()));
-    }
-
-    #[test]
-    fn test_got_aggregate_params_builder() {
-        let params = GotAggregateParams::new(
-            "sess-123",
-            vec!["n1".to_string(), "n2".to_string(), "n3".to_string()],
-        )
-        .with_problem("Synthesize ideas");
-
-        assert_eq!(params.node_ids.len(), 3);
-        assert_eq!(params.problem, Some("Synthesize ideas".to_string()));
-    }
-
-    #[test]
-    fn test_got_refine_params_builder() {
-        let params = GotRefineParams::new("sess-123", "node-1")
-            .with_problem("Improve clarity");
-
-        assert_eq!(params.problem, Some("Improve clarity".to_string()));
-    }
-
-    // ============================================================================
-    // Deserialization Tests
-    // ============================================================================
-
-    #[test]
-    fn test_got_init_params_deserialize() {
-        let json = r#"{"content": "Test content", "problem": "Test problem"}"#;
-        let params: GotInitParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.content, "Test content");
-        assert_eq!(params.problem, Some("Test problem".to_string()));
-    }
-
-    #[test]
-    fn test_got_generate_params_deserialize() {
-        let json = r#"{"session_id": "sess-123", "node_id": "node-1", "k": 5}"#;
-        let params: GotGenerateParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, Some("node-1".to_string()));
-        assert_eq!(params.k, 5);
-    }
-
-    #[test]
-    fn test_got_score_params_deserialize() {
-        let json = r#"{"session_id": "sess-123", "node_id": "node-1"}"#;
-        let params: GotScoreParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.session_id, "sess-123");
-        assert_eq!(params.node_id, "node-1");
-    }
-
-    #[test]
-    fn test_got_prune_params_deserialize() {
-        let json = r#"{"session_id": "sess-123", "threshold": 0.5}"#;
-        let params: GotPruneParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.threshold, Some(0.5));
-    }
-
-    #[test]
-    fn test_got_finalize_params_deserialize() {
-        let json = r#"{"session_id": "sess-123", "terminal_node_ids": ["n1", "n2"]}"#;
-        let params: GotFinalizeParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.terminal_node_ids.len(), 2);
-    }
-
-    #[test]
-    fn test_got_get_state_params_new() {
-        let params = GotGetStateParams::new("sess-123");
-        assert_eq!(params.session_id, "sess-123");
-    }
-
-    // ============================================================================
-    // Edge Case Tests
-    // ============================================================================
-
-    #[test]
-    fn test_generate_response_empty_continuations() {
-        let json = r#"{"continuations": []}"#;
-        let resp = GenerateResponse::from_completion(json);
-        assert!(resp.continuations.is_empty());
-    }
-
-    #[test]
-    fn test_score_breakdown_serialize() {
-        let breakdown = ScoreBreakdown {
-            relevance: 0.8,
-            validity: 0.7,
-            depth: 0.6,
-            novelty: 0.5,
-        };
-        let json = serde_json::to_string(&breakdown).unwrap();
-        assert!(json.contains("relevance"));
-        assert!(json.contains("0.8"));
-    }
-
-    #[test]
-    fn test_terminal_conclusion_serialize() {
-        let conclusion = TerminalConclusion {
-            node_id: "node-1".to_string(),
-            content: "Final insight".to_string(),
-            score: Some(0.95),
-            depth: 7,
-        };
-        let json = serde_json::to_string(&conclusion).unwrap();
-        assert!(json.contains("Final insight"));
-        assert!(json.contains("0.95"));
-    }
-
-    #[test]
-    fn test_terminal_conclusion_no_score() {
-        let conclusion = TerminalConclusion {
-            node_id: "node-1".to_string(),
-            content: "No score".to_string(),
-            score: None,
-            depth: 3,
-        };
-        let json = serde_json::to_string(&conclusion).unwrap();
-        assert!(json.contains("No score"));
-    }
-
-    #[test]
-    fn test_generated_continuation_serialize() {
-        let cont = GeneratedContinuation {
-            node_id: "node-1".to_string(),
-            content: "New idea".to_string(),
-            confidence: 0.8,
-            novelty: 0.9,
-            rationale: "Because".to_string(),
-        };
-        let json = serde_json::to_string(&cont).unwrap();
-        assert!(json.contains("New idea"));
-        assert!(json.contains("rationale"));
     }
 }

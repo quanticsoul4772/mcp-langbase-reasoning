@@ -1,3 +1,10 @@
+//! Linear reasoning mode - sequential step-by-step reasoning.
+//!
+//! This module provides linear reasoning for step-by-step thought processing:
+//! - Single-pass sequential reasoning
+//! - Session continuity with thought history
+//! - Confidence tracking
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info};
@@ -25,20 +32,28 @@ fn default_confidence() -> f64 {
     0.8
 }
 
-/// Result of linear reasoning
+/// Result of linear reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinearResult {
+    /// The ID of the created thought.
     pub thought_id: String,
+    /// The session ID.
     pub session_id: String,
+    /// The processed thought content.
     pub content: String,
+    /// Confidence in the reasoning (0.0-1.0).
     pub confidence: f64,
+    /// The ID of the previous thought in the chain, if any.
     pub previous_thought: Option<String>,
 }
 
-/// Linear reasoning mode handler
+/// Linear reasoning mode handler for sequential reasoning.
 pub struct LinearMode {
+    /// Storage backend for persisting data.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered reasoning.
     langbase: LangbaseClient,
+    /// The Langbase pipe name for linear reasoning.
     pipe_name: String,
 }
 

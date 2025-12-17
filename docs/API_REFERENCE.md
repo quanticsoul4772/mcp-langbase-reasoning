@@ -709,6 +709,154 @@ Get the current state of the reasoning graph including node counts and structure
 
 ---
 
+### reasoning_detect_biases
+
+Analyze content for cognitive biases such as confirmation bias, anchoring, availability heuristic, sunk cost fallacy, and others. Returns detected biases with severity, confidence, explanation, and remediation suggestions.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The content to analyze for cognitive biases"
+    },
+    "thought_id": {
+      "type": "string",
+      "description": "ID of an existing thought to analyze (alternative to content)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session ID for context and persistence"
+    },
+    "check_types": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Specific bias types to check (optional, checks all if not specified)"
+    }
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "thought_id": "uuid",
+  "detections": [
+    {
+      "bias_type": "confirmation_bias",
+      "severity": 4,
+      "confidence": 0.85,
+      "explanation": "The argument only considers evidence that supports the conclusion",
+      "remediation": "Consider evidence that might contradict your conclusion",
+      "excerpt": "This proves our hypothesis is correct"
+    }
+  ],
+  "reasoning_quality": 0.7,
+  "overall_assessment": "Minor bias detected in reasoning"
+}
+```
+
+#### Common Bias Types
+
+| Bias Type | Description |
+|-----------|-------------|
+| `confirmation_bias` | Favoring information that confirms existing beliefs |
+| `anchoring_bias` | Over-reliance on first piece of information |
+| `availability_heuristic` | Overweighting easily recalled information |
+| `sunk_cost_fallacy` | Continuing based on past investment |
+| `hindsight_bias` | Believing past events were predictable |
+| `bandwagon_effect` | Following what others do |
+| `dunning_kruger` | Overestimating one's competence |
+| `negativity_bias` | Giving more weight to negative experiences |
+
+---
+
+### reasoning_detect_fallacies
+
+Analyze content for logical fallacies including ad hominem, straw man, false dichotomy, appeal to authority, circular reasoning, and others. Returns detected fallacies with severity, confidence, explanation, and remediation suggestions.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The content to analyze for logical fallacies"
+    },
+    "thought_id": {
+      "type": "string",
+      "description": "ID of an existing thought to analyze (alternative to content)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session ID for context and persistence"
+    },
+    "check_formal": {
+      "type": "boolean",
+      "description": "Check for formal logical fallacies (default: true)"
+    },
+    "check_informal": {
+      "type": "boolean",
+      "description": "Check for informal logical fallacies (default: true)"
+    }
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "thought_id": "uuid",
+  "detections": [
+    {
+      "fallacy_type": "ad_hominem",
+      "category": "informal",
+      "severity": 4,
+      "confidence": 0.9,
+      "explanation": "Attacks the person rather than their argument",
+      "remediation": "Focus on the argument itself, not the person making it",
+      "excerpt": "You can't trust his argument because he's not an expert"
+    }
+  ],
+  "argument_validity": 0.4,
+  "overall_assessment": "Multiple fallacies detected affecting argument validity"
+}
+```
+
+#### Common Fallacy Types
+
+**Formal Fallacies** (errors in logical structure):
+
+| Fallacy Type | Description |
+|--------------|-------------|
+| `affirming_consequent` | If P then Q; Q; therefore P |
+| `denying_antecedent` | If P then Q; not P; therefore not Q |
+| `undistributed_middle` | All A are B; all C are B; therefore all A are C |
+
+**Informal Fallacies** (errors in reasoning content):
+
+| Fallacy Type | Description |
+|--------------|-------------|
+| `ad_hominem` | Attacking the person instead of the argument |
+| `straw_man` | Misrepresenting someone's argument |
+| `false_dichotomy` | Presenting only two options when more exist |
+| `appeal_to_authority` | Using authority as evidence without justification |
+| `circular_reasoning` | Using the conclusion as a premise |
+| `slippery_slope` | Claiming one event will lead to extreme consequences |
+| `red_herring` | Introducing irrelevant information |
+| `hasty_generalization` | Drawing broad conclusions from limited evidence |
+
+---
+
 ## Data Types
 
 ### Session
@@ -816,6 +964,25 @@ Logs API calls for debugging and auditing.
 | `success` | `boolean` | Whether invocation succeeded |
 | `error` | `string?` | Error message if failed |
 | `created_at` | `datetime` | ISO 8601 timestamp |
+
+### Detection
+
+Represents a detected cognitive bias or logical fallacy.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Unique detection identifier (UUID) |
+| `session_id` | `string?` | Associated session ID |
+| `thought_id` | `string?` | Associated thought ID |
+| `detection_type` | `string` | `bias` or `fallacy` |
+| `name` | `string` | Specific bias/fallacy name |
+| `severity` | `integer` | Severity level (1-5) |
+| `confidence` | `number` | Detection confidence (0.0-1.0) |
+| `explanation` | `string` | Detailed explanation |
+| `remediation` | `string?` | Suggested fix |
+| `excerpt` | `string?` | Relevant text excerpt |
+| `created_at` | `datetime` | ISO 8601 timestamp |
+| `metadata` | `object?` | Optional additional metadata |
 
 ---
 

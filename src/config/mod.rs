@@ -1,77 +1,125 @@
+//! Configuration management for the MCP server.
+//!
+//! This module provides configuration structures loaded from environment variables.
+//! See [`Config::from_env`] for the main entry point.
+
 use std::env;
 use std::path::PathBuf;
 
 use crate::error::AppError;
 
-/// Application configuration loaded from environment variables
+/// Application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Langbase API configuration.
     pub langbase: LangbaseConfig,
+    /// Database configuration.
     pub database: DatabaseConfig,
+    /// Logging configuration.
     pub logging: LoggingConfig,
+    /// HTTP request configuration.
     pub request: RequestConfig,
+    /// Langbase pipe name configuration.
     pub pipes: PipeConfig,
 }
 
-/// Langbase API configuration
+/// Langbase API configuration.
 #[derive(Debug, Clone)]
 pub struct LangbaseConfig {
+    /// API key for authentication.
     pub api_key: String,
+    /// Base URL for the Langbase API.
     pub base_url: String,
 }
 
-/// Database configuration
+/// Database configuration.
 #[derive(Debug, Clone)]
 pub struct DatabaseConfig {
+    /// Path to the SQLite database file.
     pub path: PathBuf,
+    /// Maximum number of database connections.
     pub max_connections: u32,
 }
 
-/// Logging configuration
+/// Logging configuration.
 #[derive(Debug, Clone)]
 pub struct LoggingConfig {
+    /// Log level (e.g., "info", "debug", "warn").
     pub level: String,
+    /// Log output format.
     pub format: LogFormat,
 }
 
-/// Log output format
+/// Log output format.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LogFormat {
+    /// Human-readable pretty format.
     Pretty,
+    /// Machine-readable JSON format.
     Json,
 }
 
-/// HTTP request configuration
+/// HTTP request configuration.
 #[derive(Debug, Clone)]
 pub struct RequestConfig {
+    /// Request timeout in milliseconds.
     pub timeout_ms: u64,
+    /// Maximum number of retry attempts.
     pub max_retries: u32,
+    /// Delay between retries in milliseconds.
     pub retry_delay_ms: u64,
 }
 
-/// Langbase pipe name configuration
+/// Langbase pipe name configuration.
 #[derive(Debug, Clone)]
 pub struct PipeConfig {
+    /// Pipe name for linear reasoning mode.
     pub linear: String,
+    /// Pipe name for tree reasoning mode.
     pub tree: String,
+    /// Pipe name for divergent reasoning mode.
     pub divergent: String,
+    /// Pipe name for reflection mode.
     pub reflection: String,
+    /// Pipe name for auto mode routing.
     pub auto_router: String,
+    /// Optional pipe name for auto mode.
     pub auto: Option<String>,
+    /// Optional pipe name for backtracking mode.
     pub backtracking: Option<String>,
+    /// Optional Graph-of-Thoughts pipe configuration.
     pub got: Option<GotPipeConfig>,
+    /// Optional detection pipe configuration.
+    pub detection: Option<DetectionPipeConfig>,
 }
 
-/// Graph-of-Thoughts pipe configuration
+/// Detection pipe configuration for bias and fallacy analysis.
+#[derive(Debug, Clone)]
+pub struct DetectionPipeConfig {
+    /// Pipe name for bias detection.
+    pub bias_pipe: Option<String>,
+    /// Pipe name for fallacy detection.
+    pub fallacy_pipe: Option<String>,
+}
+
+/// Graph-of-Thoughts pipe configuration.
 #[derive(Debug, Clone)]
 pub struct GotPipeConfig {
+    /// Pipe name for generating new nodes.
     pub generate_pipe: Option<String>,
+    /// Pipe name for scoring nodes.
     pub score_pipe: Option<String>,
+    /// Pipe name for aggregating nodes.
     pub aggregate_pipe: Option<String>,
+    /// Pipe name for refining nodes.
     pub refine_pipe: Option<String>,
+    /// Maximum number of nodes in the graph.
     pub max_nodes: Option<usize>,
+    /// Maximum depth of the graph.
     pub max_depth: Option<usize>,
+    /// Default number of continuations (k).
     pub default_k: Option<usize>,
+    /// Score threshold for pruning nodes.
     pub prune_threshold: Option<f64>,
 }
 
@@ -135,7 +183,9 @@ impl Config {
             let max_nodes = env::var("GOT_MAX_NODES").ok().and_then(|s| s.parse().ok());
             let max_depth = env::var("GOT_MAX_DEPTH").ok().and_then(|s| s.parse().ok());
             let default_k = env::var("GOT_DEFAULT_K").ok().and_then(|s| s.parse().ok());
-            let prune_threshold = env::var("GOT_PRUNE_THRESHOLD").ok().and_then(|s| s.parse().ok());
+            let prune_threshold = env::var("GOT_PRUNE_THRESHOLD")
+                .ok()
+                .and_then(|s| s.parse().ok());
 
             // Only create config if any value is set
             if generate.is_some()
@@ -162,6 +212,22 @@ impl Config {
             }
         };
 
+        // Build detection pipe config if any detection env vars are set
+        let detection_config = {
+            let bias_pipe = env::var("PIPE_DETECT_BIASES").ok();
+            let fallacy_pipe = env::var("PIPE_DETECT_FALLACIES").ok();
+
+            // Only create config if any value is set
+            if bias_pipe.is_some() || fallacy_pipe.is_some() {
+                Some(DetectionPipeConfig {
+                    bias_pipe,
+                    fallacy_pipe,
+                })
+            } else {
+                None
+            }
+        };
+
         let pipes = PipeConfig {
             linear: env::var("PIPE_LINEAR").unwrap_or_else(|_| "linear-reasoning-v1".to_string()),
             tree: env::var("PIPE_TREE").unwrap_or_else(|_| "tree-reasoning-v1".to_string()),
@@ -172,6 +238,7 @@ impl Config {
             auto: env::var("PIPE_AUTO").ok(),
             backtracking: env::var("PIPE_BACKTRACKING").ok(),
             got: got_config,
+            detection: detection_config,
         };
 
         Ok(Config {
@@ -205,6 +272,16 @@ impl Default for PipeConfig {
             auto: None,
             backtracking: None,
             got: None,
+            detection: None,
+        }
+    }
+}
+
+impl Default for DetectionPipeConfig {
+    fn default() -> Self {
+        Self {
+            bias_pipe: Some("detect-biases-v1".to_string()),
+            fallacy_pipe: Some("detect-fallacies-v1".to_string()),
         }
     }
 }
@@ -247,6 +324,14 @@ mod tests {
         assert!(config.auto.is_none());
         assert!(config.backtracking.is_none());
         assert!(config.got.is_none());
+        assert!(config.detection.is_none());
+    }
+
+    #[test]
+    fn test_detection_pipe_config_default() {
+        let config = DetectionPipeConfig::default();
+        assert_eq!(config.bias_pipe, Some("detect-biases-v1".to_string()));
+        assert_eq!(config.fallacy_pipe, Some("detect-fallacies-v1".to_string()));
     }
 
     #[test]

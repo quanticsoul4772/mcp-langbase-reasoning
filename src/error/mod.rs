@@ -1,95 +1,187 @@
+//! Error types and result aliases for the application.
+//!
+//! This module provides a hierarchy of error types for different subsystems:
+//! - [`AppError`]: Top-level application errors
+//! - [`StorageError`]: Database and persistence errors
+//! - [`LangbaseError`]: Langbase API communication errors
+//! - [`McpError`]: MCP protocol errors
+//! - [`ToolError`]: Tool-specific execution errors
+
 use thiserror::Error;
 
-/// Application-level errors
+/// Application-level errors encompassing all subsystem errors.
 #[derive(Debug, Error)]
 pub enum AppError {
+    /// Configuration-related error.
     #[error("Configuration error: {message}")]
-    Config { message: String },
+    Config {
+        /// Error message describing the configuration issue.
+        message: String,
+    },
 
+    /// Storage layer error.
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError),
 
+    /// Langbase API error.
     #[error("Langbase error: {0}")]
     Langbase(#[from] LangbaseError),
 
+    /// MCP protocol error.
     #[error("MCP protocol error: {0}")]
     Mcp(#[from] McpError),
 
+    /// Internal application error.
     #[error("Internal error: {message}")]
-    Internal { message: String },
+    Internal {
+        /// Error message describing the internal issue.
+        message: String,
+    },
 }
 
-/// Storage layer errors
+/// Storage layer errors for database operations.
 #[derive(Debug, Error)]
 pub enum StorageError {
+    /// Database connection failed.
     #[error("Database connection failed: {message}")]
-    Connection { message: String },
+    Connection {
+        /// Error message describing the connection issue.
+        message: String,
+    },
 
+    /// Database query failed.
     #[error("Query failed: {message}")]
-    Query { message: String },
+    Query {
+        /// Error message describing the query issue.
+        message: String,
+    },
 
+    /// Session not found in storage.
     #[error("Session not found: {session_id}")]
-    SessionNotFound { session_id: String },
+    SessionNotFound {
+        /// ID of the missing session.
+        session_id: String,
+    },
 
+    /// Thought not found in storage.
     #[error("Thought not found: {thought_id}")]
-    ThoughtNotFound { thought_id: String },
+    ThoughtNotFound {
+        /// ID of the missing thought.
+        thought_id: String,
+    },
 
+    /// Database migration failed.
     #[error("Migration failed: {message}")]
-    Migration { message: String },
+    Migration {
+        /// Error message describing the migration issue.
+        message: String,
+    },
 
+    /// Underlying SQLx error.
     #[error("SQLx error: {0}")]
     Sqlx(#[from] sqlx::Error),
 }
 
-/// Langbase API errors
+/// Langbase API errors for pipe communication.
 #[derive(Debug, Error)]
 pub enum LangbaseError {
+    /// Langbase service unavailable after retries.
     #[error("Langbase unavailable: {message} (retries: {retries})")]
-    Unavailable { message: String, retries: u32 },
+    Unavailable {
+        /// Error message from the service.
+        message: String,
+        /// Number of retry attempts made.
+        retries: u32,
+    },
 
+    /// API returned an error status.
     #[error("API error: {status} - {message}")]
-    Api { status: u16, message: String },
+    Api {
+        /// HTTP status code.
+        status: u16,
+        /// Error message from the API.
+        message: String,
+    },
 
+    /// Invalid response from the API.
     #[error("Invalid response: {message}")]
-    InvalidResponse { message: String },
+    InvalidResponse {
+        /// Description of the response issue.
+        message: String,
+    },
 
+    /// Request timed out.
     #[error("Request timeout after {timeout_ms}ms")]
-    Timeout { timeout_ms: u64 },
+    Timeout {
+        /// Timeout duration in milliseconds.
+        timeout_ms: u64,
+    },
 
+    /// Underlying HTTP error.
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 }
 
-/// MCP protocol errors
+/// MCP protocol errors for request handling.
 #[derive(Debug, Error)]
 pub enum McpError {
+    /// Invalid MCP request format.
     #[error("Invalid request: {message}")]
-    InvalidRequest { message: String },
+    InvalidRequest {
+        /// Description of the request issue.
+        message: String,
+    },
 
+    /// Requested tool not found.
     #[error("Unknown tool: {tool_name}")]
-    UnknownTool { tool_name: String },
+    UnknownTool {
+        /// Name of the unknown tool.
+        tool_name: String,
+    },
 
+    /// Invalid parameters for a tool.
     #[error("Invalid parameters for {tool_name}: {message}")]
-    InvalidParameters { tool_name: String, message: String },
+    InvalidParameters {
+        /// Name of the tool with invalid parameters.
+        tool_name: String,
+        /// Description of the parameter issue.
+        message: String,
+    },
 
+    /// Tool execution failed.
     #[error("Tool execution failed: {message}")]
-    ExecutionFailed { message: String },
+    ExecutionFailed {
+        /// Description of the execution failure.
+        message: String,
+    },
 
+    /// JSON serialization/deserialization error.
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-/// Tool-specific errors with structured details
+/// Tool-specific errors with structured details.
 #[derive(Debug, Error)]
 pub enum ToolError {
+    /// Input validation failed.
     #[error("Validation failed: {field} - {reason}")]
-    Validation { field: String, reason: String },
+    Validation {
+        /// Name of the invalid field.
+        field: String,
+        /// Reason for validation failure.
+        reason: String,
+    },
 
+    /// Session-related error.
     #[error("Session error: {0}")]
     Session(String),
 
+    /// Reasoning operation failed.
     #[error("Reasoning failed: {message}")]
-    Reasoning { message: String },
+    Reasoning {
+        /// Description of the reasoning failure.
+        message: String,
+    },
 }
 
 impl From<ToolError> for AppError {
@@ -142,7 +234,10 @@ mod tests {
         let err = StorageError::Connection {
             message: "failed to connect".to_string(),
         };
-        assert_eq!(err.to_string(), "Database connection failed: failed to connect");
+        assert_eq!(
+            err.to_string(),
+            "Database connection failed: failed to connect"
+        );
 
         let err = StorageError::SessionNotFound {
             session_id: "sess-123".to_string(),
@@ -171,7 +266,10 @@ mod tests {
             message: "server down".to_string(),
             retries: 3,
         };
-        assert_eq!(err.to_string(), "Langbase unavailable: server down (retries: 3)");
+        assert_eq!(
+            err.to_string(),
+            "Langbase unavailable: server down (retries: 3)"
+        );
 
         let err = LangbaseError::Api {
             status: 401,
@@ -221,7 +319,10 @@ mod tests {
             field: "content".to_string(),
             reason: "cannot be empty".to_string(),
         };
-        assert_eq!(err.to_string(), "Validation failed: content - cannot be empty");
+        assert_eq!(
+            err.to_string(),
+            "Validation failed: content - cannot be empty"
+        );
 
         let err = ToolError::Session("not found".to_string());
         assert_eq!(err.to_string(), "Session error: not found");

@@ -133,6 +133,13 @@ between microservices and monolithic architectures.
 | `reasoning_got_finalize` | Mark terminal nodes and get conclusions |
 | `reasoning_got_state` | Get current graph state and structure |
 
+### Detection Tools
+
+| Tool | Description |
+|------|-------------|
+| `reasoning_detect_biases` | Analyze content for cognitive biases (confirmation, anchoring, etc.) |
+| `reasoning_detect_fallacies` | Analyze content for logical fallacies (ad hominem, straw man, etc.) |
+
 ## Architecture
 
 ```

@@ -24,21 +24,29 @@ pub struct AutoParams {
     pub session_id: Option<String>,
 }
 
-/// Result of auto mode routing
+/// Result of auto mode routing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoResult {
+    /// The recommended reasoning mode.
     pub recommended_mode: ReasoningMode,
+    /// Confidence in the recommendation (0.0-1.0).
     pub confidence: f64,
+    /// Explanation for the recommendation.
     pub rationale: String,
+    /// Estimated problem complexity (0.0-1.0).
     pub complexity: f64,
+    /// Alternative mode recommendations.
     pub alternative_modes: Vec<ModeRecommendation>,
 }
 
-/// A mode recommendation with confidence
+/// A mode recommendation with confidence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModeRecommendation {
+    /// The reasoning mode.
     pub mode: ReasoningMode,
+    /// Confidence in this recommendation (0.0-1.0).
     pub confidence: f64,
+    /// Explanation for this recommendation.
     pub rationale: String,
 }
 
@@ -324,7 +332,10 @@ impl AutoMode {
         messages.push(Message::system(AUTO_ROUTER_PROMPT));
 
         // Add content to analyze
-        let mut user_message = format!("Analyze this content and recommend the best reasoning mode:\n\n{}", params.content);
+        let mut user_message = format!(
+            "Analyze this content and recommend the best reasoning mode:\n\n{}",
+            params.content
+        );
 
         // Add hints if provided
         if let Some(hints) = &params.hints {
@@ -612,10 +623,22 @@ mod tests {
 
     #[test]
     fn test_reasoning_mode_from_string() {
-        assert_eq!("linear".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
-        assert_eq!("tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
-        assert_eq!("divergent".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
-        assert_eq!("reflection".parse::<ReasoningMode>().unwrap(), ReasoningMode::Reflection);
+        assert_eq!(
+            "linear".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Linear
+        );
+        assert_eq!(
+            "tree".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Tree
+        );
+        assert_eq!(
+            "divergent".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Divergent
+        );
+        assert_eq!(
+            "reflection".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Reflection
+        );
         assert_eq!("got".parse::<ReasoningMode>().unwrap(), ReasoningMode::Got);
     }
 
@@ -644,14 +667,16 @@ mod tests {
 
     #[test]
     fn test_auto_response_zero_confidence() {
-        let json = r#"{"recommended_mode": "linear", "confidence": 0.0, "rationale": "No confidence"}"#;
+        let json =
+            r#"{"recommended_mode": "linear", "confidence": 0.0, "rationale": "No confidence"}"#;
         let resp = AutoResponse::from_completion(json);
         assert_eq!(resp.confidence, 0.0);
     }
 
     #[test]
     fn test_auto_response_max_confidence() {
-        let json = r#"{"recommended_mode": "linear", "confidence": 1.0, "rationale": "Full confidence"}"#;
+        let json =
+            r#"{"recommended_mode": "linear", "confidence": 1.0, "rationale": "Full confidence"}"#;
         let resp = AutoResponse::from_completion(json);
         assert_eq!(resp.confidence, 1.0);
     }
@@ -703,13 +728,11 @@ mod tests {
             confidence: 0.87,
             rationale: "Creative exploration needed".to_string(),
             complexity: 0.65,
-            alternative_modes: vec![
-                ModeRecommendation {
-                    mode: ReasoningMode::Tree,
-                    confidence: 0.55,
-                    rationale: "Could branch".to_string(),
-                },
-            ],
+            alternative_modes: vec![ModeRecommendation {
+                mode: ReasoningMode::Tree,
+                confidence: 0.55,
+                rationale: "Could branch".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&original).unwrap();

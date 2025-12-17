@@ -1,3 +1,11 @@
+//! Reflection reasoning mode - meta-cognitive analysis and quality improvement.
+//!
+//! This module provides reflection capabilities for analyzing and improving reasoning:
+//! - Iterative refinement with quality thresholds
+//! - Strength and weakness identification
+//! - Improved thought generation
+//! - Session evaluation for overall reasoning quality
+
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info};
@@ -42,52 +50,78 @@ fn default_quality_threshold() -> f64 {
     0.8
 }
 
-/// Response from reflection reasoning Langbase pipe
+/// Response from reflection reasoning Langbase pipe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflectionResponse {
+    /// The meta-cognitive analysis of the thought.
     pub analysis: String,
+    /// Identified strengths in the reasoning.
     pub strengths: Vec<String>,
+    /// Identified weaknesses in the reasoning.
     pub weaknesses: Vec<String>,
+    /// Recommendations for improvement.
     pub recommendations: Vec<String>,
+    /// Confidence in the reflection analysis (0.0-1.0).
     pub confidence: f64,
+    /// Optional quality score for the original thought (0.0-1.0).
     #[serde(default)]
     pub quality_score: Option<f64>,
+    /// Optional improved version of the thought.
     #[serde(default)]
     pub improved_thought: Option<String>,
+    /// Additional metadata from the response.
     #[serde(default)]
     pub metadata: serde_json::Value,
 }
 
-/// Result of reflection reasoning
+/// Result of reflection reasoning.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflectionResult {
+    /// The session ID.
     pub session_id: String,
+    /// The ID of the reflection thought that was created.
     pub reflection_thought_id: String,
+    /// The ID of the original thought that was reflected upon, if any.
     pub original_thought_id: Option<String>,
+    /// The meta-cognitive analysis of the thought.
     pub analysis: String,
+    /// Identified strengths in the reasoning.
     pub strengths: Vec<String>,
+    /// Identified weaknesses in the reasoning.
     pub weaknesses: Vec<String>,
+    /// Recommendations for improvement.
     pub recommendations: Vec<String>,
+    /// Quality score of the thought (0.0-1.0).
     pub quality_score: f64,
+    /// Optional improved version of the thought.
     pub improved_thought: Option<ImprovedThought>,
+    /// Number of reflection iterations performed.
     pub iterations_performed: usize,
+    /// Whether quality improved from the original.
     pub quality_improved: bool,
+    /// Optional branch ID for tree mode integration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch_id: Option<String>,
 }
 
-/// Improved thought from reflection
+/// Improved thought generated from reflection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImprovedThought {
+    /// The ID of the improved thought.
     pub thought_id: String,
+    /// The improved content.
     pub content: String,
+    /// Confidence in the improved thought (0.0-1.0).
     pub confidence: f64,
 }
 
-/// Reflection reasoning mode handler
+/// Reflection reasoning mode handler for meta-cognitive analysis.
 pub struct ReflectionMode {
+    /// Storage backend for persisting data.
     storage: SqliteStorage,
+    /// Langbase client for LLM-powered reflection.
     langbase: LangbaseClient,
+    /// The Langbase pipe name for reflection.
     pipe_name: String,
 }
 
@@ -120,8 +154,10 @@ impl ReflectionMode {
 
         // Get the content to reflect upon
         let (original_content, original_thought) = if let Some(thought_id) = &params.thought_id {
-            let thought = self.storage.get_thought(thought_id).await?
-                .ok_or_else(|| ToolError::Session(format!("Thought not found: {}", thought_id)))?;
+            let thought =
+                self.storage.get_thought(thought_id).await?.ok_or_else(|| {
+                    ToolError::Session(format!("Thought not found: {}", thought_id))
+                })?;
             (thought.content.clone(), Some(thought))
         } else {
             (params.content.clone().unwrap_or_default(), None)
@@ -270,10 +306,11 @@ impl ReflectionMode {
             None
         };
 
-        let quality_improved = best_quality > original_thought
-            .as_ref()
-            .map(|t| t.confidence)
-            .unwrap_or(0.5);
+        let quality_improved = best_quality
+            > original_thought
+                .as_ref()
+                .map(|t| t.confidence)
+                .unwrap_or(0.5);
 
         info!(
             session_id = %session.id,
@@ -306,18 +343,21 @@ impl ReflectionMode {
         let thoughts = self.storage.get_session_thoughts(session_id).await?;
 
         if thoughts.is_empty() {
-            return Err(ToolError::Session("Session has no thoughts to evaluate".to_string()).into());
+            return Err(
+                ToolError::Session("Session has no thoughts to evaluate".to_string()).into(),
+            );
         }
 
         let total_confidence: f64 = thoughts.iter().map(|t| t.confidence).sum();
         let avg_confidence = total_confidence / thoughts.len() as f64;
 
-        let mode_counts: std::collections::HashMap<String, usize> = thoughts
-            .iter()
-            .fold(std::collections::HashMap::new(), |mut acc, t| {
-                *acc.entry(t.mode.clone()).or_insert(0) += 1;
-                acc
-            });
+        let mode_counts: std::collections::HashMap<String, usize> =
+            thoughts
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, t| {
+                    *acc.entry(t.mode.clone()).or_insert(0) += 1;
+                    acc
+                });
 
         let coherence_score = self.calculate_coherence(&thoughts);
 
@@ -339,17 +379,15 @@ impl ReflectionMode {
 
     async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
         match session_id {
-            Some(id) => {
-                match self.storage.get_session(id).await? {
-                    Some(s) => Ok(s),
-                    None => {
-                        let mut new_session = Session::new("reflection");
-                        new_session.id = id.clone();
-                        self.storage.create_session(&new_session).await?;
-                        Ok(new_session)
-                    }
+            Some(id) => match self.storage.get_session(id).await? {
+                Some(s) => Ok(s),
+                None => {
+                    let mut new_session = Session::new("reflection");
+                    new_session.id = id.clone();
+                    self.storage.create_session(&new_session).await?;
+                    Ok(new_session)
                 }
-            }
+            },
             None => {
                 let session = Session::new("reflection");
                 self.storage.create_session(&session).await?;
@@ -358,7 +396,11 @@ impl ReflectionMode {
         }
     }
 
-    async fn get_reasoning_chain(&self, session_id: &str, thought: &Thought) -> AppResult<Vec<Thought>> {
+    async fn get_reasoning_chain(
+        &self,
+        session_id: &str,
+        thought: &Thought,
+    ) -> AppResult<Vec<Thought>> {
         let all_thoughts = self.storage.get_session_thoughts(session_id).await?;
 
         // Build chain by following parent_id references
@@ -428,7 +470,12 @@ impl ReflectionMode {
         if !chain.is_empty() {
             let chain_text: Vec<String> = chain
                 .iter()
-                .map(|t| format!("- [{}] (confidence: {:.2}) {}", t.mode, t.confidence, t.content))
+                .map(|t| {
+                    format!(
+                        "- [{}] (confidence: {:.2}) {}",
+                        t.mode, t.confidence, t.content
+                    )
+                })
                 .collect();
 
             messages.push(Message::user(format!(
@@ -460,10 +507,7 @@ impl ReflectionMode {
                 .and_then(|s| s.split("```").next())
                 .unwrap_or(completion)
         } else if completion.contains("```") {
-            completion
-                .split("```")
-                .nth(1)
-                .unwrap_or(completion)
+            completion.split("```").nth(1).unwrap_or(completion)
         } else {
             completion
         };
@@ -477,14 +521,20 @@ impl ReflectionMode {
     }
 }
 
-/// Session evaluation result
+/// Session evaluation result showing overall reasoning quality.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionEvaluation {
+    /// The session ID that was evaluated.
     pub session_id: String,
+    /// Total number of thoughts in the session.
     pub total_thoughts: usize,
+    /// Average confidence across all thoughts (0.0-1.0).
     pub average_confidence: f64,
+    /// Distribution of thoughts by reasoning mode.
     pub mode_distribution: std::collections::HashMap<String, usize>,
+    /// Coherence score measuring logical consistency (0.0-1.0).
     pub coherence_score: f64,
+    /// Recommendation for improving reasoning quality.
     pub recommendation: String,
 }
 
@@ -584,7 +634,10 @@ mod tests {
     fn test_reflection_params_for_content() {
         let params = ReflectionParams::for_content("Some content to reflect upon");
         assert!(params.thought_id.is_none());
-        assert_eq!(params.content, Some("Some content to reflect upon".to_string()));
+        assert_eq!(
+            params.content,
+            Some("Some content to reflect upon".to_string())
+        );
         assert!(params.session_id.is_none());
         assert_eq!(params.max_iterations, 3);
     }
@@ -752,7 +805,10 @@ mod tests {
         assert_eq!(response.recommendations.len(), 2);
         assert_eq!(response.confidence, 0.75);
         assert_eq!(response.quality_score, Some(0.8));
-        assert_eq!(response.improved_thought, Some("Better thought".to_string()));
+        assert_eq!(
+            response.improved_thought,
+            Some("Better thought".to_string())
+        );
     }
 
     #[test]

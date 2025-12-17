@@ -6,7 +6,8 @@ use super::types::{CreatePipeRequest, CreatePipeResponse, Message, PipeRequest, 
 use crate::config::{LangbaseConfig, RequestConfig};
 use crate::error::{LangbaseError, LangbaseResult};
 use crate::prompts::{
-    DIVERGENT_REASONING_PROMPT, LINEAR_REASONING_PROMPT, REFLECTION_PROMPT, TREE_REASONING_PROMPT,
+    BIAS_DETECTION_PROMPT, DIVERGENT_REASONING_PROMPT, FALLACY_DETECTION_PROMPT,
+    LINEAR_REASONING_PROMPT, REFLECTION_PROMPT, TREE_REASONING_PROMPT,
 };
 
 /// Client for interacting with Langbase Pipes API
@@ -261,7 +262,8 @@ impl LangbaseClient {
             .with_max_tokens(3000) // More tokens for multiple perspectives
             .with_messages(vec![Message::system(DIVERGENT_REASONING_PROMPT)]);
 
-        self.ensure_pipe_internal(request, "Divergent reasoning").await
+        self.ensure_pipe_internal(request, "Divergent reasoning")
+            .await
     }
 
     /// Ensure the reflection reasoning pipe exists, creating it if needed
@@ -285,6 +287,44 @@ impl LangbaseClient {
         self.ensure_divergent_pipe("divergent-reasoning-v1").await?;
         self.ensure_reflection_pipe("reflection-v1").await?;
         info!("All reasoning pipes ready");
+        Ok(())
+    }
+
+    /// Ensure the bias detection pipe exists, creating it if needed
+    pub async fn ensure_bias_detection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Bias detection mode for identifying cognitive biases")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.5) // Lower for precise analysis
+            .with_max_tokens(3000) // More tokens for detailed analysis
+            .with_messages(vec![Message::system(BIAS_DETECTION_PROMPT)]);
+
+        self.ensure_pipe_internal(request, "Bias detection").await
+    }
+
+    /// Ensure the fallacy detection pipe exists, creating it if needed
+    pub async fn ensure_fallacy_detection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Fallacy detection mode for identifying logical fallacies")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.5) // Lower for precise analysis
+            .with_max_tokens(3000) // More tokens for detailed analysis
+            .with_messages(vec![Message::system(FALLACY_DETECTION_PROMPT)]);
+
+        self.ensure_pipe_internal(request, "Fallacy detection")
+            .await
+    }
+
+    /// Ensure all detection pipes exist, creating them if needed
+    pub async fn ensure_detection_pipes(&self) -> LangbaseResult<()> {
+        self.ensure_bias_detection_pipe("detect-biases-v1").await?;
+        self.ensure_fallacy_detection_pipe("detect-fallacies-v1")
+            .await?;
+        info!("All detection pipes ready");
         Ok(())
     }
 

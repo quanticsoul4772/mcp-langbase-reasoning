@@ -5,7 +5,9 @@
 use chrono::Utc;
 use serde_json::json;
 
-use mcp_langbase_reasoning::storage::{Invocation, Session, SqliteStorage, Storage, Thought};
+use mcp_langbase_reasoning::storage::{
+    Detection, DetectionType, Invocation, Session, SqliteStorage, Storage, Thought,
+};
 
 /// Create an in-memory storage instance for testing
 async fn create_test_storage() -> SqliteStorage {
@@ -49,7 +51,10 @@ mod session_tests {
 
         let result = storage.get_session("nonexistent-id").await.unwrap();
 
-        assert!(result.is_none(), "Should return None for nonexistent session");
+        assert!(
+            result.is_none(),
+            "Should return None for nonexistent session"
+        );
     }
 
     #[tokio::test]
@@ -204,15 +209,19 @@ mod thought_tests {
 
     #[tokio::test]
     async fn test_thought_confidence_clamping() {
-        let thought = Thought::new("session-1", "Test", "linear")
-            .with_confidence(1.5); // Over 1.0
+        let thought = Thought::new("session-1", "Test", "linear").with_confidence(1.5); // Over 1.0
 
-        assert!((thought.confidence - 1.0).abs() < 0.001, "Confidence should be clamped to 1.0");
+        assert!(
+            (thought.confidence - 1.0).abs() < 0.001,
+            "Confidence should be clamped to 1.0"
+        );
 
-        let thought2 = Thought::new("session-1", "Test", "linear")
-            .with_confidence(-0.5); // Under 0.0
+        let thought2 = Thought::new("session-1", "Test", "linear").with_confidence(-0.5); // Under 0.0
 
-        assert!((thought2.confidence - 0.0).abs() < 0.001, "Confidence should be clamped to 0.0");
+        assert!(
+            (thought2.confidence - 0.0).abs() < 0.001,
+            "Confidence should be clamped to 0.0"
+        );
     }
 
     #[tokio::test]
@@ -339,5 +348,235 @@ mod concurrent_access_tests {
 
         let thoughts = storage.get_session_thoughts(&session_id).await.unwrap();
         assert_eq!(thoughts.len(), 5);
+    }
+}
+
+#[cfg(test)]
+mod detection_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_detection() {
+        let storage = create_test_storage().await;
+
+        let detection = Detection::new(
+            DetectionType::Bias,
+            "confirmation_bias",
+            3,
+            0.85,
+            "Selective information gathering observed",
+        );
+        let result = storage.create_detection(&detection).await;
+
+        assert!(result.is_ok(), "Should create detection successfully");
+    }
+
+    #[tokio::test]
+    async fn test_get_detection() {
+        let storage = create_test_storage().await;
+
+        let detection = Detection::new(
+            DetectionType::Fallacy,
+            "ad_hominem",
+            4,
+            0.9,
+            "Attack on person instead of argument",
+        )
+        .with_remediation("Focus on the argument, not the person");
+        storage.create_detection(&detection).await.unwrap();
+
+        let retrieved = storage.get_detection(&detection.id).await.unwrap();
+
+        assert!(retrieved.is_some(), "Detection should exist");
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.id, detection.id);
+        assert_eq!(retrieved.detection_type, DetectionType::Fallacy);
+        assert_eq!(retrieved.detected_issue, "ad_hominem");
+        assert_eq!(retrieved.severity, 4);
+        assert!((retrieved.confidence - 0.9).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_get_nonexistent_detection() {
+        let storage = create_test_storage().await;
+
+        let result = storage.get_detection("nonexistent-id").await.unwrap();
+
+        assert!(
+            result.is_none(),
+            "Should return None for nonexistent detection"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_session_detections() {
+        let storage = create_test_storage().await;
+
+        // Create session first
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        // Create multiple detections for the session
+        let detection1 = Detection::new(DetectionType::Bias, "anchoring", 2, 0.7, "Anchoring bias")
+            .with_session(&session.id);
+        storage.create_detection(&detection1).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        let detection2 = Detection::new(
+            DetectionType::Fallacy,
+            "straw_man",
+            3,
+            0.8,
+            "Straw man fallacy",
+        )
+        .with_session(&session.id);
+        storage.create_detection(&detection2).await.unwrap();
+
+        let detections = storage.get_session_detections(&session.id).await.unwrap();
+
+        assert_eq!(detections.len(), 2);
+        // Should be ordered by created_at DESC
+        assert_eq!(detections[0].detected_issue, "straw_man");
+        assert_eq!(detections[1].detected_issue, "anchoring");
+    }
+
+    #[tokio::test]
+    async fn test_get_thought_detections() {
+        let storage = create_test_storage().await;
+
+        // Create session and thought
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        let thought = Thought::new(&session.id, "Some reasoning content", "linear");
+        storage.create_thought(&thought).await.unwrap();
+
+        // Create detections for the thought
+        let detection = Detection::new(
+            DetectionType::Bias,
+            "availability_heuristic",
+            2,
+            0.75,
+            "Overweighting recent examples",
+        )
+        .with_thought(&thought.id);
+        storage.create_detection(&detection).await.unwrap();
+
+        let detections = storage.get_thought_detections(&thought.id).await.unwrap();
+
+        assert_eq!(detections.len(), 1);
+        assert_eq!(detections[0].detected_issue, "availability_heuristic");
+    }
+
+    #[tokio::test]
+    async fn test_get_detections_by_type() {
+        let storage = create_test_storage().await;
+
+        // Create mix of bias and fallacy detections
+        let bias1 = Detection::new(
+            DetectionType::Bias,
+            "confirmation",
+            3,
+            0.8,
+            "Confirmation bias",
+        );
+        storage.create_detection(&bias1).await.unwrap();
+
+        let fallacy1 = Detection::new(
+            DetectionType::Fallacy,
+            "ad_hominem",
+            4,
+            0.9,
+            "Ad hominem attack",
+        );
+        storage.create_detection(&fallacy1).await.unwrap();
+
+        let bias2 = Detection::new(DetectionType::Bias, "anchoring", 2, 0.7, "Anchoring bias");
+        storage.create_detection(&bias2).await.unwrap();
+
+        // Get only biases
+        let biases = storage
+            .get_detections_by_type(DetectionType::Bias)
+            .await
+            .unwrap();
+        assert_eq!(biases.len(), 2);
+        assert!(biases
+            .iter()
+            .all(|d| d.detection_type == DetectionType::Bias));
+
+        // Get only fallacies
+        let fallacies = storage
+            .get_detections_by_type(DetectionType::Fallacy)
+            .await
+            .unwrap();
+        assert_eq!(fallacies.len(), 1);
+        assert_eq!(fallacies[0].detected_issue, "ad_hominem");
+    }
+
+    #[tokio::test]
+    async fn test_delete_detection() {
+        let storage = create_test_storage().await;
+
+        let detection = Detection::new(
+            DetectionType::Bias,
+            "sunk_cost",
+            3,
+            0.85,
+            "Sunk cost fallacy",
+        );
+        storage.create_detection(&detection).await.unwrap();
+
+        storage.delete_detection(&detection.id).await.unwrap();
+
+        let result = storage.get_detection(&detection.id).await.unwrap();
+        assert!(result.is_none(), "Detection should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_detection_with_metadata() {
+        let storage = create_test_storage().await;
+
+        let detection = Detection::new(
+            DetectionType::Fallacy,
+            "circular_reasoning",
+            4,
+            0.88,
+            "Conclusion used as premise",
+        )
+        .with_metadata(json!({
+            "category": "formal",
+            "severity_explanation": "Undermines entire argument"
+        }));
+
+        storage.create_detection(&detection).await.unwrap();
+
+        let retrieved = storage.get_detection(&detection.id).await.unwrap().unwrap();
+        assert!(retrieved.metadata.is_some());
+
+        let metadata = retrieved.metadata.unwrap();
+        assert_eq!(metadata["category"], "formal");
+    }
+
+    #[tokio::test]
+    async fn test_detection_cascade_on_session_delete() {
+        let storage = create_test_storage().await;
+
+        let session = Session::new("linear");
+        storage.create_session(&session).await.unwrap();
+
+        let detection = Detection::new(DetectionType::Bias, "test_bias", 2, 0.7, "Test bias")
+            .with_session(&session.id);
+        storage.create_detection(&detection).await.unwrap();
+
+        // Delete session
+        storage.delete_session(&session.id).await.unwrap();
+
+        // Detection should also be deleted (CASCADE)
+        let detections = storage.get_session_detections(&session.id).await.unwrap();
+        assert!(
+            detections.is_empty(),
+            "Detections should be cascade deleted"
+        );
     }
 }

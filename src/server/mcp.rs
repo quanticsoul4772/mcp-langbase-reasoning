@@ -1,3 +1,10 @@
+//! MCP protocol implementation for JSON-RPC 2.0 communication.
+//!
+//! This module provides the core MCP server implementation including:
+//! - JSON-RPC 2.0 request/response handling
+//! - Tool definitions and schemas
+//! - Stdio-based server communication
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -5,96 +12,126 @@ use tracing::{debug, error, info};
 
 use super::{handle_tool_call, SharedState};
 
-/// JSON-RPC request
+#[cfg(test)]
+#[path = "mcp_tests.rs"]
+mod mcp_tests;
+
+/// JSON-RPC 2.0 request structure.
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {
+    /// JSON-RPC version (must be "2.0").
     pub jsonrpc: String,
+    /// Request identifier (None for notifications).
     pub id: Option<Value>,
+    /// The method name to invoke.
     pub method: String,
+    /// Optional parameters for the method.
     #[serde(default)]
     pub params: Option<Value>,
 }
 
-/// JSON-RPC response
+/// JSON-RPC 2.0 response structure.
 #[derive(Debug, Serialize)]
 pub struct JsonRpcResponse {
+    /// JSON-RPC version (always "2.0").
     pub jsonrpc: String,
-    /// ID must always be present in responses (null if notification)
+    /// Request identifier (null if notification, must always be present per spec).
     pub id: Value,
+    /// The result on success (mutually exclusive with error).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
+    /// The error on failure (mutually exclusive with result).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
 
-/// JSON-RPC error
+/// JSON-RPC 2.0 error object.
 #[derive(Debug, Serialize)]
 pub struct JsonRpcError {
+    /// Error code (negative for predefined errors).
     pub code: i32,
+    /// Human-readable error message.
     pub message: String,
+    /// Optional additional error data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
 }
 
-/// MCP server information
+/// MCP server information returned during initialization.
 #[derive(Debug, Serialize)]
 pub struct ServerInfo {
+    /// The server name identifier.
     pub name: String,
+    /// The server version string.
     pub version: String,
 }
 
-/// MCP capabilities
+/// MCP server capabilities advertised to clients.
 #[derive(Debug, Serialize)]
 pub struct Capabilities {
+    /// Tool-related capabilities.
     pub tools: ToolCapabilities,
 }
 
-/// Tool capabilities
+/// Tool-specific capabilities.
 #[derive(Debug, Serialize)]
 pub struct ToolCapabilities {
+    /// Whether the tool list can change dynamically.
     #[serde(rename = "listChanged")]
     pub list_changed: bool,
 }
 
-/// Initialize result
+/// Result of the MCP initialize handshake.
 #[derive(Debug, Serialize)]
 pub struct InitializeResult {
+    /// The MCP protocol version supported.
     #[serde(rename = "protocolVersion")]
     pub protocol_version: String,
+    /// Server capabilities.
     pub capabilities: Capabilities,
+    /// Server identification information.
     #[serde(rename = "serverInfo")]
     pub server_info: ServerInfo,
 }
 
-/// Tool definition
+/// MCP tool definition with JSON Schema.
 #[derive(Debug, Clone, Serialize)]
 pub struct Tool {
+    /// Unique tool name (used in tool calls).
     pub name: String,
+    /// Human-readable description of the tool.
     pub description: String,
+    /// JSON Schema for the tool's input parameters.
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
 }
 
-/// Tool call parameters
+/// Parameters for a tools/call request.
 #[derive(Debug, Deserialize)]
 pub struct ToolCallParams {
+    /// The name of the tool to invoke.
     pub name: String,
+    /// Optional arguments for the tool.
     #[serde(default)]
     pub arguments: Option<Value>,
 }
 
-/// Tool result content
+/// Content item within a tool result.
 #[derive(Debug, Serialize)]
 pub struct ToolResultContent {
+    /// The content type (e.g., "text").
     #[serde(rename = "type")]
     pub content_type: String,
+    /// The text content of the result.
     pub text: String,
 }
 
-/// Tool call result
+/// Result of a tool invocation.
 #[derive(Debug, Serialize)]
 pub struct ToolCallResult {
+    /// The result content items.
     pub content: Vec<ToolResultContent>,
+    /// Whether the result represents an error.
     #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
 }
@@ -125,8 +162,12 @@ impl JsonRpcResponse {
     }
 }
 
-/// MCP Server running over stdio
+/// MCP Server running over stdio.
+///
+/// Handles JSON-RPC 2.0 messages over stdin/stdout for MCP protocol
+/// communication with clients.
 pub struct McpServer {
+    /// Shared application state.
     state: SharedState,
 }
 
@@ -166,7 +207,11 @@ impl McpServer {
                 Ok(request) => self.handle_request(request).await,
                 Err(e) => {
                     error!(error = %e, "Failed to parse request");
-                    Some(JsonRpcResponse::error(None, -32700, format!("Parse error: {}", e)))
+                    Some(JsonRpcResponse::error(
+                        None,
+                        -32700,
+                        format!("Parse error: {}", e),
+                    ))
                 }
             };
 
@@ -204,7 +249,10 @@ impl McpServer {
             }
             "tools/list" => Some(self.handle_tools_list(request.id)),
             "tools/call" => Some(self.handle_tool_call(request.id, request.params).await),
-            "ping" => Some(JsonRpcResponse::success(request.id, Value::Object(Default::default()))),
+            "ping" => Some(JsonRpcResponse::success(
+                request.id,
+                Value::Object(Default::default()),
+            )),
             method => {
                 // For unknown methods, only respond if it's a request (has id)
                 if is_notification {
@@ -212,7 +260,11 @@ impl McpServer {
                     None
                 } else {
                     error!(method = %method, "Unknown method");
-                    Some(JsonRpcResponse::error(request.id, -32601, format!("Method not found: {}", method)))
+                    Some(JsonRpcResponse::error(
+                        request.id,
+                        -32601,
+                        format!("Method not found: {}", method),
+                    ))
                 }
             }
         }
@@ -271,6 +323,9 @@ impl McpServer {
             get_got_prune_tool(),
             get_got_finalize_tool(),
             get_got_state_tool(),
+            // Phase 4 tools - Bias & Fallacy Detection
+            get_detect_biases_tool(),
+            get_detect_fallacies_tool(),
         ];
 
         JsonRpcResponse::success(
@@ -297,18 +352,29 @@ impl McpServer {
 
         info!(tool = %params.name, "Handling tool call");
 
-        let (content, is_error) = match handle_tool_call(&self.state, &params.name, params.arguments).await {
-            Ok(result) => {
-                let text = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
-                    error!(error = %e, "Failed to serialize tool result");
-                    format!("{{\"error\": \"Serialization failed: {}\"}}", e)
-                });
-                (ToolResultContent { content_type: "text".to_string(), text }, None)
-            }
-            Err(e) => {
-                (ToolResultContent { content_type: "text".to_string(), text: format!("Error: {}", e) }, Some(true))
-            }
-        };
+        let (content, is_error) =
+            match handle_tool_call(&self.state, &params.name, params.arguments).await {
+                Ok(result) => {
+                    let text = serde_json::to_string_pretty(&result).unwrap_or_else(|e| {
+                        error!(error = %e, "Failed to serialize tool result");
+                        format!("{{\"error\": \"Serialization failed: {}\"}}", e)
+                    });
+                    (
+                        ToolResultContent {
+                            content_type: "text".to_string(),
+                            text,
+                        },
+                        None,
+                    )
+                }
+                Err(e) => (
+                    ToolResultContent {
+                        content_type: "text".to_string(),
+                        text: format!("Error: {}", e),
+                    },
+                    Some(true),
+                ),
+            };
 
         let tool_result = ToolCallResult {
             content: vec![content],
@@ -411,7 +477,8 @@ fn get_tree_tool() -> Tool {
 fn get_tree_focus_tool() -> Tool {
     Tool {
         name: "reasoning_tree_focus".to_string(),
-        description: "Focus on a specific branch, making it the active branch for the session.".to_string(),
+        description: "Focus on a specific branch, making it the active branch for the session."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -625,7 +692,8 @@ fn get_backtracking_tool() -> Tool {
 fn get_backtracking_checkpoint_tool() -> Tool {
     Tool {
         name: "reasoning_checkpoint_create".to_string(),
-        description: "Create a checkpoint at the current reasoning state for later backtracking.".to_string(),
+        description: "Create a checkpoint at the current reasoning state for later backtracking."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -699,7 +767,8 @@ fn get_auto_tool() -> Tool {
 fn get_got_init_tool() -> Tool {
     Tool {
         name: "reasoning_got_init".to_string(),
-        description: "Initialize a new Graph-of-Thoughts reasoning graph with a root node.".to_string(),
+        description: "Initialize a new Graph-of-Thoughts reasoning graph with a root node."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -736,7 +805,8 @@ fn get_got_init_tool() -> Tool {
 fn get_got_generate_tool() -> Tool {
     Tool {
         name: "reasoning_got_generate".to_string(),
-        description: "Generate k diverse continuations from a node in the reasoning graph.".to_string(),
+        description: "Generate k diverse continuations from a node in the reasoning graph."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -769,7 +839,8 @@ fn get_got_generate_tool() -> Tool {
 fn get_got_score_tool() -> Tool {
     Tool {
         name: "reasoning_got_score".to_string(),
-        description: "Score a node's quality based on relevance, validity, depth, and novelty.".to_string(),
+        description: "Score a node's quality based on relevance, validity, depth, and novelty."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -877,7 +948,8 @@ fn get_got_prune_tool() -> Tool {
 fn get_got_finalize_tool() -> Tool {
     Tool {
         name: "reasoning_got_finalize".to_string(),
-        description: "Mark terminal nodes and retrieve final conclusions from the reasoning graph.".to_string(),
+        description: "Mark terminal nodes and retrieve final conclusions from the reasoning graph."
+            .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -901,7 +973,9 @@ fn get_got_finalize_tool() -> Tool {
 fn get_got_state_tool() -> Tool {
     Tool {
         name: "reasoning_got_state".to_string(),
-        description: "Get the current state of the reasoning graph including node counts and structure.".to_string(),
+        description:
+            "Get the current state of the reasoning graph including node counts and structure."
+                .to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -916,509 +990,71 @@ fn get_got_state_tool() -> Tool {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    // ============================================================================
-    // JsonRpcResponse tests
-    // ============================================================================
-
-    #[test]
-    fn test_jsonrpc_response_success_with_id() {
-        let response = JsonRpcResponse::success(Some(json!(1)), json!({"result": "ok"}));
-
-        assert_eq!(response.jsonrpc, "2.0");
-        assert_eq!(response.id, json!(1));
-        assert!(response.result.is_some());
-        assert!(response.error.is_none());
-        assert_eq!(response.result.unwrap()["result"], "ok");
-    }
-
-    #[test]
-    fn test_jsonrpc_response_success_with_string_id() {
-        let response = JsonRpcResponse::success(Some(json!("req-123")), json!({}));
-
-        assert_eq!(response.id, json!("req-123"));
-    }
-
-    #[test]
-    fn test_jsonrpc_response_success_without_id() {
-        let response = JsonRpcResponse::success(None, json!({"data": "value"}));
-
-        assert_eq!(response.id, Value::Null);
-        assert!(response.result.is_some());
-    }
-
-    #[test]
-    fn test_jsonrpc_response_error_with_id() {
-        let response = JsonRpcResponse::error(Some(json!(42)), -32600, "Invalid request");
-
-        assert_eq!(response.jsonrpc, "2.0");
-        assert_eq!(response.id, json!(42));
-        assert!(response.result.is_none());
-        assert!(response.error.is_some());
-
-        let error = response.error.unwrap();
-        assert_eq!(error.code, -32600);
-        assert_eq!(error.message, "Invalid request");
-    }
-
-    #[test]
-    fn test_jsonrpc_response_error_without_id() {
-        let response = JsonRpcResponse::error(None, -32700, "Parse error");
-
-        assert_eq!(response.id, Value::Null);
-        assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().code, -32700);
-    }
-
-    #[test]
-    fn test_jsonrpc_response_serialization() {
-        let response = JsonRpcResponse::success(Some(json!(1)), json!({"test": true}));
-        let serialized = serde_json::to_string(&response).unwrap();
-
-        assert!(serialized.contains("\"jsonrpc\":\"2.0\""));
-        assert!(serialized.contains("\"id\":1"));
-        assert!(serialized.contains("\"result\""));
-        // Error should be omitted when None
-        assert!(!serialized.contains("\"error\""));
-    }
-
-    #[test]
-    fn test_jsonrpc_error_serialization() {
-        let response = JsonRpcResponse::error(Some(json!(1)), -32601, "Method not found");
-        let serialized = serde_json::to_string(&response).unwrap();
-
-        assert!(serialized.contains("\"error\""));
-        assert!(serialized.contains("-32601"));
-        // Result should be omitted when None
-        assert!(!serialized.contains("\"result\""));
-    }
-
-    // ============================================================================
-    // JsonRpcRequest deserialization tests
-    // ============================================================================
-
-    #[test]
-    fn test_jsonrpc_request_deserialization() {
-        let json_str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
-        let request: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
-
-        assert_eq!(request.jsonrpc, "2.0");
-        assert_eq!(request.id, Some(json!(1)));
-        assert_eq!(request.method, "initialize");
-        assert!(request.params.is_some());
-    }
-
-    #[test]
-    fn test_jsonrpc_request_without_params() {
-        let json_str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
-        let request: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
-
-        assert_eq!(request.method, "tools/list");
-        assert!(request.params.is_none());
-    }
-
-    #[test]
-    fn test_jsonrpc_notification_no_id() {
-        let json_str = r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#;
-        let request: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
-
-        assert!(request.id.is_none());
-        assert_eq!(request.method, "initialized");
-    }
-
-    #[test]
-    fn test_jsonrpc_request_with_string_id() {
-        let json_str = r#"{"jsonrpc":"2.0","id":"uuid-123","method":"ping"}"#;
-        let request: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
-
-        assert_eq!(request.id, Some(json!("uuid-123")));
-    }
-
-    // ============================================================================
-    // ToolCallParams deserialization tests
-    // ============================================================================
-
-    #[test]
-    fn test_tool_call_params_deserialization() {
-        let json_str = r#"{"name":"reasoning_linear","arguments":{"content":"test"}}"#;
-        let params: ToolCallParams = serde_json::from_str(json_str).unwrap();
-
-        assert_eq!(params.name, "reasoning_linear");
-        assert!(params.arguments.is_some());
-        assert_eq!(params.arguments.unwrap()["content"], "test");
-    }
-
-    #[test]
-    fn test_tool_call_params_without_arguments() {
-        let json_str = r#"{"name":"reasoning_got_state"}"#;
-        let params: ToolCallParams = serde_json::from_str(json_str).unwrap();
-
-        assert_eq!(params.name, "reasoning_got_state");
-        assert!(params.arguments.is_none());
-    }
-
-    // ============================================================================
-    // Tool definition tests
-    // ============================================================================
-
-    #[test]
-    fn test_linear_tool_definition() {
-        let tool = get_linear_tool();
-
-        assert_eq!(tool.name, "reasoning_linear");
-        assert!(tool.description.contains("sequential"));
-
-        let schema = &tool.input_schema;
-        assert_eq!(schema["type"], "object");
-        assert!(schema["properties"]["content"].is_object());
-        assert!(schema["required"].as_array().unwrap().contains(&json!("content")));
-    }
-
-    #[test]
-    fn test_tree_tool_definition() {
-        let tool = get_tree_tool();
-
-        assert_eq!(tool.name, "reasoning_tree");
-        assert!(tool.description.contains("Branching"));
-
-        let schema = &tool.input_schema;
-        assert!(schema["properties"]["num_branches"].is_object());
-        assert_eq!(schema["properties"]["num_branches"]["minimum"], 2);
-        assert_eq!(schema["properties"]["num_branches"]["maximum"], 4);
-    }
-
-    #[test]
-    fn test_tree_focus_tool_definition() {
-        let tool = get_tree_focus_tool();
-
-        assert_eq!(tool.name, "reasoning_tree_focus");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-        assert!(required.contains(&json!("branch_id")));
-    }
-
-    #[test]
-    fn test_tree_list_tool_definition() {
-        let tool = get_tree_list_tool();
-
-        assert_eq!(tool.name, "reasoning_tree_list");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-    }
-
-    #[test]
-    fn test_tree_complete_tool_definition() {
-        let tool = get_tree_complete_tool();
-
-        assert_eq!(tool.name, "reasoning_tree_complete");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("branch_id")));
-    }
-
-    #[test]
-    fn test_divergent_tool_definition() {
-        let tool = get_divergent_tool();
-
-        assert_eq!(tool.name, "reasoning_divergent");
-        assert!(tool.description.contains("Creative"));
-
-        let schema = &tool.input_schema;
-        assert!(schema["properties"]["num_perspectives"].is_object());
-    }
-
-    #[test]
-    fn test_reflection_tool_definition() {
-        let tool = get_reflection_tool();
-
-        assert_eq!(tool.name, "reasoning_reflection");
-        assert!(tool.description.contains("Meta-cognitive"));
-    }
-
-    #[test]
-    fn test_reflection_evaluate_tool_definition() {
-        let tool = get_reflection_evaluate_tool();
-
-        assert_eq!(tool.name, "reasoning_reflection_evaluate");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-    }
-
-    #[test]
-    fn test_backtracking_tool_definition() {
-        let tool = get_backtracking_tool();
-
-        assert_eq!(tool.name, "reasoning_backtrack");
-        assert!(tool.description.contains("checkpoint"));
-    }
-
-    #[test]
-    fn test_checkpoint_create_tool_definition() {
-        let tool = get_backtracking_checkpoint_tool();
-
-        assert_eq!(tool.name, "reasoning_checkpoint_create");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-        assert!(required.contains(&json!("name")));
-    }
-
-    #[test]
-    fn test_checkpoint_list_tool_definition() {
-        let tool = get_backtracking_list_tool();
-
-        assert_eq!(tool.name, "reasoning_checkpoint_list");
-    }
-
-    #[test]
-    fn test_auto_tool_definition() {
-        let tool = get_auto_tool();
-
-        assert_eq!(tool.name, "reasoning_auto");
-        assert!(tool.description.contains("Automatic"));
-    }
-
-    #[test]
-    fn test_got_init_tool_definition() {
-        let tool = get_got_init_tool();
-
-        assert_eq!(tool.name, "reasoning_got_init");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("content")));
-    }
-
-    #[test]
-    fn test_got_generate_tool_definition() {
-        let tool = get_got_generate_tool();
-
-        assert_eq!(tool.name, "reasoning_got_generate");
-
-        let schema = &tool.input_schema;
-        assert!(schema["properties"]["k"].is_object());
-        assert_eq!(schema["properties"]["k"]["minimum"], 1);
-        assert_eq!(schema["properties"]["k"]["maximum"], 10);
-    }
-
-    #[test]
-    fn test_got_score_tool_definition() {
-        let tool = get_got_score_tool();
-
-        assert_eq!(tool.name, "reasoning_got_score");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-        assert!(required.contains(&json!("node_id")));
-    }
-
-    #[test]
-    fn test_got_aggregate_tool_definition() {
-        let tool = get_got_aggregate_tool();
-
-        assert_eq!(tool.name, "reasoning_got_aggregate");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-        assert!(required.contains(&json!("node_ids")));
-    }
-
-    #[test]
-    fn test_got_refine_tool_definition() {
-        let tool = get_got_refine_tool();
-
-        assert_eq!(tool.name, "reasoning_got_refine");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-        assert!(required.contains(&json!("node_id")));
-    }
-
-    #[test]
-    fn test_got_prune_tool_definition() {
-        let tool = get_got_prune_tool();
-
-        assert_eq!(tool.name, "reasoning_got_prune");
-
-        let schema = &tool.input_schema;
-        assert!(schema["properties"]["threshold"].is_object());
-    }
-
-    #[test]
-    fn test_got_finalize_tool_definition() {
-        let tool = get_got_finalize_tool();
-
-        assert_eq!(tool.name, "reasoning_got_finalize");
-    }
-
-    #[test]
-    fn test_got_state_tool_definition() {
-        let tool = get_got_state_tool();
-
-        assert_eq!(tool.name, "reasoning_got_state");
-
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("session_id")));
-    }
-
-    // ============================================================================
-    // Tool count and completeness tests
-    // ============================================================================
-
-    #[test]
-    fn test_all_tools_count() {
-        let tools = vec![
-            get_linear_tool(),
-            get_tree_tool(),
-            get_tree_focus_tool(),
-            get_tree_list_tool(),
-            get_tree_complete_tool(),
-            get_divergent_tool(),
-            get_reflection_tool(),
-            get_reflection_evaluate_tool(),
-            get_backtracking_tool(),
-            get_backtracking_checkpoint_tool(),
-            get_backtracking_list_tool(),
-            get_auto_tool(),
-            get_got_init_tool(),
-            get_got_generate_tool(),
-            get_got_score_tool(),
-            get_got_aggregate_tool(),
-            get_got_refine_tool(),
-            get_got_prune_tool(),
-            get_got_finalize_tool(),
-            get_got_state_tool(),
-        ];
-
-        assert_eq!(tools.len(), 20, "Should have exactly 20 tools defined");
-    }
-
-    #[test]
-    fn test_all_tools_have_valid_schemas() {
-        let tools = vec![
-            get_linear_tool(),
-            get_tree_tool(),
-            get_divergent_tool(),
-            get_reflection_tool(),
-            get_auto_tool(),
-            get_got_init_tool(),
-        ];
-
-        for tool in tools {
-            assert!(!tool.name.is_empty(), "Tool name should not be empty");
-            assert!(!tool.description.is_empty(), "Tool description should not be empty");
-            assert_eq!(tool.input_schema["type"], "object", "Schema type should be object for {}", tool.name);
-            assert!(tool.input_schema["properties"].is_object(), "Schema should have properties for {}", tool.name);
-        }
-    }
-
-    #[test]
-    fn test_tool_names_are_unique() {
-        let tools = vec![
-            get_linear_tool(),
-            get_tree_tool(),
-            get_tree_focus_tool(),
-            get_tree_list_tool(),
-            get_tree_complete_tool(),
-            get_divergent_tool(),
-            get_reflection_tool(),
-            get_reflection_evaluate_tool(),
-            get_backtracking_tool(),
-            get_backtracking_checkpoint_tool(),
-            get_backtracking_list_tool(),
-            get_auto_tool(),
-            get_got_init_tool(),
-            get_got_generate_tool(),
-            get_got_score_tool(),
-            get_got_aggregate_tool(),
-            get_got_refine_tool(),
-            get_got_prune_tool(),
-            get_got_finalize_tool(),
-            get_got_state_tool(),
-        ];
-
-        let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
-        names.sort();
-        let original_len = names.len();
-        names.dedup();
-
-        assert_eq!(names.len(), original_len, "All tool names should be unique");
-    }
-
-    // ============================================================================
-    // MCP type serialization tests
-    // ============================================================================
-
-    #[test]
-    fn test_initialize_result_serialization() {
-        let result = InitializeResult {
-            protocol_version: "2024-11-05".to_string(),
-            capabilities: Capabilities {
-                tools: ToolCapabilities { list_changed: false },
+// ============================================================================
+// Phase 4 Tool Definitions - Bias & Fallacy Detection
+// ============================================================================
+
+/// Get the detect biases tool definition
+fn get_detect_biases_tool() -> Tool {
+    Tool {
+        name: "reasoning_detect_biases".to_string(),
+        description: "Analyze content for cognitive biases such as confirmation bias, anchoring, availability heuristic, sunk cost fallacy, and others. Returns detected biases with severity, confidence, explanation, and remediation suggestions.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The content to analyze for cognitive biases"
+                },
+                "thought_id": {
+                    "type": "string",
+                    "description": "ID of an existing thought to analyze (alternative to content)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID for context and persistence"
+                },
+                "check_types": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Specific bias types to check (optional, checks all if not specified)"
+                }
             },
-            server_info: ServerInfo {
-                name: "test-server".to_string(),
-                version: "1.0.0".to_string(),
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the detect fallacies tool definition
+fn get_detect_fallacies_tool() -> Tool {
+    Tool {
+        name: "reasoning_detect_fallacies".to_string(),
+        description: "Analyze content for logical fallacies including ad hominem, straw man, false dichotomy, appeal to authority, circular reasoning, and others. Returns detected fallacies with severity, confidence, explanation, and remediation suggestions.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The content to analyze for logical fallacies"
+                },
+                "thought_id": {
+                    "type": "string",
+                    "description": "ID of an existing thought to analyze (alternative to content)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID for context and persistence"
+                },
+                "check_formal": {
+                    "type": "boolean",
+                    "description": "Check for formal logical fallacies (default: true)"
+                },
+                "check_informal": {
+                    "type": "boolean",
+                    "description": "Check for informal logical fallacies (default: true)"
+                }
             },
-        };
-
-        let json = serde_json::to_value(&result).unwrap();
-
-        assert_eq!(json["protocolVersion"], "2024-11-05");
-        assert_eq!(json["capabilities"]["tools"]["listChanged"], false);
-        assert_eq!(json["serverInfo"]["name"], "test-server");
-    }
-
-    #[test]
-    fn test_tool_serialization() {
-        let tool = Tool {
-            name: "test_tool".to_string(),
-            description: "A test tool".to_string(),
-            input_schema: json!({"type": "object"}),
-        };
-
-        let json = serde_json::to_value(&tool).unwrap();
-
-        assert_eq!(json["name"], "test_tool");
-        assert_eq!(json["inputSchema"]["type"], "object");
-    }
-
-    #[test]
-    fn test_tool_call_result_serialization() {
-        let result = ToolCallResult {
-            content: vec![ToolResultContent {
-                content_type: "text".to_string(),
-                text: "Hello, world!".to_string(),
-            }],
-            is_error: None,
-        };
-
-        let json = serde_json::to_value(&result).unwrap();
-
-        assert_eq!(json["content"][0]["type"], "text");
-        assert_eq!(json["content"][0]["text"], "Hello, world!");
-        // is_error should be omitted when None
-        assert!(json.get("isError").is_none());
-    }
-
-    #[test]
-    fn test_tool_call_result_with_error() {
-        let result = ToolCallResult {
-            content: vec![ToolResultContent {
-                content_type: "text".to_string(),
-                text: "Error occurred".to_string(),
-            }],
-            is_error: Some(true),
-        };
-
-        let json = serde_json::to_value(&result).unwrap();
-
-        assert_eq!(json["isError"], true);
+            "additionalProperties": false
+        }),
     }
 }

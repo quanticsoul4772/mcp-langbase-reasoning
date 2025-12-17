@@ -213,6 +213,103 @@ Guidelines:
 - Add missing considerations
 - Preserve core insights while enhancing quality"#;
 
+// ============================================================================
+// Phase 4: Bias & Fallacy Detection Prompts
+// ============================================================================
+
+/// System prompt for cognitive bias detection.
+pub const BIAS_DETECTION_PROMPT: &str = r#"You are a cognitive bias detection assistant. Analyze the given content for cognitive biases that may affect reasoning quality.
+
+Your response MUST be valid JSON in this format:
+{
+  "detections": [
+    {
+      "bias_type": "name_of_bias",
+      "severity": 3,
+      "confidence": 0.8,
+      "explanation": "why this is a bias",
+      "remediation": "how to address it",
+      "excerpt": "relevant text excerpt"
+    }
+  ],
+  "reasoning_quality": 0.7,
+  "overall_assessment": "summary of bias analysis",
+  "metadata": {}
+}
+
+Common cognitive biases to detect:
+- confirmation_bias: Favoring information that confirms existing beliefs
+- anchoring_bias: Over-relying on first piece of information encountered
+- availability_heuristic: Overweighting easily recalled information
+- sunk_cost_fallacy: Continuing due to prior investment, not future value
+- hindsight_bias: Believing past events were predictable
+- bandwagon_effect: Adopting beliefs because many others hold them
+- self_serving_bias: Attributing success to self, failure to external factors
+- dunning_kruger_effect: Overestimating one's own abilities
+- negativity_bias: Giving more weight to negative experiences
+- status_quo_bias: Preference for current state of affairs
+
+Guidelines:
+- severity: 1 (minor) to 5 (critical impact on reasoning)
+- confidence: 0.0 to 1.0 (how certain you are of the detection)
+- reasoning_quality: 0.0 (heavily biased) to 1.0 (unbiased reasoning)
+- Only report biases you are confident about (confidence > 0.6)
+- Provide specific, actionable remediation suggestions
+
+Always respond with valid JSON only, no other text."#;
+
+/// System prompt for logical fallacy detection.
+pub const FALLACY_DETECTION_PROMPT: &str = r#"You are a logical fallacy detection assistant. Analyze the given content for logical fallacies that may invalidate arguments.
+
+Your response MUST be valid JSON in this format:
+{
+  "detections": [
+    {
+      "fallacy_type": "name_of_fallacy",
+      "category": "formal|informal",
+      "severity": 3,
+      "confidence": 0.8,
+      "explanation": "why this is a fallacy",
+      "remediation": "how to fix the argument",
+      "excerpt": "relevant text excerpt"
+    }
+  ],
+  "argument_validity": 0.6,
+  "overall_assessment": "summary of fallacy analysis",
+  "metadata": {}
+}
+
+Formal fallacies (invalid logical structure):
+- affirming_consequent: If P then Q, Q, therefore P
+- denying_antecedent: If P then Q, not P, therefore not Q
+- undistributed_middle: All A are B, all C are B, therefore all A are C
+- illicit_major/minor: Invalid categorical syllogism
+
+Informal fallacies (content/context errors):
+- ad_hominem: Attacking the person instead of the argument
+- straw_man: Misrepresenting opponent's position
+- false_dichotomy: Presenting only two options when more exist
+- appeal_to_authority: Using authority as evidence without justification
+- appeal_to_emotion: Using emotional manipulation instead of logic
+- red_herring: Introducing irrelevant information
+- slippery_slope: Claiming one event will lead to extreme consequences
+- circular_reasoning: Conclusion is assumed in the premise
+- hasty_generalization: Drawing broad conclusions from limited samples
+- false_cause: Assuming causation from correlation
+- tu_quoque: Deflecting criticism by pointing to others' faults
+- equivocation: Using ambiguous language to mislead
+- loaded_question: Embedding assumptions in a question
+- no_true_scotsman: Dismissing counterexamples by changing definition
+
+Guidelines:
+- severity: 1 (minor) to 5 (argument-invalidating)
+- confidence: 0.0 to 1.0 (how certain you are of the detection)
+- argument_validity: 0.0 (invalid) to 1.0 (logically sound)
+- Only report fallacies you are confident about (confidence > 0.6)
+- Distinguish between formal (structural) and informal (content) fallacies
+
+Always respond with valid JSON only, no other text."#;
+
 /// Get the appropriate system prompt for a given mode.
 ///
 /// # Arguments
@@ -232,6 +329,11 @@ pub fn get_prompt_for_mode(mode: &str) -> &'static str {
         "got_score" | "got-score" => GOT_SCORE_PROMPT,
         "got_aggregate" | "got-aggregate" => GOT_AGGREGATE_PROMPT,
         "got_refine" | "got-refine" => GOT_REFINE_PROMPT,
+        // Phase 4: Bias & Fallacy Detection
+        "detect_biases" | "detect-biases" | "bias" | "biases" => BIAS_DETECTION_PROMPT,
+        "detect_fallacies" | "detect-fallacies" | "fallacy" | "fallacies" => {
+            FALLACY_DETECTION_PROMPT
+        }
         _ => LINEAR_REASONING_PROMPT,
     }
 }
@@ -247,6 +349,8 @@ mod tests {
         assert!(!DIVERGENT_REASONING_PROMPT.is_empty());
         assert!(!REFLECTION_PROMPT.is_empty());
         assert!(!AUTO_ROUTER_PROMPT.is_empty());
+        assert!(!BIAS_DETECTION_PROMPT.is_empty());
+        assert!(!FALLACY_DETECTION_PROMPT.is_empty());
     }
 
     #[test]
@@ -256,6 +360,8 @@ mod tests {
         assert!(DIVERGENT_REASONING_PROMPT.contains("JSON"));
         assert!(REFLECTION_PROMPT.contains("JSON"));
         assert!(AUTO_ROUTER_PROMPT.contains("JSON"));
+        assert!(BIAS_DETECTION_PROMPT.contains("JSON"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("JSON"));
     }
 
     #[test]
@@ -273,5 +379,61 @@ mod tests {
     fn test_get_prompt_case_insensitive() {
         assert_eq!(get_prompt_for_mode("LINEAR"), LINEAR_REASONING_PROMPT);
         assert_eq!(get_prompt_for_mode("Tree"), TREE_REASONING_PROMPT);
+    }
+
+    // ========================================================================
+    // Phase 4: Bias & Fallacy Detection Prompt Tests
+    // ========================================================================
+
+    #[test]
+    fn test_bias_detection_prompt_content() {
+        assert!(BIAS_DETECTION_PROMPT.contains("cognitive bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("confirmation_bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("anchoring_bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("reasoning_quality"));
+        assert!(BIAS_DETECTION_PROMPT.contains("severity"));
+        assert!(BIAS_DETECTION_PROMPT.contains("remediation"));
+    }
+
+    #[test]
+    fn test_fallacy_detection_prompt_content() {
+        assert!(FALLACY_DETECTION_PROMPT.contains("logical fallacy"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("ad_hominem"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("straw_man"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("argument_validity"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("formal"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("informal"));
+    }
+
+    #[test]
+    fn test_get_prompt_for_detection_modes() {
+        // Test all variations of bias detection
+        assert_eq!(get_prompt_for_mode("detect_biases"), BIAS_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("detect-biases"), BIAS_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("bias"), BIAS_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("biases"), BIAS_DETECTION_PROMPT);
+
+        // Test all variations of fallacy detection
+        assert_eq!(
+            get_prompt_for_mode("detect_fallacies"),
+            FALLACY_DETECTION_PROMPT
+        );
+        assert_eq!(
+            get_prompt_for_mode("detect-fallacies"),
+            FALLACY_DETECTION_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode("fallacy"), FALLACY_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("fallacies"), FALLACY_DETECTION_PROMPT);
+    }
+
+    #[test]
+    fn test_detection_prompts_case_insensitive() {
+        assert_eq!(get_prompt_for_mode("BIAS"), BIAS_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("Detect_Biases"), BIAS_DETECTION_PROMPT);
+        assert_eq!(get_prompt_for_mode("FALLACY"), FALLACY_DETECTION_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("Detect_Fallacies"),
+            FALLACY_DETECTION_PROMPT
+        );
     }
 }

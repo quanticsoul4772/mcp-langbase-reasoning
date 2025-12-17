@@ -1,3 +1,14 @@
+//! Reasoning mode implementations.
+//!
+//! This module provides different reasoning modes:
+//! - [`LinearMode`]: Sequential step-by-step reasoning
+//! - [`TreeMode`]: Branching exploration with multiple paths
+//! - [`DivergentMode`]: Creative exploration with multiple perspectives
+//! - [`ReflectionMode`]: Meta-cognitive analysis
+//! - [`BacktrackingMode`]: Checkpoint-based state restoration
+//! - [`AutoMode`]: Intelligent mode selection
+//! - [`GotMode`]: Graph-of-Thoughts reasoning
+
 mod auto;
 mod backtracking;
 mod divergent;
@@ -16,16 +27,23 @@ pub use tree::*;
 
 use serde::{Deserialize, Serialize};
 
-/// Reasoning mode types
+/// Reasoning mode types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningMode {
+    /// Sequential step-by-step reasoning.
     Linear,
+    /// Branching exploration with multiple paths.
     Tree,
+    /// Creative exploration with multiple perspectives.
     Divergent,
+    /// Meta-cognitive analysis and quality improvement.
     Reflection,
+    /// Checkpoint-based state restoration.
     Backtracking,
+    /// Automatic mode selection based on content.
     Auto,
+    /// Graph-of-Thoughts reasoning.
     Got,
 }
 
@@ -95,20 +113,47 @@ mod tests {
 
     #[test]
     fn test_reasoning_mode_from_str_valid() {
-        assert_eq!("linear".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
-        assert_eq!("tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
-        assert_eq!("divergent".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
-        assert_eq!("reflection".parse::<ReasoningMode>().unwrap(), ReasoningMode::Reflection);
-        assert_eq!("backtracking".parse::<ReasoningMode>().unwrap(), ReasoningMode::Backtracking);
-        assert_eq!("auto".parse::<ReasoningMode>().unwrap(), ReasoningMode::Auto);
+        assert_eq!(
+            "linear".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Linear
+        );
+        assert_eq!(
+            "tree".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Tree
+        );
+        assert_eq!(
+            "divergent".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Divergent
+        );
+        assert_eq!(
+            "reflection".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Reflection
+        );
+        assert_eq!(
+            "backtracking".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Backtracking
+        );
+        assert_eq!(
+            "auto".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Auto
+        );
         assert_eq!("got".parse::<ReasoningMode>().unwrap(), ReasoningMode::Got);
     }
 
     #[test]
     fn test_reasoning_mode_from_str_case_insensitive() {
-        assert_eq!("LINEAR".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
-        assert_eq!("Tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
-        assert_eq!("DIVERGENT".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
+        assert_eq!(
+            "LINEAR".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Linear
+        );
+        assert_eq!(
+            "Tree".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Tree
+        );
+        assert_eq!(
+            "DIVERGENT".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Divergent
+        );
     }
 
     #[test]

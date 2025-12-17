@@ -29,10 +29,7 @@ fn create_test_client(base_url: &str) -> LangbaseClient {
 
 /// Create a simple pipe request for testing
 fn create_test_request(content: &str) -> PipeRequest {
-    PipeRequest::new(
-        "test-pipe",
-        vec![Message::user(content)],
-    )
+    PipeRequest::new("test-pipe", vec![Message::user(content)])
 }
 
 #[cfg(test)]
@@ -68,7 +65,11 @@ mod pipe_call_tests {
         let request = create_test_request("Test thought content");
         let result = client.call_pipe(request).await;
 
-        assert!(result.is_ok(), "Pipe call should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipe call should succeed: {:?}",
+            result.err()
+        );
         let response = result.unwrap();
         assert!(response.success);
         assert_eq!(response.completion, "This is a test reasoning response.");
@@ -119,7 +120,10 @@ mod pipe_call_tests {
         let request = create_test_request("");
         let result = client.call_pipe(request).await;
 
-        assert!(result.is_err(), "Should return error for validation failure");
+        assert!(
+            result.is_err(),
+            "Should return error for validation failure"
+        );
     }
 
     #[tokio::test]
@@ -464,7 +468,8 @@ mod reasoning_response_tests {
 
     #[test]
     fn test_parse_valid_json_response() {
-        let json = r#"{"thought": "This is analysis", "confidence": 0.85, "metadata": {"key": "value"}}"#;
+        let json =
+            r#"{"thought": "This is analysis", "confidence": 0.85, "metadata": {"key": "value"}}"#;
         let response = ReasoningResponse::from_completion(json);
 
         assert_eq!(response.thought, "This is analysis");

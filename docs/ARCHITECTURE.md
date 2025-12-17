@@ -521,4 +521,4 @@ pub struct Config {
 | Modes | Unit/Integration | `tests/modes_test.rs`, `tests/integration_test.rs` |
 | Prompts | Unit | `src/prompts.rs` (inline) |
 
-Total test count: 258 tests across all modules.
+Total test count: 482 tests across all modules.

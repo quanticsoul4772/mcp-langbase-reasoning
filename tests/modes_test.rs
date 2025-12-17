@@ -9,10 +9,14 @@ use wiremock::{
     Mock, MockServer, ResponseTemplate,
 };
 
-use mcp_langbase_reasoning::config::{Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig};
+use mcp_langbase_reasoning::config::{
+    Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
+};
 use mcp_langbase_reasoning::langbase::LangbaseClient;
-use mcp_langbase_reasoning::modes::{DivergentMode, DivergentParams, ReflectionMode, ReflectionParams, TreeMode, TreeParams};
-use mcp_langbase_reasoning::storage::{SqliteStorage, Storage, Session, Thought};
+use mcp_langbase_reasoning::modes::{
+    DivergentMode, DivergentParams, ReflectionMode, ReflectionParams, TreeMode, TreeParams,
+};
+use mcp_langbase_reasoning::storage::{Session, SqliteStorage, Storage, Thought};
 
 /// Create test configuration with mock server URL
 fn create_test_config(mock_url: &str, db_path: std::path::PathBuf) -> Config {
@@ -43,6 +47,7 @@ fn create_test_config(mock_url: &str, db_path: std::path::PathBuf) -> Config {
             auto: None,
             backtracking: None,
             got: None,
+            detection: None,
         },
     }
 }
@@ -53,7 +58,9 @@ async fn create_test_storage(db_path: std::path::PathBuf) -> SqliteStorage {
         path: db_path,
         max_connections: 1,
     };
-    SqliteStorage::new(&config).await.expect("Failed to create storage")
+    SqliteStorage::new(&config)
+        .await
+        .expect("Failed to create storage")
 }
 
 #[cfg(test)]
@@ -143,7 +150,11 @@ mod tree_mode_tests {
         let params = TreeParams::new("Explore options for solving this problem");
         let result = tree_mode.process(params).await;
 
-        assert!(result.is_ok(), "Tree processing should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Tree processing should succeed: {:?}",
+            result.err()
+        );
         let result = result.unwrap();
 
         // Verify session was created
@@ -222,12 +233,18 @@ mod tree_mode_tests {
 
         // Focus on second branch
         let branch_to_focus = &result.child_branches[1].id;
-        let focus_result = tree_mode.focus_branch(&result.session_id, branch_to_focus).await;
+        let focus_result = tree_mode
+            .focus_branch(&result.session_id, branch_to_focus)
+            .await;
 
         assert!(focus_result.is_ok());
 
         // Verify session was updated
-        let session = storage.get_session(&result.session_id).await.unwrap().unwrap();
+        let session = storage
+            .get_session(&result.session_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(session.active_branch_id, Some(branch_to_focus.clone()));
     }
 
@@ -349,7 +366,11 @@ mod divergent_mode_tests {
         let params = DivergentParams::new("How might we improve user engagement?");
         let result = divergent_mode.process(params).await;
 
-        assert!(result.is_ok(), "Divergent processing should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Divergent processing should succeed: {:?}",
+            result.err()
+        );
         let result = result.unwrap();
 
         assert_eq!(result.perspectives.len(), 3);
@@ -424,7 +445,10 @@ mod divergent_mode_tests {
         let result = divergent_mode.process(params).await.unwrap();
 
         // Verify synthesis thought was created
-        let synthesis = storage.get_thought(&result.synthesis_thought_id).await.unwrap();
+        let synthesis = storage
+            .get_thought(&result.synthesis_thought_id)
+            .await
+            .unwrap();
         assert!(synthesis.is_some());
         assert_eq!(synthesis.unwrap().content, "This is the synthesis");
     }
@@ -525,10 +549,15 @@ mod reflection_mode_tests {
 
         let reflection_mode = ReflectionMode::new(storage.clone(), langbase, &config);
 
-        let params = ReflectionParams::for_content("The market will grow because demand is increasing");
+        let params =
+            ReflectionParams::for_content("The market will grow because demand is increasing");
         let result = reflection_mode.process(params).await;
 
-        assert!(result.is_ok(), "Reflection processing should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Reflection processing should succeed: {:?}",
+            result.err()
+        );
         let result = result.unwrap();
 
         assert!(!result.analysis.is_empty());
@@ -567,8 +596,8 @@ mod reflection_mode_tests {
         let session = Session::new("linear");
         storage.create_session(&session).await.unwrap();
 
-        let thought = Thought::new(&session.id, "Original thought content", "linear")
-            .with_confidence(0.7);
+        let thought =
+            Thought::new(&session.id, "Original thought content", "linear").with_confidence(0.7);
         storage.create_thought(&thought).await.unwrap();
 
         let reflection_mode = ReflectionMode::new(storage.clone(), langbase, &config);
@@ -645,11 +674,26 @@ mod cross_ref_tests {
 
     #[test]
     fn test_cross_ref_type_parsing() {
-        assert_eq!("supports".parse::<CrossRefType>().unwrap(), CrossRefType::Supports);
-        assert_eq!("contradicts".parse::<CrossRefType>().unwrap(), CrossRefType::Contradicts);
-        assert_eq!("extends".parse::<CrossRefType>().unwrap(), CrossRefType::Extends);
-        assert_eq!("alternative".parse::<CrossRefType>().unwrap(), CrossRefType::Alternative);
-        assert_eq!("depends".parse::<CrossRefType>().unwrap(), CrossRefType::Depends);
+        assert_eq!(
+            "supports".parse::<CrossRefType>().unwrap(),
+            CrossRefType::Supports
+        );
+        assert_eq!(
+            "contradicts".parse::<CrossRefType>().unwrap(),
+            CrossRefType::Contradicts
+        );
+        assert_eq!(
+            "extends".parse::<CrossRefType>().unwrap(),
+            CrossRefType::Extends
+        );
+        assert_eq!(
+            "alternative".parse::<CrossRefType>().unwrap(),
+            CrossRefType::Alternative
+        );
+        assert_eq!(
+            "depends".parse::<CrossRefType>().unwrap(),
+            CrossRefType::Depends
+        );
     }
 
     #[tokio::test]
@@ -693,7 +737,10 @@ mod cross_ref_tests {
         assert_eq!(result2.cross_refs_created, 1);
 
         // Verify cross-ref was stored
-        let cross_refs = storage.get_cross_refs_from(&result2.branch_id).await.unwrap();
+        let cross_refs = storage
+            .get_cross_refs_from(&result2.branch_id)
+            .await
+            .unwrap();
         assert_eq!(cross_refs.len(), 1);
         assert_eq!(cross_refs[0].to_branch_id, result1.branch_id);
     }

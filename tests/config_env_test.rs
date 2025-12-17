@@ -10,23 +10,28 @@ use mcp_langbase_reasoning::config::{Config, LogFormat};
 use serial_test::serial;
 use std::env;
 
+/// Helper to set up required environment variables for testing
+fn setup_required_env() {
+    env::set_var("LANGBASE_API_KEY", "test_api_key_for_testing");
+}
+
 #[test]
 #[serial]
 fn test_config_from_env_loads_successfully() {
+    setup_required_env();
+
     // Config::from_env() should succeed when LANGBASE_API_KEY is available
-    // (either from env var or .env file)
     let result = Config::from_env();
-    // If there's a .env file with the key, this succeeds
-    // This test verifies the function works in the project environment
     assert!(
         result.is_ok(),
-        "Config::from_env() should succeed with .env file present"
+        "Config::from_env() should succeed with LANGBASE_API_KEY set"
     );
 }
 
 #[test]
 #[serial]
 fn test_config_from_env_custom_base_url() {
+    setup_required_env();
     env::set_var("LANGBASE_BASE_URL", "https://custom.api.com");
 
     let config = Config::from_env().unwrap();
@@ -39,6 +44,7 @@ fn test_config_from_env_custom_base_url() {
 #[test]
 #[serial]
 fn test_config_from_env_custom_database() {
+    setup_required_env();
     env::set_var("DATABASE_PATH", "/custom/path.db");
     env::set_var("DATABASE_MAX_CONNECTIONS", "10");
 
@@ -54,6 +60,7 @@ fn test_config_from_env_custom_database() {
 #[test]
 #[serial]
 fn test_config_from_env_json_log_format() {
+    setup_required_env();
     env::set_var("LOG_FORMAT", "json");
 
     let config = Config::from_env().unwrap();
@@ -66,6 +73,7 @@ fn test_config_from_env_json_log_format() {
 #[test]
 #[serial]
 fn test_config_from_env_custom_request() {
+    setup_required_env();
     env::set_var("REQUEST_TIMEOUT_MS", "60000");
     env::set_var("MAX_RETRIES", "5");
     env::set_var("RETRY_DELAY_MS", "2000");
@@ -84,6 +92,7 @@ fn test_config_from_env_custom_request() {
 #[test]
 #[serial]
 fn test_config_from_env_custom_pipes() {
+    setup_required_env();
     env::set_var("PIPE_LINEAR", "custom-linear-v2");
     env::set_var("PIPE_TREE", "custom-tree-v2");
 
@@ -99,6 +108,7 @@ fn test_config_from_env_custom_pipes() {
 #[test]
 #[serial]
 fn test_config_invalid_number_uses_default() {
+    setup_required_env();
     env::set_var("DATABASE_MAX_CONNECTIONS", "not-a-number");
 
     let config = Config::from_env().unwrap();
@@ -112,6 +122,7 @@ fn test_config_invalid_number_uses_default() {
 #[test]
 #[serial]
 fn test_config_from_env_got_config_partial() {
+    setup_required_env();
     // Set only some GoT env vars - should create GotPipeConfig with those values
     env::set_var("PIPE_GOT_GENERATE", "custom-got-generate");
     env::set_var("GOT_MAX_NODES", "50");
@@ -138,6 +149,7 @@ fn test_config_from_env_got_config_partial() {
 #[test]
 #[serial]
 fn test_config_from_env_got_config_full() {
+    setup_required_env();
     // Set all GoT env vars
     env::set_var("PIPE_GOT_GENERATE", "got-gen-v2");
     env::set_var("PIPE_GOT_SCORE", "got-score-v2");
@@ -174,6 +186,7 @@ fn test_config_from_env_got_config_full() {
 #[test]
 #[serial]
 fn test_config_from_env_optional_pipes() {
+    setup_required_env();
     // Test PIPE_AUTO and PIPE_BACKTRACKING
     env::set_var("PIPE_AUTO", "custom-auto-v1");
     env::set_var("PIPE_BACKTRACKING", "backtrack-v1");
@@ -193,6 +206,7 @@ fn test_config_from_env_optional_pipes() {
 #[test]
 #[serial]
 fn test_config_from_env_log_level() {
+    setup_required_env();
     env::set_var("LOG_LEVEL", "debug");
 
     let config = Config::from_env().unwrap();

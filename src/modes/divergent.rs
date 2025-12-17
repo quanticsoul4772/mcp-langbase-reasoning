@@ -417,3 +417,369 @@ impl DivergentParams {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Default Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_confidence() {
+        assert_eq!(default_confidence(), 0.7);
+    }
+
+    #[test]
+    fn test_default_num_perspectives() {
+        assert_eq!(default_num_perspectives(), 3);
+    }
+
+    // ============================================================================
+    // DivergentParams Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_params_new() {
+        let params = DivergentParams::new("Test content");
+        assert_eq!(params.content, "Test content");
+        assert!(params.session_id.is_none());
+        assert!(params.branch_id.is_none());
+        assert_eq!(params.num_perspectives, 3);
+        assert!(!params.challenge_assumptions);
+        assert!(!params.force_rebellion);
+        assert_eq!(params.confidence, 0.7);
+    }
+
+    #[test]
+    fn test_divergent_params_with_session() {
+        let params = DivergentParams::new("Content").with_session("sess-123");
+        assert_eq!(params.session_id, Some("sess-123".to_string()));
+    }
+
+    #[test]
+    fn test_divergent_params_with_branch() {
+        let params = DivergentParams::new("Content").with_branch("branch-456");
+        assert_eq!(params.branch_id, Some("branch-456".to_string()));
+    }
+
+    #[test]
+    fn test_divergent_params_with_num_perspectives() {
+        let params = DivergentParams::new("Content").with_num_perspectives(4);
+        assert_eq!(params.num_perspectives, 4);
+    }
+
+    #[test]
+    fn test_divergent_params_num_perspectives_clamped_high() {
+        let params = DivergentParams::new("Content").with_num_perspectives(10);
+        assert_eq!(params.num_perspectives, 5); // max is 5
+    }
+
+    #[test]
+    fn test_divergent_params_num_perspectives_clamped_low() {
+        let params = DivergentParams::new("Content").with_num_perspectives(1);
+        assert_eq!(params.num_perspectives, 2); // min is 2
+    }
+
+    #[test]
+    fn test_divergent_params_with_assumption_challenging() {
+        let params = DivergentParams::new("Content").with_assumption_challenging();
+        assert!(params.challenge_assumptions);
+    }
+
+    #[test]
+    fn test_divergent_params_with_rebellion() {
+        let params = DivergentParams::new("Content").with_rebellion();
+        assert!(params.force_rebellion);
+    }
+
+    #[test]
+    fn test_divergent_params_with_confidence() {
+        let params = DivergentParams::new("Content").with_confidence(0.85);
+        assert_eq!(params.confidence, 0.85);
+    }
+
+    #[test]
+    fn test_divergent_params_confidence_clamped_high() {
+        let params = DivergentParams::new("Content").with_confidence(1.5);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_divergent_params_confidence_clamped_low() {
+        let params = DivergentParams::new("Content").with_confidence(-0.3);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_divergent_params_builder_chain() {
+        let params = DivergentParams::new("Chained")
+            .with_session("my-session")
+            .with_branch("my-branch")
+            .with_num_perspectives(4)
+            .with_assumption_challenging()
+            .with_rebellion()
+            .with_confidence(0.9);
+
+        assert_eq!(params.content, "Chained");
+        assert_eq!(params.session_id, Some("my-session".to_string()));
+        assert_eq!(params.branch_id, Some("my-branch".to_string()));
+        assert_eq!(params.num_perspectives, 4);
+        assert!(params.challenge_assumptions);
+        assert!(params.force_rebellion);
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_divergent_params_serialize() {
+        let params = DivergentParams::new("Test")
+            .with_session("sess-1")
+            .with_num_perspectives(4)
+            .with_assumption_challenging();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("Test"));
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("\"num_perspectives\":4"));
+        assert!(json.contains("\"challenge_assumptions\":true"));
+    }
+
+    #[test]
+    fn test_divergent_params_deserialize() {
+        let json = r#"{
+            "content": "Parsed",
+            "session_id": "s-1",
+            "branch_id": "b-1",
+            "num_perspectives": 5,
+            "challenge_assumptions": true,
+            "force_rebellion": true,
+            "confidence": 0.8
+        }"#;
+        let params: DivergentParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Parsed");
+        assert_eq!(params.session_id, Some("s-1".to_string()));
+        assert_eq!(params.branch_id, Some("b-1".to_string()));
+        assert_eq!(params.num_perspectives, 5);
+        assert!(params.challenge_assumptions);
+        assert!(params.force_rebellion);
+        assert_eq!(params.confidence, 0.8);
+    }
+
+    #[test]
+    fn test_divergent_params_deserialize_minimal() {
+        let json = r#"{"content": "Only content"}"#;
+        let params: DivergentParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Only content");
+        assert!(params.session_id.is_none());
+        assert!(params.branch_id.is_none());
+        assert_eq!(params.num_perspectives, 3); // default
+        assert!(!params.challenge_assumptions);
+        assert!(!params.force_rebellion);
+        assert_eq!(params.confidence, 0.7); // default
+    }
+
+    // ============================================================================
+    // Perspective Tests
+    // ============================================================================
+
+    #[test]
+    fn test_perspective_serialize() {
+        let perspective = Perspective {
+            thought: "A novel thought".to_string(),
+            novelty: 0.85,
+            viability: 0.7,
+            assumptions_challenged: Some(vec!["Assumption 1".to_string()]),
+        };
+
+        let json = serde_json::to_string(&perspective).unwrap();
+        assert!(json.contains("A novel thought"));
+        assert!(json.contains("0.85"));
+        assert!(json.contains("0.7"));
+        assert!(json.contains("Assumption 1"));
+    }
+
+    #[test]
+    fn test_perspective_deserialize() {
+        let json = r#"{
+            "thought": "Creative idea",
+            "novelty": 0.9,
+            "viability": 0.6,
+            "assumptions_challenged": ["Challenge 1", "Challenge 2"]
+        }"#;
+        let perspective: Perspective = serde_json::from_str(json).unwrap();
+
+        assert_eq!(perspective.thought, "Creative idea");
+        assert_eq!(perspective.novelty, 0.9);
+        assert_eq!(perspective.viability, 0.6);
+        assert_eq!(perspective.assumptions_challenged.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_perspective_without_assumptions() {
+        let json = r#"{
+            "thought": "Simple idea",
+            "novelty": 0.5,
+            "viability": 0.5
+        }"#;
+        let perspective: Perspective = serde_json::from_str(json).unwrap();
+
+        assert_eq!(perspective.thought, "Simple idea");
+        assert!(perspective.assumptions_challenged.is_none());
+    }
+
+    // ============================================================================
+    // PerspectiveInfo Tests
+    // ============================================================================
+
+    #[test]
+    fn test_perspective_info_serialize() {
+        let info = PerspectiveInfo {
+            thought_id: "thought-123".to_string(),
+            content: "Perspective content".to_string(),
+            novelty: 0.8,
+            viability: 0.75,
+            assumptions_challenged: vec!["Assumption A".to_string()],
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("thought-123"));
+        assert!(json.contains("Perspective content"));
+        assert!(json.contains("0.8"));
+        assert!(json.contains("0.75"));
+        assert!(json.contains("Assumption A"));
+    }
+
+    #[test]
+    fn test_perspective_info_deserialize() {
+        let json = r#"{
+            "thought_id": "t-1",
+            "content": "Info content",
+            "novelty": 0.6,
+            "viability": 0.9,
+            "assumptions_challenged": ["A", "B"]
+        }"#;
+        let info: PerspectiveInfo = serde_json::from_str(json).unwrap();
+
+        assert_eq!(info.thought_id, "t-1");
+        assert_eq!(info.content, "Info content");
+        assert_eq!(info.novelty, 0.6);
+        assert_eq!(info.viability, 0.9);
+        assert_eq!(info.assumptions_challenged.len(), 2);
+    }
+
+    // ============================================================================
+    // DivergentResponse Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_response_serialize() {
+        let response = DivergentResponse {
+            perspectives: vec![
+                Perspective {
+                    thought: "Perspective 1".to_string(),
+                    novelty: 0.8,
+                    viability: 0.7,
+                    assumptions_challenged: None,
+                }
+            ],
+            synthesis: "Combined insight".to_string(),
+            metadata: serde_json::json!({"key": "value"}),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("Perspective 1"));
+        assert!(json.contains("Combined insight"));
+    }
+
+    #[test]
+    fn test_divergent_response_deserialize() {
+        let json = r#"{
+            "perspectives": [
+                {"thought": "P1", "novelty": 0.7, "viability": 0.8},
+                {"thought": "P2", "novelty": 0.9, "viability": 0.6}
+            ],
+            "synthesis": "Synthesis text"
+        }"#;
+        let response: DivergentResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.perspectives.len(), 2);
+        assert_eq!(response.synthesis, "Synthesis text");
+    }
+
+    // ============================================================================
+    // DivergentResult Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_result_serialize() {
+        let result = DivergentResult {
+            session_id: "sess-1".to_string(),
+            thought_id: "t-main".to_string(),
+            perspectives: vec![PerspectiveInfo {
+                thought_id: "t-p1".to_string(),
+                content: "First perspective".to_string(),
+                novelty: 0.85,
+                viability: 0.7,
+                assumptions_challenged: vec!["Challenge 1".to_string()],
+            }],
+            synthesis: "Final synthesis".to_string(),
+            synthesis_thought_id: "t-synth".to_string(),
+            total_novelty_score: 0.85,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: Some("branch-1".to_string()),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("t-main"));
+        assert!(json.contains("First perspective"));
+        assert!(json.contains("Final synthesis"));
+        assert!(json.contains("branch-1"));
+    }
+
+    #[test]
+    fn test_divergent_result_deserialize() {
+        let json = r#"{
+            "session_id": "s-1",
+            "thought_id": "t-1",
+            "perspectives": [],
+            "synthesis": "Synth",
+            "synthesis_thought_id": "t-synth",
+            "total_novelty_score": 0.75,
+            "most_viable_perspective": 1,
+            "most_novel_perspective": 2
+        }"#;
+        let result: DivergentResult = serde_json::from_str(json).unwrap();
+
+        assert_eq!(result.session_id, "s-1");
+        assert_eq!(result.thought_id, "t-1");
+        assert_eq!(result.synthesis, "Synth");
+        assert_eq!(result.total_novelty_score, 0.75);
+        assert_eq!(result.most_viable_perspective, 1);
+        assert_eq!(result.most_novel_perspective, 2);
+        assert!(result.branch_id.is_none());
+    }
+
+    #[test]
+    fn test_divergent_result_without_branch() {
+        let result = DivergentResult {
+            session_id: "s-1".to_string(),
+            thought_id: "t-1".to_string(),
+            perspectives: vec![],
+            synthesis: "No branch".to_string(),
+            synthesis_thought_id: "t-s".to_string(),
+            total_novelty_score: 0.5,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        // branch_id should be omitted due to skip_serializing_if
+        assert!(!json.contains("branch_id"));
+    }
+}

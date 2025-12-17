@@ -295,6 +295,10 @@ impl BacktrackingParams {
 mod tests {
     use super::*;
 
+    // ============================================================================
+    // BacktrackingParams Tests
+    // ============================================================================
+
     #[test]
     fn test_backtracking_params_new() {
         let params = BacktrackingParams::new("checkpoint-123");
@@ -320,6 +324,75 @@ mod tests {
     }
 
     #[test]
+    fn test_backtracking_params_builder_chain() {
+        let params = BacktrackingParams::new("cp-abc")
+            .with_direction("Alternative path")
+            .with_session("session-xyz");
+
+        assert_eq!(params.checkpoint_id, "cp-abc");
+        assert_eq!(params.new_direction, Some("Alternative path".to_string()));
+        assert_eq!(params.session_id, Some("session-xyz".to_string()));
+        assert_eq!(params.confidence, 0.8);
+    }
+
+    #[test]
+    fn test_backtracking_params_serialize() {
+        let params = BacktrackingParams::new("cp-1")
+            .with_direction("New direction")
+            .with_session("sess-1");
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("cp-1"));
+        assert!(json.contains("New direction"));
+        assert!(json.contains("sess-1"));
+    }
+
+    #[test]
+    fn test_backtracking_params_deserialize() {
+        let json = r#"{
+            "checkpoint_id": "cp-123",
+            "new_direction": "Try option B",
+            "session_id": "sess-456",
+            "confidence": 0.9
+        }"#;
+
+        let params: BacktrackingParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.checkpoint_id, "cp-123");
+        assert_eq!(params.new_direction, Some("Try option B".to_string()));
+        assert_eq!(params.session_id, Some("sess-456".to_string()));
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_backtracking_params_deserialize_minimal() {
+        let json = r#"{"checkpoint_id": "cp-only"}"#;
+
+        let params: BacktrackingParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.checkpoint_id, "cp-only");
+        assert!(params.new_direction.is_none());
+        assert!(params.session_id.is_none());
+        assert_eq!(params.confidence, 0.8); // default
+    }
+
+    #[test]
+    fn test_backtracking_params_round_trip() {
+        let original = BacktrackingParams::new("cp-round")
+            .with_direction("Direction X")
+            .with_session("sess-round");
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: BacktrackingParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.checkpoint_id, original.checkpoint_id);
+        assert_eq!(parsed.new_direction, original.new_direction);
+        assert_eq!(parsed.session_id, original.session_id);
+    }
+
+    // ============================================================================
+    // BacktrackingResponse Tests
+    // ============================================================================
+
+    #[test]
     fn test_backtracking_response_from_json() {
         let json = r#"{"thought": "New approach", "confidence": 0.9, "context_restored": true}"#;
         let resp = BacktrackingResponse::from_completion(json);
@@ -335,5 +408,206 @@ mod tests {
         assert_eq!(resp.thought, "Just plain text");
         assert_eq!(resp.confidence, 0.8);
         assert!(resp.context_restored);
+    }
+
+    #[test]
+    fn test_backtracking_response_with_all_fields() {
+        let json = r#"{
+            "thought": "Complete response",
+            "confidence": 0.95,
+            "context_restored": true,
+            "branch_from": "branch-abc",
+            "new_direction": "Exploring option C",
+            "metadata": {"key": "value"}
+        }"#;
+
+        let resp = BacktrackingResponse::from_completion(json);
+        assert_eq!(resp.thought, "Complete response");
+        assert_eq!(resp.confidence, 0.95);
+        assert!(resp.context_restored);
+        assert_eq!(resp.branch_from, Some("branch-abc".to_string()));
+        assert_eq!(resp.new_direction, Some("Exploring option C".to_string()));
+        assert!(resp.metadata.is_some());
+    }
+
+    #[test]
+    fn test_backtracking_response_defaults() {
+        let json = r#"{"thought": "Minimal", "confidence": 0.7}"#;
+
+        let resp = BacktrackingResponse::from_completion(json);
+        assert_eq!(resp.thought, "Minimal");
+        assert_eq!(resp.confidence, 0.7);
+        assert!(!resp.context_restored); // default is false
+        assert!(resp.branch_from.is_none());
+        assert!(resp.new_direction.is_none());
+        assert!(resp.metadata.is_none());
+    }
+
+    #[test]
+    fn test_backtracking_response_invalid_json() {
+        let invalid = "{ invalid json }";
+
+        let resp = BacktrackingResponse::from_completion(invalid);
+        assert_eq!(resp.thought, invalid);
+        assert_eq!(resp.confidence, 0.8); // fallback default
+        assert!(resp.context_restored); // fallback sets this to true
+    }
+
+    #[test]
+    fn test_backtracking_response_empty_string() {
+        let empty = "";
+
+        let resp = BacktrackingResponse::from_completion(empty);
+        assert_eq!(resp.thought, "");
+        assert_eq!(resp.confidence, 0.8);
+    }
+
+    // ============================================================================
+    // BacktrackingResult Tests
+    // ============================================================================
+
+    #[test]
+    fn test_backtracking_result_serialize() {
+        let result = BacktrackingResult {
+            thought_id: "thought-123".to_string(),
+            session_id: "sess-456".to_string(),
+            checkpoint_restored: "cp-789".to_string(),
+            content: "Backtracked content".to_string(),
+            confidence: 0.85,
+            new_branch_id: Some("branch-abc".to_string()),
+            snapshot_id: "snap-xyz".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("thought-123"));
+        assert!(json.contains("cp-789"));
+        assert!(json.contains("Backtracked content"));
+        assert!(json.contains("0.85"));
+        assert!(json.contains("branch-abc"));
+    }
+
+    #[test]
+    fn test_backtracking_result_deserialize() {
+        let json = r#"{
+            "thought_id": "t-1",
+            "session_id": "s-1",
+            "checkpoint_restored": "cp-1",
+            "content": "Result content",
+            "confidence": 0.9,
+            "new_branch_id": "b-1",
+            "snapshot_id": "snap-1"
+        }"#;
+
+        let result: BacktrackingResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.thought_id, "t-1");
+        assert_eq!(result.session_id, "s-1");
+        assert_eq!(result.checkpoint_restored, "cp-1");
+        assert_eq!(result.content, "Result content");
+        assert_eq!(result.confidence, 0.9);
+        assert_eq!(result.new_branch_id, Some("b-1".to_string()));
+        assert_eq!(result.snapshot_id, "snap-1");
+    }
+
+    #[test]
+    fn test_backtracking_result_without_branch() {
+        let result = BacktrackingResult {
+            thought_id: "t-1".to_string(),
+            session_id: "s-1".to_string(),
+            checkpoint_restored: "cp-1".to_string(),
+            content: "No branch".to_string(),
+            confidence: 0.75,
+            new_branch_id: None,
+            snapshot_id: "snap-1".to_string(),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: BacktrackingResult = serde_json::from_str(&json).unwrap();
+        assert!(parsed.new_branch_id.is_none());
+    }
+
+    #[test]
+    fn test_backtracking_result_round_trip() {
+        let original = BacktrackingResult {
+            thought_id: "round-t".to_string(),
+            session_id: "round-s".to_string(),
+            checkpoint_restored: "round-cp".to_string(),
+            content: "Round trip test".to_string(),
+            confidence: 0.88,
+            new_branch_id: Some("round-b".to_string()),
+            snapshot_id: "round-snap".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: BacktrackingResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.thought_id, original.thought_id);
+        assert_eq!(parsed.session_id, original.session_id);
+        assert_eq!(parsed.checkpoint_restored, original.checkpoint_restored);
+        assert_eq!(parsed.content, original.content);
+        assert_eq!(parsed.confidence, original.confidence);
+        assert_eq!(parsed.new_branch_id, original.new_branch_id);
+        assert_eq!(parsed.snapshot_id, original.snapshot_id);
+    }
+
+    // ============================================================================
+    // Default Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_confidence() {
+        assert_eq!(default_confidence(), 0.8);
+    }
+
+    // ============================================================================
+    // Edge Case Tests
+    // ============================================================================
+
+    #[test]
+    fn test_backtracking_params_empty_checkpoint_id() {
+        let params = BacktrackingParams::new("");
+        assert_eq!(params.checkpoint_id, "");
+    }
+
+    #[test]
+    fn test_backtracking_params_unicode_direction() {
+        let params = BacktrackingParams::new("cp-1")
+            .with_direction("探索新方向 🔄");
+
+        assert_eq!(params.new_direction, Some("探索新方向 🔄".to_string()));
+    }
+
+    #[test]
+    fn test_backtracking_response_high_confidence() {
+        let json = r#"{"thought": "Very confident", "confidence": 1.0}"#;
+
+        let resp = BacktrackingResponse::from_completion(json);
+        assert_eq!(resp.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_backtracking_response_zero_confidence() {
+        let json = r#"{"thought": "No confidence", "confidence": 0.0}"#;
+
+        let resp = BacktrackingResponse::from_completion(json);
+        assert_eq!(resp.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_backtracking_response_with_complex_metadata() {
+        let json = r#"{
+            "thought": "With metadata",
+            "confidence": 0.8,
+            "metadata": {
+                "nested": {"key": "value"},
+                "array": [1, 2, 3],
+                "boolean": true
+            }
+        }"#;
+
+        let resp = BacktrackingResponse::from_completion(json);
+        assert!(resp.metadata.is_some());
+        let meta = resp.metadata.unwrap();
+        assert!(meta.get("nested").is_some());
+        assert!(meta.get("array").is_some());
     }
 }

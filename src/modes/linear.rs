@@ -195,3 +195,150 @@ impl LinearParams {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // LinearParams Tests
+    // ============================================================================
+
+    #[test]
+    fn test_linear_params_new() {
+        let params = LinearParams::new("Test content");
+        assert_eq!(params.content, "Test content");
+        assert!(params.session_id.is_none());
+        assert_eq!(params.confidence, 0.8);
+    }
+
+    #[test]
+    fn test_linear_params_with_session() {
+        let params = LinearParams::new("Content").with_session("sess-123");
+        assert_eq!(params.session_id, Some("sess-123".to_string()));
+    }
+
+    #[test]
+    fn test_linear_params_with_confidence() {
+        let params = LinearParams::new("Content").with_confidence(0.9);
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_linear_params_confidence_clamped_high() {
+        let params = LinearParams::new("Content").with_confidence(1.5);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_linear_params_confidence_clamped_low() {
+        let params = LinearParams::new("Content").with_confidence(-0.5);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_linear_params_builder_chain() {
+        let params = LinearParams::new("Chained")
+            .with_session("my-session")
+            .with_confidence(0.75);
+
+        assert_eq!(params.content, "Chained");
+        assert_eq!(params.session_id, Some("my-session".to_string()));
+        assert_eq!(params.confidence, 0.75);
+    }
+
+    #[test]
+    fn test_linear_params_serialize() {
+        let params = LinearParams::new("Test")
+            .with_session("sess-1")
+            .with_confidence(0.85);
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("Test"));
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("0.85"));
+    }
+
+    #[test]
+    fn test_linear_params_deserialize() {
+        let json = r#"{"content": "Parsed", "session_id": "s-1", "confidence": 0.9}"#;
+        let params: LinearParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Parsed");
+        assert_eq!(params.session_id, Some("s-1".to_string()));
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_linear_params_deserialize_minimal() {
+        let json = r#"{"content": "Only content"}"#;
+        let params: LinearParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Only content");
+        assert!(params.session_id.is_none());
+        assert_eq!(params.confidence, 0.8); // default
+    }
+
+    // ============================================================================
+    // LinearResult Tests
+    // ============================================================================
+
+    #[test]
+    fn test_linear_result_serialize() {
+        let result = LinearResult {
+            thought_id: "thought-123".to_string(),
+            session_id: "sess-456".to_string(),
+            content: "Reasoning output".to_string(),
+            confidence: 0.88,
+            previous_thought: Some("thought-122".to_string()),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("thought-123"));
+        assert!(json.contains("sess-456"));
+        assert!(json.contains("Reasoning output"));
+        assert!(json.contains("0.88"));
+    }
+
+    #[test]
+    fn test_linear_result_deserialize() {
+        let json = r#"{
+            "thought_id": "t-1",
+            "session_id": "s-1",
+            "content": "Result content",
+            "confidence": 0.95,
+            "previous_thought": "t-0"
+        }"#;
+
+        let result: LinearResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.thought_id, "t-1");
+        assert_eq!(result.session_id, "s-1");
+        assert_eq!(result.content, "Result content");
+        assert_eq!(result.confidence, 0.95);
+        assert_eq!(result.previous_thought, Some("t-0".to_string()));
+    }
+
+    #[test]
+    fn test_linear_result_without_previous() {
+        let result = LinearResult {
+            thought_id: "t-1".to_string(),
+            session_id: "s-1".to_string(),
+            content: "First thought".to_string(),
+            confidence: 0.8,
+            previous_thought: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: LinearResult = serde_json::from_str(&json).unwrap();
+        assert!(parsed.previous_thought.is_none());
+    }
+
+    // ============================================================================
+    // Default Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_confidence() {
+        assert_eq!(default_confidence(), 0.8);
+    }
+}

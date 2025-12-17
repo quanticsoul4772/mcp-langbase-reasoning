@@ -108,3 +108,96 @@ fn test_config_invalid_number_uses_default() {
     // Restore default
     env::set_var("DATABASE_MAX_CONNECTIONS", "5");
 }
+
+#[test]
+#[serial]
+fn test_config_from_env_got_config_partial() {
+    // Set only some GoT env vars - should create GotPipeConfig with those values
+    env::set_var("PIPE_GOT_GENERATE", "custom-got-generate");
+    env::set_var("GOT_MAX_NODES", "50");
+
+    let config = Config::from_env().unwrap();
+
+    // Should create GotPipeConfig because at least one value is set
+    let got = config.pipes.got.expect("GotPipeConfig should be Some");
+    assert_eq!(got.generate_pipe, Some("custom-got-generate".to_string()));
+    assert_eq!(got.max_nodes, Some(50));
+    // Other values should be None since not set
+    assert!(got.score_pipe.is_none());
+    assert!(got.aggregate_pipe.is_none());
+    assert!(got.refine_pipe.is_none());
+    assert!(got.max_depth.is_none());
+    assert!(got.default_k.is_none());
+    assert!(got.prune_threshold.is_none());
+
+    // Restore defaults
+    env::remove_var("PIPE_GOT_GENERATE");
+    env::remove_var("GOT_MAX_NODES");
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_got_config_full() {
+    // Set all GoT env vars
+    env::set_var("PIPE_GOT_GENERATE", "got-gen-v2");
+    env::set_var("PIPE_GOT_SCORE", "got-score-v2");
+    env::set_var("PIPE_GOT_AGGREGATE", "got-agg-v2");
+    env::set_var("PIPE_GOT_REFINE", "got-refine-v2");
+    env::set_var("GOT_MAX_NODES", "200");
+    env::set_var("GOT_MAX_DEPTH", "20");
+    env::set_var("GOT_DEFAULT_K", "5");
+    env::set_var("GOT_PRUNE_THRESHOLD", "0.5");
+
+    let config = Config::from_env().unwrap();
+
+    let got = config.pipes.got.expect("GotPipeConfig should be Some");
+    assert_eq!(got.generate_pipe, Some("got-gen-v2".to_string()));
+    assert_eq!(got.score_pipe, Some("got-score-v2".to_string()));
+    assert_eq!(got.aggregate_pipe, Some("got-agg-v2".to_string()));
+    assert_eq!(got.refine_pipe, Some("got-refine-v2".to_string()));
+    assert_eq!(got.max_nodes, Some(200));
+    assert_eq!(got.max_depth, Some(20));
+    assert_eq!(got.default_k, Some(5));
+    assert_eq!(got.prune_threshold, Some(0.5));
+
+    // Cleanup
+    env::remove_var("PIPE_GOT_GENERATE");
+    env::remove_var("PIPE_GOT_SCORE");
+    env::remove_var("PIPE_GOT_AGGREGATE");
+    env::remove_var("PIPE_GOT_REFINE");
+    env::remove_var("GOT_MAX_NODES");
+    env::remove_var("GOT_MAX_DEPTH");
+    env::remove_var("GOT_DEFAULT_K");
+    env::remove_var("GOT_PRUNE_THRESHOLD");
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_optional_pipes() {
+    // Test PIPE_AUTO and PIPE_BACKTRACKING
+    env::set_var("PIPE_AUTO", "custom-auto-v1");
+    env::set_var("PIPE_BACKTRACKING", "backtrack-v1");
+
+    let config = Config::from_env().unwrap();
+
+    assert_eq!(config.pipes.auto, Some("custom-auto-v1".to_string()));
+    assert_eq!(config.pipes.backtracking, Some("backtrack-v1".to_string()));
+    // auto_router uses PIPE_AUTO as well
+    assert_eq!(config.pipes.auto_router, "custom-auto-v1");
+
+    // Cleanup
+    env::remove_var("PIPE_AUTO");
+    env::remove_var("PIPE_BACKTRACKING");
+}
+
+#[test]
+#[serial]
+fn test_config_from_env_log_level() {
+    env::set_var("LOG_LEVEL", "debug");
+
+    let config = Config::from_env().unwrap();
+    assert_eq!(config.logging.level, "debug");
+
+    // Restore default
+    env::set_var("LOG_LEVEL", "info");
+}

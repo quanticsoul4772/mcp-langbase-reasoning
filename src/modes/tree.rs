@@ -443,3 +443,434 @@ fn truncate(s: &str, max_len: usize) -> String {
         format!("{}...", &s[..max_len.saturating_sub(3)])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Default Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_confidence() {
+        assert_eq!(default_confidence(), 0.8);
+    }
+
+    #[test]
+    fn test_default_num_branches() {
+        assert_eq!(default_num_branches(), 3);
+    }
+
+    // ============================================================================
+    // Truncate Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_truncate_short_string() {
+        assert_eq!(truncate("Hello", 10), "Hello");
+    }
+
+    #[test]
+    fn test_truncate_exact_length() {
+        assert_eq!(truncate("Hello", 5), "Hello");
+    }
+
+    #[test]
+    fn test_truncate_long_string() {
+        assert_eq!(truncate("Hello World", 8), "Hello...");
+    }
+
+    #[test]
+    fn test_truncate_very_short_max() {
+        assert_eq!(truncate("Hello World", 3), "...");
+    }
+
+    // ============================================================================
+    // TreeParams Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_params_new() {
+        let params = TreeParams::new("Test content");
+        assert_eq!(params.content, "Test content");
+        assert!(params.session_id.is_none());
+        assert!(params.branch_id.is_none());
+        assert_eq!(params.confidence, 0.8);
+        assert_eq!(params.num_branches, 3);
+        assert!(params.cross_refs.is_empty());
+    }
+
+    #[test]
+    fn test_tree_params_with_session() {
+        let params = TreeParams::new("Content").with_session("sess-123");
+        assert_eq!(params.session_id, Some("sess-123".to_string()));
+    }
+
+    #[test]
+    fn test_tree_params_with_branch() {
+        let params = TreeParams::new("Content").with_branch("branch-456");
+        assert_eq!(params.branch_id, Some("branch-456".to_string()));
+    }
+
+    #[test]
+    fn test_tree_params_with_confidence() {
+        let params = TreeParams::new("Content").with_confidence(0.9);
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    #[test]
+    fn test_tree_params_confidence_clamped_high() {
+        let params = TreeParams::new("Content").with_confidence(1.5);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_tree_params_confidence_clamped_low() {
+        let params = TreeParams::new("Content").with_confidence(-0.5);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_tree_params_with_num_branches() {
+        let params = TreeParams::new("Content").with_num_branches(4);
+        assert_eq!(params.num_branches, 4);
+    }
+
+    #[test]
+    fn test_tree_params_num_branches_clamped_high() {
+        let params = TreeParams::new("Content").with_num_branches(10);
+        assert_eq!(params.num_branches, 4); // max is 4
+    }
+
+    #[test]
+    fn test_tree_params_num_branches_clamped_low() {
+        let params = TreeParams::new("Content").with_num_branches(1);
+        assert_eq!(params.num_branches, 2); // min is 2
+    }
+
+    #[test]
+    fn test_tree_params_with_cross_ref() {
+        let params = TreeParams::new("Content")
+            .with_cross_ref("branch-target", "supports");
+        assert_eq!(params.cross_refs.len(), 1);
+        assert_eq!(params.cross_refs[0].to_branch, "branch-target");
+        assert_eq!(params.cross_refs[0].ref_type, "supports");
+        assert!(params.cross_refs[0].reason.is_none());
+        assert!(params.cross_refs[0].strength.is_none());
+    }
+
+    #[test]
+    fn test_tree_params_multiple_cross_refs() {
+        let params = TreeParams::new("Content")
+            .with_cross_ref("branch-1", "supports")
+            .with_cross_ref("branch-2", "contradicts");
+        assert_eq!(params.cross_refs.len(), 2);
+    }
+
+    #[test]
+    fn test_tree_params_builder_chain() {
+        let params = TreeParams::new("Chained")
+            .with_session("my-session")
+            .with_branch("my-branch")
+            .with_confidence(0.85)
+            .with_num_branches(4)
+            .with_cross_ref("ref-branch", "supports");
+
+        assert_eq!(params.content, "Chained");
+        assert_eq!(params.session_id, Some("my-session".to_string()));
+        assert_eq!(params.branch_id, Some("my-branch".to_string()));
+        assert_eq!(params.confidence, 0.85);
+        assert_eq!(params.num_branches, 4);
+        assert_eq!(params.cross_refs.len(), 1);
+    }
+
+    #[test]
+    fn test_tree_params_serialize() {
+        let params = TreeParams::new("Test")
+            .with_session("sess-1")
+            .with_num_branches(3);
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("Test"));
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("\"num_branches\":3"));
+    }
+
+    #[test]
+    fn test_tree_params_deserialize() {
+        let json = r#"{
+            "content": "Parsed",
+            "session_id": "s-1",
+            "branch_id": "b-1",
+            "confidence": 0.9,
+            "num_branches": 4,
+            "cross_refs": []
+        }"#;
+        let params: TreeParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Parsed");
+        assert_eq!(params.session_id, Some("s-1".to_string()));
+        assert_eq!(params.branch_id, Some("b-1".to_string()));
+        assert_eq!(params.confidence, 0.9);
+        assert_eq!(params.num_branches, 4);
+    }
+
+    #[test]
+    fn test_tree_params_deserialize_minimal() {
+        let json = r#"{"content": "Only content"}"#;
+        let params: TreeParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.content, "Only content");
+        assert!(params.session_id.is_none());
+        assert!(params.branch_id.is_none());
+        assert_eq!(params.confidence, 0.8); // default
+        assert_eq!(params.num_branches, 3); // default
+        assert!(params.cross_refs.is_empty());
+    }
+
+    // ============================================================================
+    // CrossRefInput Tests
+    // ============================================================================
+
+    #[test]
+    fn test_cross_ref_input_serialize() {
+        let cr = CrossRefInput {
+            to_branch: "target-branch".to_string(),
+            ref_type: "supports".to_string(),
+            reason: Some("Strong evidence".to_string()),
+            strength: Some(0.9),
+        };
+
+        let json = serde_json::to_string(&cr).unwrap();
+        assert!(json.contains("target-branch"));
+        assert!(json.contains("supports"));
+        assert!(json.contains("Strong evidence"));
+        assert!(json.contains("0.9"));
+    }
+
+    #[test]
+    fn test_cross_ref_input_deserialize() {
+        let json = r#"{
+            "to_branch": "b-1",
+            "type": "contradicts",
+            "reason": "Conflicts with main thesis",
+            "strength": 0.8
+        }"#;
+        let cr: CrossRefInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(cr.to_branch, "b-1");
+        assert_eq!(cr.ref_type, "contradicts");
+        assert_eq!(cr.reason, Some("Conflicts with main thesis".to_string()));
+        assert_eq!(cr.strength, Some(0.8));
+    }
+
+    #[test]
+    fn test_cross_ref_input_deserialize_minimal() {
+        let json = r#"{"to_branch": "b-1", "type": "supports"}"#;
+        let cr: CrossRefInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(cr.to_branch, "b-1");
+        assert_eq!(cr.ref_type, "supports");
+        assert!(cr.reason.is_none());
+        assert!(cr.strength.is_none());
+    }
+
+    // ============================================================================
+    // TreeBranch Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_branch_serialize() {
+        let branch = TreeBranch {
+            thought: "A branching thought".to_string(),
+            confidence: 0.85,
+            rationale: "This is the reasoning".to_string(),
+        };
+
+        let json = serde_json::to_string(&branch).unwrap();
+        assert!(json.contains("A branching thought"));
+        assert!(json.contains("0.85"));
+        assert!(json.contains("This is the reasoning"));
+    }
+
+    #[test]
+    fn test_tree_branch_deserialize() {
+        let json = r#"{
+            "thought": "Branch thought",
+            "confidence": 0.75,
+            "rationale": "Because reasons"
+        }"#;
+        let branch: TreeBranch = serde_json::from_str(json).unwrap();
+
+        assert_eq!(branch.thought, "Branch thought");
+        assert_eq!(branch.confidence, 0.75);
+        assert_eq!(branch.rationale, "Because reasons");
+    }
+
+    // ============================================================================
+    // TreeResponse Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_response_serialize() {
+        let response = TreeResponse {
+            branches: vec![
+                TreeBranch {
+                    thought: "Option 1".to_string(),
+                    confidence: 0.8,
+                    rationale: "First path".to_string(),
+                },
+                TreeBranch {
+                    thought: "Option 2".to_string(),
+                    confidence: 0.7,
+                    rationale: "Second path".to_string(),
+                },
+            ],
+            recommended_branch: 0,
+            metadata: serde_json::json!({"analysis": "complete"}),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("Option 1"));
+        assert!(json.contains("Option 2"));
+        assert!(json.contains("recommended_branch"));
+    }
+
+    #[test]
+    fn test_tree_response_deserialize() {
+        let json = r#"{
+            "branches": [
+                {"thought": "Path A", "confidence": 0.9, "rationale": "Strong"},
+                {"thought": "Path B", "confidence": 0.6, "rationale": "Weak"}
+            ],
+            "recommended_branch": 1
+        }"#;
+        let response: TreeResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.branches.len(), 2);
+        assert_eq!(response.recommended_branch, 1);
+        assert_eq!(response.branches[0].thought, "Path A");
+    }
+
+    // ============================================================================
+    // BranchInfo Tests
+    // ============================================================================
+
+    #[test]
+    fn test_branch_info_serialize() {
+        let info = BranchInfo {
+            id: "branch-123".to_string(),
+            name: "Main branch".to_string(),
+            confidence: 0.82,
+            rationale: "Best option".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("branch-123"));
+        assert!(json.contains("Main branch"));
+        assert!(json.contains("0.82"));
+        assert!(json.contains("Best option"));
+    }
+
+    #[test]
+    fn test_branch_info_deserialize() {
+        let json = r#"{
+            "id": "b-1",
+            "name": "Test Branch",
+            "confidence": 0.95,
+            "rationale": "The rationale"
+        }"#;
+        let info: BranchInfo = serde_json::from_str(json).unwrap();
+
+        assert_eq!(info.id, "b-1");
+        assert_eq!(info.name, "Test Branch");
+        assert_eq!(info.confidence, 0.95);
+        assert_eq!(info.rationale, "The rationale");
+    }
+
+    // ============================================================================
+    // TreeResult Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_result_serialize() {
+        let result = TreeResult {
+            session_id: "sess-1".to_string(),
+            branch_id: "branch-1".to_string(),
+            thought_id: "thought-1".to_string(),
+            content: "Main thought content".to_string(),
+            confidence: 0.88,
+            child_branches: vec![BranchInfo {
+                id: "child-1".to_string(),
+                name: "Child Branch".to_string(),
+                confidence: 0.75,
+                rationale: "Exploring option".to_string(),
+            }],
+            recommended_branch_index: 0,
+            parent_branch: Some("parent-1".to_string()),
+            cross_refs_created: 2,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("sess-1"));
+        assert!(json.contains("branch-1"));
+        assert!(json.contains("Main thought content"));
+        assert!(json.contains("parent-1"));
+    }
+
+    #[test]
+    fn test_tree_result_deserialize() {
+        let json = r#"{
+            "session_id": "s-1",
+            "branch_id": "b-1",
+            "thought_id": "t-1",
+            "content": "Content",
+            "confidence": 0.8,
+            "child_branches": [],
+            "recommended_branch_index": 0,
+            "parent_branch": null,
+            "cross_refs_created": 0
+        }"#;
+        let result: TreeResult = serde_json::from_str(json).unwrap();
+
+        assert_eq!(result.session_id, "s-1");
+        assert_eq!(result.branch_id, "b-1");
+        assert_eq!(result.thought_id, "t-1");
+        assert!(result.child_branches.is_empty());
+        assert!(result.parent_branch.is_none());
+        assert_eq!(result.cross_refs_created, 0);
+    }
+
+    #[test]
+    fn test_tree_result_with_children() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Root".to_string(),
+            confidence: 0.9,
+            child_branches: vec![
+                BranchInfo {
+                    id: "c-1".to_string(),
+                    name: "Child 1".to_string(),
+                    confidence: 0.85,
+                    rationale: "First".to_string(),
+                },
+                BranchInfo {
+                    id: "c-2".to_string(),
+                    name: "Child 2".to_string(),
+                    confidence: 0.7,
+                    rationale: "Second".to_string(),
+                },
+            ],
+            recommended_branch_index: 1,
+            parent_branch: None,
+            cross_refs_created: 1,
+        };
+
+        assert_eq!(result.child_branches.len(), 2);
+        assert_eq!(result.recommended_branch_index, 1);
+        assert_eq!(result.cross_refs_created, 1);
+    }
+}

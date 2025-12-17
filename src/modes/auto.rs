@@ -367,6 +367,10 @@ impl AutoParams {
 mod tests {
     use super::*;
 
+    // ============================================================================
+    // AutoParams Tests
+    // ============================================================================
+
     #[test]
     fn test_auto_params_new() {
         let params = AutoParams::new("Test content");
@@ -388,6 +392,46 @@ mod tests {
     }
 
     #[test]
+    fn test_auto_params_builder_chain() {
+        let params = AutoParams::new("Content")
+            .with_hints(vec!["hint1".to_string(), "hint2".to_string()])
+            .with_session("sess-abc");
+
+        assert_eq!(params.content, "Content");
+        assert_eq!(params.hints.as_ref().unwrap().len(), 2);
+        assert_eq!(params.session_id, Some("sess-abc".to_string()));
+    }
+
+    #[test]
+    fn test_auto_params_serialize() {
+        let params = AutoParams::new("Test").with_hints(vec!["h1".to_string()]);
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("Test"));
+        assert!(json.contains("hints"));
+    }
+
+    #[test]
+    fn test_auto_params_deserialize() {
+        let json = r#"{"content": "Test content", "hints": ["hint1", "hint2"]}"#;
+        let params: AutoParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.content, "Test content");
+        assert_eq!(params.hints.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_auto_params_deserialize_minimal() {
+        let json = r#"{"content": "Minimal"}"#;
+        let params: AutoParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.content, "Minimal");
+        assert!(params.hints.is_none());
+        assert!(params.session_id.is_none());
+    }
+
+    // ============================================================================
+    // AutoResponse Tests
+    // ============================================================================
+
+    #[test]
     fn test_auto_response_from_json() {
         let json = r#"{"recommended_mode": "tree", "confidence": 0.9, "rationale": "Multiple paths", "complexity": 0.6}"#;
         let resp = AutoResponse::from_completion(json);
@@ -405,6 +449,114 @@ mod tests {
     }
 
     #[test]
+    fn test_auto_response_with_metadata() {
+        let json = r#"{
+            "recommended_mode": "divergent",
+            "confidence": 0.85,
+            "rationale": "Creative task",
+            "complexity": 0.7,
+            "metadata": {"source": "test"}
+        }"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.recommended_mode, "divergent");
+        assert!(resp.metadata.is_some());
+    }
+
+    #[test]
+    fn test_auto_response_default_complexity() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.complexity, 0.5); // default
+    }
+
+    #[test]
+    fn test_auto_response_all_modes() {
+        let modes = vec![
+            ("linear", ReasoningMode::Linear),
+            ("tree", ReasoningMode::Tree),
+            ("divergent", ReasoningMode::Divergent),
+            ("reflection", ReasoningMode::Reflection),
+            ("got", ReasoningMode::Got),
+        ];
+
+        for (mode_str, _expected_mode) in modes {
+            let json = format!(
+                r#"{{"recommended_mode": "{}", "confidence": 0.8, "rationale": "Test"}}"#,
+                mode_str
+            );
+            let resp = AutoResponse::from_completion(&json);
+            assert_eq!(resp.recommended_mode, mode_str);
+        }
+    }
+
+    // ============================================================================
+    // AutoResult Tests
+    // ============================================================================
+
+    #[test]
+    fn test_auto_result_serialize() {
+        let result = AutoResult {
+            recommended_mode: ReasoningMode::Tree,
+            confidence: 0.85,
+            rationale: "Multiple paths needed".to_string(),
+            complexity: 0.6,
+            alternative_modes: vec![ModeRecommendation {
+                mode: ReasoningMode::Divergent,
+                confidence: 0.6,
+                rationale: "Could also be creative".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("tree"));
+        assert!(json.contains("0.85"));
+        assert!(json.contains("alternative_modes"));
+    }
+
+    #[test]
+    fn test_auto_result_deserialize() {
+        let json = r#"{
+            "recommended_mode": "linear",
+            "confidence": 0.9,
+            "rationale": "Simple task",
+            "complexity": 0.2,
+            "alternative_modes": []
+        }"#;
+        let result: AutoResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Linear);
+        assert_eq!(result.confidence, 0.9);
+        assert!(result.alternative_modes.is_empty());
+    }
+
+    #[test]
+    fn test_auto_result_with_alternatives() {
+        let result = AutoResult {
+            recommended_mode: ReasoningMode::Got,
+            confidence: 0.75,
+            rationale: "Complex system".to_string(),
+            complexity: 0.8,
+            alternative_modes: vec![
+                ModeRecommendation {
+                    mode: ReasoningMode::Tree,
+                    confidence: 0.6,
+                    rationale: "Alt 1".to_string(),
+                },
+                ModeRecommendation {
+                    mode: ReasoningMode::Divergent,
+                    confidence: 0.4,
+                    rationale: "Alt 2".to_string(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: AutoResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.alternative_modes.len(), 2);
+    }
+
+    // ============================================================================
+    // ModeRecommendation Tests
+    // ============================================================================
+
+    #[test]
     fn test_mode_recommendation_serialize() {
         let rec = ModeRecommendation {
             mode: ReasoningMode::Tree,
@@ -413,5 +565,160 @@ mod tests {
         };
         let json = serde_json::to_string(&rec).unwrap();
         assert!(json.contains("tree"));
+    }
+
+    #[test]
+    fn test_mode_recommendation_deserialize() {
+        let json = r#"{"mode": "reflection", "confidence": 0.7, "rationale": "Needs evaluation"}"#;
+        let rec: ModeRecommendation = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.mode, ReasoningMode::Reflection);
+        assert_eq!(rec.confidence, 0.7);
+    }
+
+    #[test]
+    fn test_mode_recommendation_all_modes() {
+        let modes = vec![
+            ReasoningMode::Linear,
+            ReasoningMode::Tree,
+            ReasoningMode::Divergent,
+            ReasoningMode::Reflection,
+            ReasoningMode::Got,
+        ];
+
+        for mode in modes {
+            let rec = ModeRecommendation {
+                mode: mode.clone(),
+                confidence: 0.5,
+                rationale: "Test".to_string(),
+            };
+            let json = serde_json::to_string(&rec).unwrap();
+            let parsed: ModeRecommendation = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.mode, mode);
+        }
+    }
+
+    // ============================================================================
+    // Default Function Tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_complexity() {
+        assert_eq!(default_complexity(), 0.5);
+    }
+
+    // ============================================================================
+    // ReasoningMode Parse Tests
+    // ============================================================================
+
+    #[test]
+    fn test_reasoning_mode_from_string() {
+        assert_eq!("linear".parse::<ReasoningMode>().unwrap(), ReasoningMode::Linear);
+        assert_eq!("tree".parse::<ReasoningMode>().unwrap(), ReasoningMode::Tree);
+        assert_eq!("divergent".parse::<ReasoningMode>().unwrap(), ReasoningMode::Divergent);
+        assert_eq!("reflection".parse::<ReasoningMode>().unwrap(), ReasoningMode::Reflection);
+        assert_eq!("got".parse::<ReasoningMode>().unwrap(), ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_reasoning_mode_invalid_string() {
+        assert!("invalid".parse::<ReasoningMode>().is_err());
+        assert!("unknown".parse::<ReasoningMode>().is_err());
+        assert!("".parse::<ReasoningMode>().is_err());
+    }
+
+    // ============================================================================
+    // Edge Case Tests
+    // ============================================================================
+
+    #[test]
+    fn test_auto_params_empty_content() {
+        let params = AutoParams::new("");
+        assert_eq!(params.content, "");
+    }
+
+    #[test]
+    fn test_auto_params_empty_hints() {
+        let params = AutoParams::new("Content").with_hints(vec![]);
+        assert_eq!(params.hints, Some(vec![]));
+    }
+
+    #[test]
+    fn test_auto_response_zero_confidence() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 0.0, "rationale": "No confidence"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_auto_response_max_confidence() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 1.0, "rationale": "Full confidence"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_auto_result_empty_alternatives() {
+        let result = AutoResult {
+            recommended_mode: ReasoningMode::Linear,
+            confidence: 0.9,
+            rationale: "Simple".to_string(),
+            complexity: 0.1,
+            alternative_modes: vec![],
+        };
+        assert!(result.alternative_modes.is_empty());
+    }
+
+    #[test]
+    fn test_mode_recommendation_zero_confidence() {
+        let rec = ModeRecommendation {
+            mode: ReasoningMode::Linear,
+            confidence: 0.0,
+            rationale: "Low confidence alt".to_string(),
+        };
+        assert_eq!(rec.confidence, 0.0);
+    }
+
+    // ============================================================================
+    // Serialization Round-Trip Tests
+    // ============================================================================
+
+    #[test]
+    fn test_auto_params_round_trip() {
+        let original = AutoParams::new("Complex content")
+            .with_hints(vec!["hint1".to_string(), "hint2".to_string()])
+            .with_session("sess-xyz");
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: AutoParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.content, original.content);
+        assert_eq!(parsed.hints, original.hints);
+        assert_eq!(parsed.session_id, original.session_id);
+    }
+
+    #[test]
+    fn test_auto_result_round_trip() {
+        let original = AutoResult {
+            recommended_mode: ReasoningMode::Divergent,
+            confidence: 0.87,
+            rationale: "Creative exploration needed".to_string(),
+            complexity: 0.65,
+            alternative_modes: vec![
+                ModeRecommendation {
+                    mode: ReasoningMode::Tree,
+                    confidence: 0.55,
+                    rationale: "Could branch".to_string(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: AutoResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.recommended_mode, original.recommended_mode);
+        assert_eq!(parsed.confidence, original.confidence);
+        assert_eq!(parsed.rationale, original.rationale);
+        assert_eq!(parsed.complexity, original.complexity);
+        assert_eq!(parsed.alternative_modes.len(), 1);
     }
 }

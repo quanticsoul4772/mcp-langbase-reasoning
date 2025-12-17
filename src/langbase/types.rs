@@ -434,4 +434,188 @@ mod tests {
         assert_eq!(resp.confidence, 0.75);
         assert!(resp.metadata.is_some());
     }
+
+    // Serialization tests
+    #[test]
+    fn test_message_serialize() {
+        let msg = Message::system("Test system message");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("system"));
+        assert!(json.contains("Test system message"));
+    }
+
+    #[test]
+    fn test_message_deserialize() {
+        let json = r#"{"role": "user", "content": "Hello"}"#;
+        let msg: Message = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg.role, MessageRole::User));
+        assert_eq!(msg.content, "Hello");
+    }
+
+    #[test]
+    fn test_pipe_request_serialize() {
+        let req = PipeRequest::new("test-pipe", vec![Message::user("Test")])
+            .with_variable("key", "value")
+            .with_thread_id("thread-1");
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("test-pipe"));
+        assert!(json.contains("threadId"));
+        assert!(json.contains("thread-1"));
+    }
+
+    #[test]
+    fn test_pipe_response_deserialize() {
+        let json = r#"{
+            "success": true,
+            "completion": "Response text",
+            "threadId": "t-123",
+            "raw": {
+                "model": "gpt-4",
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30
+                }
+            }
+        }"#;
+        let resp: PipeResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.success);
+        assert_eq!(resp.completion, "Response text");
+        assert_eq!(resp.thread_id, Some("t-123".to_string()));
+        assert!(resp.raw.is_some());
+        let raw = resp.raw.unwrap();
+        assert_eq!(raw.model, Some("gpt-4".to_string()));
+        let usage = raw.usage.unwrap();
+        assert_eq!(usage.prompt_tokens, Some(10));
+        assert_eq!(usage.completion_tokens, Some(20));
+        assert_eq!(usage.total_tokens, Some(30));
+    }
+
+    #[test]
+    fn test_pipe_response_deserialize_minimal() {
+        let json = r#"{"success": false, "completion": ""}"#;
+        let resp: PipeResponse = serde_json::from_str(json).unwrap();
+        assert!(!resp.success);
+        assert!(resp.thread_id.is_none());
+        assert!(resp.raw.is_none());
+    }
+
+    #[test]
+    fn test_create_pipe_request_serialize() {
+        let req = CreatePipeRequest::new("new-pipe")
+            .with_description("Test pipe")
+            .with_status(PipeStatus::Public)
+            .with_model("openai:gpt-4")
+            .with_temperature(0.7)
+            .with_max_tokens(1000);
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("new-pipe"));
+        assert!(json.contains("Test pipe"));
+        assert!(json.contains("public"));
+        assert!(json.contains("0.7"));
+        assert!(json.contains("1000"));
+    }
+
+    #[test]
+    fn test_create_pipe_response_deserialize() {
+        let json = r#"{
+            "name": "my-pipe",
+            "description": "A test pipe",
+            "status": "public",
+            "owner_login": "testuser",
+            "url": "https://api.langbase.com/pipe/my-pipe",
+            "type": "chat",
+            "api_key": "secret-key"
+        }"#;
+        let resp: CreatePipeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.name, "my-pipe");
+        assert_eq!(resp.description, Some("A test pipe".to_string()));
+        assert_eq!(resp.status, "public");
+        assert_eq!(resp.owner_login, "testuser");
+        assert_eq!(resp.pipe_type, "chat");
+        assert_eq!(resp.api_key, "secret-key");
+    }
+
+    #[test]
+    fn test_reasoning_response_serialize() {
+        let resp = ReasoningResponse {
+            thought: "A reasoned thought".to_string(),
+            confidence: 0.85,
+            metadata: Some(serde_json::json!({"analysis": "complete"})),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("A reasoned thought"));
+        assert!(json.contains("0.85"));
+        assert!(json.contains("analysis"));
+    }
+
+    #[test]
+    fn test_pipe_status_serialize() {
+        let public = PipeStatus::Public;
+        let private = PipeStatus::Private;
+        assert_eq!(serde_json::to_string(&public).unwrap(), "\"public\"");
+        assert_eq!(serde_json::to_string(&private).unwrap(), "\"private\"");
+    }
+
+    #[test]
+    fn test_message_role_serialize() {
+        assert_eq!(serde_json::to_string(&MessageRole::System).unwrap(), "\"system\"");
+        assert_eq!(serde_json::to_string(&MessageRole::User).unwrap(), "\"user\"");
+        assert_eq!(serde_json::to_string(&MessageRole::Assistant).unwrap(), "\"assistant\"");
+    }
+
+    #[test]
+    fn test_message_role_deserialize() {
+        let system: MessageRole = serde_json::from_str("\"system\"").unwrap();
+        let user: MessageRole = serde_json::from_str("\"user\"").unwrap();
+        let assistant: MessageRole = serde_json::from_str("\"assistant\"").unwrap();
+        assert!(matches!(system, MessageRole::System));
+        assert!(matches!(user, MessageRole::User));
+        assert!(matches!(assistant, MessageRole::Assistant));
+    }
+
+    #[test]
+    fn test_pipe_status_deserialize() {
+        let public: PipeStatus = serde_json::from_str("\"public\"").unwrap();
+        let private: PipeStatus = serde_json::from_str("\"private\"").unwrap();
+        assert!(matches!(public, PipeStatus::Public));
+        assert!(matches!(private, PipeStatus::Private));
+    }
+
+    #[test]
+    fn test_raw_response_deserialize() {
+        let json = r#"{"model": "gpt-4", "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}}"#;
+        let raw: RawResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(raw.model, Some("gpt-4".to_string()));
+        let usage = raw.usage.unwrap();
+        assert_eq!(usage.prompt_tokens, Some(10));
+        assert_eq!(usage.completion_tokens, Some(20));
+        assert_eq!(usage.total_tokens, Some(30));
+    }
+
+    #[test]
+    fn test_usage_deserialize() {
+        let json = r#"{"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300}"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        assert_eq!(usage.prompt_tokens, Some(100));
+        assert_eq!(usage.completion_tokens, Some(200));
+        assert_eq!(usage.total_tokens, Some(300));
+    }
+
+    #[test]
+    fn test_usage_partial_deserialize() {
+        let json = r#"{"prompt_tokens": 50}"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        assert_eq!(usage.prompt_tokens, Some(50));
+        assert!(usage.completion_tokens.is_none());
+        assert!(usage.total_tokens.is_none());
+    }
+
+    #[test]
+    fn test_raw_response_minimal() {
+        let json = r#"{}"#;
+        let raw: RawResponse = serde_json::from_str(json).unwrap();
+        assert!(raw.model.is_none());
+        assert!(raw.usage.is_none());
+    }
 }

@@ -1135,6 +1135,12 @@ mod tests {
         assert!(node.is_terminal);
     }
 
+    #[test]
+    fn test_graph_node_as_active() {
+        let node = GraphNode::new("sess-1", "Active").as_inactive().as_active();
+        assert!(node.is_active);
+    }
+
     // NodeType tests
     #[test]
     fn test_node_type_display() {
@@ -1142,6 +1148,9 @@ mod tests {
         assert_eq!(NodeType::Hypothesis.to_string(), "hypothesis");
         assert_eq!(NodeType::Conclusion.to_string(), "conclusion");
         assert_eq!(NodeType::Aggregation.to_string(), "aggregation");
+        assert_eq!(NodeType::Root.to_string(), "root");
+        assert_eq!(NodeType::Refinement.to_string(), "refinement");
+        assert_eq!(NodeType::Terminal.to_string(), "terminal");
     }
 
     #[test]
@@ -1150,6 +1159,9 @@ mod tests {
         assert_eq!("hypothesis".parse::<NodeType>().unwrap(), NodeType::Hypothesis);
         assert_eq!("conclusion".parse::<NodeType>().unwrap(), NodeType::Conclusion);
         assert_eq!("aggregation".parse::<NodeType>().unwrap(), NodeType::Aggregation);
+        assert_eq!("root".parse::<NodeType>().unwrap(), NodeType::Root);
+        assert_eq!("refinement".parse::<NodeType>().unwrap(), NodeType::Refinement);
+        assert_eq!("terminal".parse::<NodeType>().unwrap(), NodeType::Terminal);
         assert_eq!("THOUGHT".parse::<NodeType>().unwrap(), NodeType::Thought);
     }
 

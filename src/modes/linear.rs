@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
@@ -30,6 +30,21 @@ pub struct LinearParams {
 
 fn default_confidence() -> f64 {
     0.8
+}
+
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
 }
 
 /// Result of linear reasoning.
@@ -114,7 +129,7 @@ impl LinearMode {
         // Create invocation log
         let mut invocation = Invocation::new(
             "reasoning.linear",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.linear input"),
         )
         .with_session(&session.id)
         .with_pipe(&self.pipe_name);
@@ -143,7 +158,7 @@ impl LinearMode {
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&reasoning).unwrap_or_default(),
+            serialize_for_log(&reasoning, "reasoning.linear output"),
             latency,
         );
         self.storage.log_invocation(&invocation).await?;

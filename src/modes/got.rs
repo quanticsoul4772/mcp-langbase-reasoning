@@ -61,6 +61,21 @@ fn default_prune_threshold() -> f64 {
     0.3
 }
 
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
+}
+
 impl Default for GotConfig {
     fn default() -> Self {
         Self {
@@ -737,7 +752,7 @@ impl GotMode {
         // Log invocation
         let mut invocation = Invocation::new(
             "reasoning.got.generate",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.got.generate input"),
         )
         .with_session(&params.session_id)
         .with_pipe(&self.generate_pipe);
@@ -792,7 +807,7 @@ impl GotMode {
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&continuations).unwrap_or_default(),
+            serialize_for_log(&continuations, "reasoning.got.generate output"),
             latency,
         );
         let _ = self.storage.log_invocation(&invocation).await;
@@ -839,7 +854,7 @@ impl GotMode {
         // Log invocation
         let mut invocation = Invocation::new(
             "reasoning.got.score",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.got.score input"),
         )
         .with_session(&params.session_id)
         .with_pipe(&self.score_pipe);
@@ -866,7 +881,7 @@ impl GotMode {
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&score_response).unwrap_or_default(),
+            serialize_for_log(&score_response, "reasoning.got.score output"),
             latency,
         );
         let _ = self.storage.log_invocation(&invocation).await;
@@ -932,7 +947,7 @@ impl GotMode {
         // Log invocation
         let mut invocation = Invocation::new(
             "reasoning.got.aggregate",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.got.aggregate input"),
         )
         .with_session(&params.session_id)
         .with_pipe(&self.aggregate_pipe);
@@ -978,7 +993,7 @@ impl GotMode {
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&agg_response).unwrap_or_default(),
+            serialize_for_log(&agg_response, "reasoning.got.aggregate output"),
             latency,
         );
         let _ = self.storage.log_invocation(&invocation).await;
@@ -1028,7 +1043,7 @@ impl GotMode {
         // Log invocation
         let mut invocation = Invocation::new(
             "reasoning.got.refine",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.got.refine input"),
         )
         .with_session(&params.session_id)
         .with_pipe(&self.refine_pipe);
@@ -1069,7 +1084,7 @@ impl GotMode {
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&refine_response).unwrap_or_default(),
+            serialize_for_log(&refine_response, "reasoning.got.refine output"),
             latency,
         );
         let _ = self.storage.log_invocation(&invocation).await;

@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
@@ -47,6 +47,62 @@ fn default_confidence() -> f64 {
 
 fn default_num_branches() -> usize {
     3
+}
+
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
+}
+
+/// Extract JSON from a completion string, handling markdown code blocks.
+///
+/// Attempts extraction in this order:
+/// 1. Raw JSON (starts with `{` or `[`)
+/// 2. Extract from ```json ... ``` code blocks
+/// 3. Extract from ``` ... ``` code blocks
+/// 4. Return error if none work
+fn extract_json_from_completion(completion: &str) -> Result<&str, String> {
+    // Fast path: raw JSON
+    let trimmed = completion.trim();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Ok(trimmed);
+    }
+
+    // Try ```json ... ``` blocks
+    if completion.contains("```json") {
+        return completion
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ```json block but content was empty or malformed".to_string());
+    }
+
+    // Try ``` ... ``` blocks
+    if completion.contains("```") {
+        return completion
+            .split("```")
+            .nth(1)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ``` block but content was empty or malformed".to_string());
+    }
+
+    Err(format!(
+        "No JSON found in response. First 100 chars: '{}'",
+        completion.chars().take(100).collect::<String>()
+    ))
 }
 
 /// Cross-reference input for tree reasoning.
@@ -208,7 +264,7 @@ impl TreeMode {
         // Create invocation log
         let mut invocation = Invocation::new(
             "reasoning.tree",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.tree input"),
         )
         .with_session(&session.id)
         .with_pipe(&self.pipe_name);
@@ -258,7 +314,7 @@ impl TreeMode {
 
             child_branches.push(BranchInfo {
                 id: child.id,
-                name: child.name.unwrap_or_default(),
+                name: child.name.clone().unwrap_or_else(|| "Unnamed Branch".to_string()),
                 confidence: tb.confidence,
                 rationale: tb.rationale.clone(),
             });
@@ -283,7 +339,7 @@ impl TreeMode {
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&tree_response).unwrap_or_default(),
+            serialize_for_log(&tree_response, "reasoning.tree output"),
             latency,
         );
         self.storage.log_invocation(&invocation).await?;
@@ -415,25 +471,18 @@ impl TreeMode {
     }
 
     fn parse_response(&self, completion: &str) -> AppResult<TreeResponse> {
-        // Try to parse as JSON first
-        if let Ok(response) = serde_json::from_str::<TreeResponse>(completion) {
-            return Ok(response);
-        }
+        let json_str = extract_json_from_completion(completion).map_err(|e| {
+            warn!(
+                error = %e,
+                completion_preview = %completion.chars().take(200).collect::<String>(),
+                "Failed to extract JSON from tree response"
+            );
+            ToolError::Reasoning {
+                message: format!("Tree response extraction failed: {}", e),
+            }
+        })?;
 
-        // Try to extract JSON from markdown code blocks
-        let json_str = if completion.contains("```json") {
-            completion
-                .split("```json")
-                .nth(1)
-                .and_then(|s| s.split("```").next())
-                .unwrap_or(completion)
-        } else if completion.contains("```") {
-            completion.split("```").nth(1).unwrap_or(completion)
-        } else {
-            completion
-        };
-
-        serde_json::from_str::<TreeResponse>(json_str.trim()).map_err(|e| {
+        serde_json::from_str::<TreeResponse>(json_str).map_err(|e| {
             ToolError::Reasoning {
                 message: format!("Failed to parse tree response: {}", e),
             }
@@ -845,6 +894,23 @@ mod tests {
         assert_eq!(info.name, "Test Branch");
         assert_eq!(info.confidence, 0.95);
         assert_eq!(info.rationale, "The rationale");
+    }
+
+    #[test]
+    fn test_branch_info_unnamed_fallback() {
+        // Verify that "Unnamed Branch" is a valid name value for serialization
+        let info = BranchInfo {
+            id: "branch-1".to_string(),
+            name: "Unnamed Branch".to_string(),
+            confidence: 0.7,
+            rationale: "No name provided".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("Unnamed Branch"));
+
+        let parsed: BranchInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "Unnamed Branch");
     }
 
     // ============================================================================

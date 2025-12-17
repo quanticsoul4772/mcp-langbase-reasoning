@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
@@ -48,6 +48,62 @@ fn default_max_iterations() -> usize {
 
 fn default_quality_threshold() -> f64 {
     0.8
+}
+
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
+}
+
+/// Extract JSON from a completion string, handling markdown code blocks.
+///
+/// Attempts extraction in this order:
+/// 1. Raw JSON (starts with `{` or `[`)
+/// 2. Extract from ```json ... ``` code blocks
+/// 3. Extract from ``` ... ``` code blocks
+/// 4. Return error if none work
+fn extract_json_from_completion(completion: &str) -> Result<&str, String> {
+    // Fast path: raw JSON
+    let trimmed = completion.trim();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Ok(trimmed);
+    }
+
+    // Try ```json ... ``` blocks
+    if completion.contains("```json") {
+        return completion
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ```json block but content was empty or malformed".to_string());
+    }
+
+    // Try ``` ... ``` blocks
+    if completion.contains("```") {
+        return completion
+            .split("```")
+            .nth(1)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ``` block but content was empty or malformed".to_string());
+    }
+
+    Err(format!(
+        "No JSON found in response. First 100 chars: '{}'",
+        completion.chars().take(100).collect::<String>()
+    ))
 }
 
 /// Response from reflection reasoning Langbase pipe.
@@ -218,7 +274,7 @@ impl ReflectionMode {
             // Log invocation
             let latency = start.elapsed().as_millis() as i64;
             invocation = invocation.success(
-                serde_json::to_value(&reflection).unwrap_or_default(),
+                serialize_for_log(&reflection, "reasoning.reflection output"),
                 latency,
             );
             self.storage.log_invocation(&invocation).await?;
@@ -495,25 +551,18 @@ impl ReflectionMode {
     }
 
     fn parse_response(&self, completion: &str) -> AppResult<ReflectionResponse> {
-        // Try to parse as JSON first
-        if let Ok(response) = serde_json::from_str::<ReflectionResponse>(completion) {
-            return Ok(response);
-        }
+        let json_str = extract_json_from_completion(completion).map_err(|e| {
+            warn!(
+                error = %e,
+                completion_preview = %completion.chars().take(200).collect::<String>(),
+                "Failed to extract JSON from reflection response"
+            );
+            ToolError::Reasoning {
+                message: format!("Reflection response extraction failed: {}", e),
+            }
+        })?;
 
-        // Try to extract JSON from markdown code blocks
-        let json_str = if completion.contains("```json") {
-            completion
-                .split("```json")
-                .nth(1)
-                .and_then(|s| s.split("```").next())
-                .unwrap_or(completion)
-        } else if completion.contains("```") {
-            completion.split("```").nth(1).unwrap_or(completion)
-        } else {
-            completion
-        };
-
-        serde_json::from_str::<ReflectionResponse>(json_str.trim()).map_err(|e| {
+        serde_json::from_str::<ReflectionResponse>(json_str).map_err(|e| {
             ToolError::Reasoning {
                 message: format!("Failed to parse reflection response: {}", e),
             }

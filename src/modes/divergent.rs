@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
@@ -47,6 +47,62 @@ fn default_confidence() -> f64 {
 
 fn default_num_perspectives() -> usize {
     3
+}
+
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
+}
+
+/// Extract JSON from a completion string, handling markdown code blocks.
+///
+/// Attempts extraction in this order:
+/// 1. Raw JSON (starts with `{` or `[`)
+/// 2. Extract from ```json ... ``` code blocks
+/// 3. Extract from ``` ... ``` code blocks
+/// 4. Return error if none work
+fn extract_json_from_completion(completion: &str) -> Result<&str, String> {
+    // Fast path: raw JSON
+    let trimmed = completion.trim();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return Ok(trimmed);
+    }
+
+    // Try ```json ... ``` blocks
+    if completion.contains("```json") {
+        return completion
+            .split("```json")
+            .nth(1)
+            .and_then(|s| s.split("```").next())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ```json block but content was empty or malformed".to_string());
+    }
+
+    // Try ``` ... ``` blocks
+    if completion.contains("```") {
+        return completion
+            .split("```")
+            .nth(1)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Found ``` block but content was empty or malformed".to_string());
+    }
+
+    Err(format!(
+        "No JSON found in response. First 100 chars: '{}'",
+        completion.chars().take(100).collect::<String>()
+    ))
 }
 
 /// Response from divergent reasoning Langbase pipe.
@@ -110,8 +166,9 @@ pub struct PerspectiveInfo {
     pub novelty: f64,
     /// Viability score (0.0-1.0).
     pub viability: f64,
-    /// Assumptions that were challenged.
-    pub assumptions_challenged: Vec<String>,
+    /// Assumptions that were challenged (None if not analyzed by AI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assumptions_challenged: Option<Vec<String>>,
 }
 
 /// Divergent reasoning mode handler for creative exploration.
@@ -169,7 +226,7 @@ impl DivergentMode {
         // Create invocation log
         let mut invocation = Invocation::new(
             "reasoning.divergent",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.divergent input"),
         )
         .with_session(&session.id)
         .with_pipe(&self.pipe_name);
@@ -242,7 +299,7 @@ impl DivergentMode {
                 content: p.thought.clone(),
                 novelty: p.novelty,
                 viability: p.viability,
-                assumptions_challenged: p.assumptions_challenged.clone().unwrap_or_default(),
+                assumptions_challenged: p.assumptions_challenged.clone(),
             });
         }
 
@@ -267,7 +324,7 @@ impl DivergentMode {
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&divergent_response).unwrap_or_default(),
+            serialize_for_log(&divergent_response, "reasoning.divergent output"),
             latency,
         );
         self.storage.log_invocation(&invocation).await?;
@@ -372,25 +429,18 @@ impl DivergentMode {
     }
 
     fn parse_response(&self, completion: &str) -> AppResult<DivergentResponse> {
-        // Try to parse as JSON first
-        if let Ok(response) = serde_json::from_str::<DivergentResponse>(completion) {
-            return Ok(response);
-        }
+        let json_str = extract_json_from_completion(completion).map_err(|e| {
+            warn!(
+                error = %e,
+                completion_preview = %completion.chars().take(200).collect::<String>(),
+                "Failed to extract JSON from divergent response"
+            );
+            ToolError::Reasoning {
+                message: format!("Divergent response extraction failed: {}", e),
+            }
+        })?;
 
-        // Try to extract JSON from markdown code blocks
-        let json_str = if completion.contains("```json") {
-            completion
-                .split("```json")
-                .nth(1)
-                .and_then(|s| s.split("```").next())
-                .unwrap_or(completion)
-        } else if completion.contains("```") {
-            completion.split("```").nth(1).unwrap_or(completion)
-        } else {
-            completion
-        };
-
-        serde_json::from_str::<DivergentResponse>(json_str.trim()).map_err(|e| {
+        serde_json::from_str::<DivergentResponse>(json_str).map_err(|e| {
             ToolError::Reasoning {
                 message: format!("Failed to parse divergent response: {}", e),
             }
@@ -673,7 +723,7 @@ mod tests {
             content: "Perspective content".to_string(),
             novelty: 0.8,
             viability: 0.75,
-            assumptions_challenged: vec!["Assumption A".to_string()],
+            assumptions_challenged: Some(vec!["Assumption A".to_string()]),
         };
 
         let json = serde_json::to_string(&info).unwrap();
@@ -699,7 +749,25 @@ mod tests {
         assert_eq!(info.content, "Info content");
         assert_eq!(info.novelty, 0.6);
         assert_eq!(info.viability, 0.9);
-        assert_eq!(info.assumptions_challenged.len(), 2);
+        assert_eq!(info.assumptions_challenged.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_perspective_info_assumptions_none() {
+        let info = PerspectiveInfo {
+            thought_id: "thought-1".to_string(),
+            content: "A perspective".to_string(),
+            novelty: 0.7,
+            viability: 0.8,
+            assumptions_challenged: None,
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        // Verify assumptions_challenged is omitted when None (due to skip_serializing_if)
+        assert!(!json.contains("assumptions_challenged"));
+
+        let parsed: PerspectiveInfo = serde_json::from_str(&json).unwrap();
+        assert!(parsed.assumptions_challenged.is_none());
     }
 
     // ============================================================================
@@ -753,7 +821,7 @@ mod tests {
                 content: "First perspective".to_string(),
                 novelty: 0.85,
                 viability: 0.7,
-                assumptions_challenged: vec!["Challenge 1".to_string()],
+                assumptions_challenged: Some(vec!["Challenge 1".to_string()]),
             }],
             synthesis: "Final synthesis".to_string(),
             synthesis_thought_id: "t-synth".to_string(),

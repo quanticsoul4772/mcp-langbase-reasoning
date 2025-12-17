@@ -66,6 +66,21 @@ fn default_complexity() -> f64 {
     0.5
 }
 
+/// Serialize a value to JSON for logging, with warning on failure.
+fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or_else(|e| {
+        warn!(
+            error = %e,
+            context = %context,
+            "Failed to serialize value for invocation log"
+        );
+        serde_json::json!({
+            "serialization_error": e.to_string(),
+            "context": context
+        })
+    })
+}
+
 impl AutoResponse {
     fn from_completion(completion: &str) -> Self {
         match serde_json::from_str::<AutoResponse>(completion) {
@@ -134,7 +149,7 @@ impl AutoMode {
         // Log invocation
         let mut invocation = Invocation::new(
             "reasoning.auto",
-            serde_json::to_value(&params).unwrap_or_default(),
+            serialize_for_log(&params, "reasoning.auto input"),
         )
         .with_pipe(&self.pipe_name);
 
@@ -161,14 +176,20 @@ impl AutoMode {
         let recommended_mode = auto_response
             .recommended_mode
             .parse()
-            .unwrap_or(ReasoningMode::Linear);
+            .unwrap_or_else(|_| {
+                warn!(
+                    invalid_mode = %auto_response.recommended_mode,
+                    "Invalid mode returned by auto-router, falling back to Linear"
+                );
+                ReasoningMode::Linear
+            });
 
         // Generate alternative recommendations based on complexity
         let alternatives = self.generate_alternatives(&auto_response);
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
-            serde_json::to_value(&auto_response).unwrap_or_default(),
+            serialize_for_log(&auto_response, "reasoning.auto output"),
             latency,
         );
         let _ = self.storage.log_invocation(&invocation).await;

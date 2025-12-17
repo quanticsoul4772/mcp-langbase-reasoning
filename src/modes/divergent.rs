@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+use super::{extract_json_from_completion, serialize_for_log};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -47,62 +48,6 @@ fn default_confidence() -> f64 {
 
 fn default_num_perspectives() -> usize {
     3
-}
-
-/// Serialize a value to JSON for logging, with warning on failure.
-fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
-    serde_json::to_value(value).unwrap_or_else(|e| {
-        warn!(
-            error = %e,
-            context = %context,
-            "Failed to serialize value for invocation log"
-        );
-        serde_json::json!({
-            "serialization_error": e.to_string(),
-            "context": context
-        })
-    })
-}
-
-/// Extract JSON from a completion string, handling markdown code blocks.
-///
-/// Attempts extraction in this order:
-/// 1. Raw JSON (starts with `{` or `[`)
-/// 2. Extract from ```json ... ``` code blocks
-/// 3. Extract from ``` ... ``` code blocks
-/// 4. Return error if none work
-fn extract_json_from_completion(completion: &str) -> Result<&str, String> {
-    // Fast path: raw JSON
-    let trimmed = completion.trim();
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        return Ok(trimmed);
-    }
-
-    // Try ```json ... ``` blocks
-    if completion.contains("```json") {
-        return completion
-            .split("```json")
-            .nth(1)
-            .and_then(|s| s.split("```").next())
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| "Found ```json block but content was empty or malformed".to_string());
-    }
-
-    // Try ``` ... ``` blocks
-    if completion.contains("```") {
-        return completion
-            .split("```")
-            .nth(1)
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| "Found ``` block but content was empty or malformed".to_string());
-    }
-
-    Err(format!(
-        "No JSON found in response. First 100 chars: '{}'",
-        completion.chars().take(100).collect::<String>()
-    ))
 }
 
 /// Response from divergent reasoning Langbase pipe.

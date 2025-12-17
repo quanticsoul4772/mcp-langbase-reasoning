@@ -7,8 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
+use super::serialize_for_log;
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest, ReasoningResponse};
@@ -30,21 +31,6 @@ pub struct LinearParams {
 
 fn default_confidence() -> f64 {
     0.8
-}
-
-/// Serialize a value to JSON for logging, with warning on failure.
-fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
-    serde_json::to_value(value).unwrap_or_else(|e| {
-        warn!(
-            error = %e,
-            context = %context,
-            "Failed to serialize value for invocation log"
-        );
-        serde_json::json!({
-            "serialization_error": e.to_string(),
-            "context": context
-        })
-    })
 }
 
 /// Result of linear reasoning.

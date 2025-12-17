@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+use super::serialize_for_log;
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -59,21 +60,6 @@ fn default_k() -> usize {
 
 fn default_prune_threshold() -> f64 {
     0.3
-}
-
-/// Serialize a value to JSON for logging, with warning on failure.
-fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
-    serde_json::to_value(value).unwrap_or_else(|e| {
-        warn!(
-            error = %e,
-            context = %context,
-            "Failed to serialize value for invocation log"
-        );
-        serde_json::json!({
-            "serialization_error": e.to_string(),
-            "context": context
-        })
-    })
 }
 
 impl Default for GotConfig {

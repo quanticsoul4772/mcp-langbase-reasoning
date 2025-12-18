@@ -91,6 +91,10 @@ pub struct PipeConfig {
     pub got: Option<GotPipeConfig>,
     /// Optional detection pipe configuration.
     pub detection: Option<DetectionPipeConfig>,
+    /// Optional decision framework pipe configuration.
+    pub decision: Option<DecisionPipeConfig>,
+    /// Optional evidence assessment pipe configuration.
+    pub evidence: Option<EvidencePipeConfig>,
 }
 
 /// Detection pipe configuration for bias and fallacy analysis.
@@ -121,6 +125,24 @@ pub struct GotPipeConfig {
     pub default_k: Option<usize>,
     /// Score threshold for pruning nodes.
     pub prune_threshold: Option<f64>,
+}
+
+/// Decision framework pipe configuration.
+#[derive(Debug, Clone)]
+pub struct DecisionPipeConfig {
+    /// Pipe name for multi-criteria decision analysis.
+    pub decision_pipe: Option<String>,
+    /// Pipe name for stakeholder perspective analysis.
+    pub perspective_pipe: Option<String>,
+}
+
+/// Evidence assessment pipe configuration.
+#[derive(Debug, Clone)]
+pub struct EvidencePipeConfig {
+    /// Pipe name for evidence evaluation.
+    pub evidence_pipe: Option<String>,
+    /// Pipe name for Bayesian probability updates.
+    pub bayesian_pipe: Option<String>,
 }
 
 impl Config {
@@ -228,6 +250,36 @@ impl Config {
             }
         };
 
+        // Build decision pipe config if any decision env vars are set
+        let decision_config = {
+            let decision_pipe = env::var("PIPE_DECISION").ok();
+            let perspective_pipe = env::var("PIPE_PERSPECTIVE").ok();
+
+            if decision_pipe.is_some() || perspective_pipe.is_some() {
+                Some(DecisionPipeConfig {
+                    decision_pipe,
+                    perspective_pipe,
+                })
+            } else {
+                None
+            }
+        };
+
+        // Build evidence pipe config if any evidence env vars are set
+        let evidence_config = {
+            let evidence_pipe = env::var("PIPE_EVIDENCE").ok();
+            let bayesian_pipe = env::var("PIPE_BAYESIAN").ok();
+
+            if evidence_pipe.is_some() || bayesian_pipe.is_some() {
+                Some(EvidencePipeConfig {
+                    evidence_pipe,
+                    bayesian_pipe,
+                })
+            } else {
+                None
+            }
+        };
+
         let pipes = PipeConfig {
             linear: env::var("PIPE_LINEAR").unwrap_or_else(|_| "linear-reasoning-v1".to_string()),
             tree: env::var("PIPE_TREE").unwrap_or_else(|_| "tree-reasoning-v1".to_string()),
@@ -239,6 +291,8 @@ impl Config {
             backtracking: env::var("PIPE_BACKTRACKING").ok(),
             got: got_config,
             detection: detection_config,
+            decision: decision_config,
+            evidence: evidence_config,
         };
 
         Ok(Config {
@@ -273,6 +327,8 @@ impl Default for PipeConfig {
             backtracking: None,
             got: None,
             detection: None,
+            decision: None,
+            evidence: None,
         }
     }
 }
@@ -301,6 +357,24 @@ impl Default for GotPipeConfig {
     }
 }
 
+impl Default for DecisionPipeConfig {
+    fn default() -> Self {
+        Self {
+            decision_pipe: Some("decision-maker-v1".to_string()),
+            perspective_pipe: Some("perspective-analyzer-v1".to_string()),
+        }
+    }
+}
+
+impl Default for EvidencePipeConfig {
+    fn default() -> Self {
+        Self {
+            evidence_pipe: Some("evidence-assessor-v1".to_string()),
+            bayesian_pipe: Some("bayesian-updater-v1".to_string()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +399,8 @@ mod tests {
         assert!(config.backtracking.is_none());
         assert!(config.got.is_none());
         assert!(config.detection.is_none());
+        assert!(config.decision.is_none());
+        assert!(config.evidence.is_none());
     }
 
     #[test]
@@ -352,6 +428,26 @@ mod tests {
         assert_eq!(LogFormat::Pretty, LogFormat::Pretty);
         assert_eq!(LogFormat::Json, LogFormat::Json);
         assert_ne!(LogFormat::Pretty, LogFormat::Json);
+    }
+
+    #[test]
+    fn test_decision_pipe_config_default() {
+        let config = DecisionPipeConfig::default();
+        assert_eq!(config.decision_pipe, Some("decision-maker-v1".to_string()));
+        assert_eq!(
+            config.perspective_pipe,
+            Some("perspective-analyzer-v1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_evidence_pipe_config_default() {
+        let config = EvidencePipeConfig::default();
+        assert_eq!(
+            config.evidence_pipe,
+            Some("evidence-assessor-v1".to_string())
+        );
+        assert_eq!(config.bayesian_pipe, Some("bayesian-updater-v1".to_string()));
     }
 
     // Note: Config::from_env() tests are in tests/config_env_test.rs

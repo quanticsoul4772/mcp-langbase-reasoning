@@ -8,10 +8,14 @@
 //! - [`BacktrackingMode`]: Checkpoint-based state restoration
 //! - [`AutoMode`]: Intelligent mode selection
 //! - [`GotMode`]: Graph-of-Thoughts reasoning
+//! - [`DecisionMode`]: Multi-criteria decision analysis and stakeholder perspectives
+//! - [`EvidenceMode`]: Evidence assessment and Bayesian probability updates
 
 mod auto;
 mod backtracking;
+mod decision;
 mod divergent;
+mod evidence;
 mod got;
 mod linear;
 mod reflection;
@@ -19,7 +23,9 @@ mod tree;
 
 pub use auto::*;
 pub use backtracking::*;
+pub use decision::*;
 pub use divergent::*;
+pub use evidence::*;
 pub use got::*;
 pub use linear::*;
 pub use reflection::*;
@@ -112,6 +118,10 @@ pub enum ReasoningMode {
     Auto,
     /// Graph-of-Thoughts reasoning.
     Got,
+    /// Multi-criteria decision analysis.
+    Decision,
+    /// Evidence assessment and probabilistic reasoning.
+    Evidence,
 }
 
 impl ReasoningMode {
@@ -125,6 +135,8 @@ impl ReasoningMode {
             ReasoningMode::Backtracking => "backtracking",
             ReasoningMode::Auto => "auto",
             ReasoningMode::Got => "got",
+            ReasoningMode::Decision => "decision",
+            ReasoningMode::Evidence => "evidence",
         }
     }
 }
@@ -147,6 +159,8 @@ impl std::str::FromStr for ReasoningMode {
             "backtracking" => Ok(ReasoningMode::Backtracking),
             "auto" => Ok(ReasoningMode::Auto),
             "got" => Ok(ReasoningMode::Got),
+            "decision" => Ok(ReasoningMode::Decision),
+            "evidence" => Ok(ReasoningMode::Evidence),
             _ => Err(format!("Unknown reasoning mode: {}", s)),
         }
     }
@@ -165,6 +179,8 @@ mod tests {
         assert_eq!(ReasoningMode::Backtracking.as_str(), "backtracking");
         assert_eq!(ReasoningMode::Auto.as_str(), "auto");
         assert_eq!(ReasoningMode::Got.as_str(), "got");
+        assert_eq!(ReasoningMode::Decision.as_str(), "decision");
+        assert_eq!(ReasoningMode::Evidence.as_str(), "evidence");
     }
 
     #[test]
@@ -176,6 +192,8 @@ mod tests {
         assert_eq!(format!("{}", ReasoningMode::Backtracking), "backtracking");
         assert_eq!(format!("{}", ReasoningMode::Auto), "auto");
         assert_eq!(format!("{}", ReasoningMode::Got), "got");
+        assert_eq!(format!("{}", ReasoningMode::Decision), "decision");
+        assert_eq!(format!("{}", ReasoningMode::Evidence), "evidence");
     }
 
     #[test]
@@ -205,6 +223,14 @@ mod tests {
             ReasoningMode::Auto
         );
         assert_eq!("got".parse::<ReasoningMode>().unwrap(), ReasoningMode::Got);
+        assert_eq!(
+            "decision".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Decision
+        );
+        assert_eq!(
+            "evidence".parse::<ReasoningMode>().unwrap(),
+            ReasoningMode::Evidence
+        );
     }
 
     #[test]

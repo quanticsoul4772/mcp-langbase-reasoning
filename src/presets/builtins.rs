@@ -225,6 +225,183 @@ pub fn architecture_decision_preset() -> WorkflowPreset {
     }
 }
 
+/// Strategic decision workflow using multi-criteria analysis and stakeholder perspectives.
+///
+/// Steps:
+/// 1. Make decision - Multi-criteria decision analysis
+/// 2. Analyze perspectives - Stakeholder power/interest mapping
+/// 3. Bias detection - Check for cognitive biases (optional)
+/// 4. Reflection - Synthesize findings
+pub fn strategic_decision_preset() -> WorkflowPreset {
+    WorkflowPreset {
+        id: "strategic-decision".to_string(),
+        name: "Strategic Decision".to_string(),
+        description:
+            "Multi-criteria decision analysis with stakeholder perspectives and bias detection"
+                .to_string(),
+        category: "decision".to_string(),
+        estimated_time: "3-5 minutes".to_string(),
+        output_format: "decision_report".to_string(),
+        tags: vec![
+            "decision".to_string(),
+            "strategy".to_string(),
+            "stakeholder".to_string(),
+        ],
+        input_schema: HashMap::from([
+            (
+                "question".to_string(),
+                ParamSpec {
+                    param_type: "string".to_string(),
+                    required: true,
+                    default: None,
+                    description: "The decision question to analyze".to_string(),
+                    examples: vec![json!("Should we migrate to cloud or stay on-premise?")],
+                },
+            ),
+            (
+                "alternatives".to_string(),
+                ParamSpec {
+                    param_type: "array".to_string(),
+                    required: true,
+                    default: None,
+                    description: "List of alternatives to evaluate".to_string(),
+                    examples: vec![json!(["Option A", "Option B", "Option C"])],
+                },
+            ),
+            (
+                "topic".to_string(),
+                ParamSpec {
+                    param_type: "string".to_string(),
+                    required: false,
+                    default: None,
+                    description: "Topic for stakeholder analysis (defaults to question)".to_string(),
+                    examples: vec![],
+                },
+            ),
+        ]),
+        steps: vec![
+            PresetStep::new("decision_analysis", "reasoning_make_decision")
+                .with_description("Multi-criteria decision analysis")
+                .with_input("question", "question")
+                .with_input("alternatives", "alternatives")
+                .with_static("method", json!("weighted_sum"))
+                .store_as("decision"),
+            PresetStep::new("stakeholder_analysis", "reasoning_analyze_perspectives")
+                .with_description("Analyze stakeholder perspectives")
+                .with_input("topic", "question")
+                .store_as("perspectives")
+                .depends_on(vec!["decision_analysis".to_string()]),
+            PresetStep::new("bias_check", "reasoning_detect_biases")
+                .with_description("Check for cognitive biases in decision reasoning")
+                .with_input("content", "question")
+                .store_as("biases")
+                .depends_on(vec!["decision_analysis".to_string()])
+                .optional(),
+            PresetStep::new("synthesize", "reasoning_reflection")
+                .with_description("Synthesize decision and stakeholder analysis")
+                .with_input("content", "question")
+                .with_static("quality_threshold", json!(0.75))
+                .store_as("synthesis")
+                .depends_on(vec![
+                    "decision_analysis".to_string(),
+                    "stakeholder_analysis".to_string(),
+                    "bias_check".to_string(),
+                ]),
+        ],
+    }
+}
+
+/// Evidence-based conclusion workflow using evidence assessment and Bayesian reasoning.
+///
+/// Steps:
+/// 1. Assess evidence - Evaluate evidence quality and credibility
+/// 2. Probabilistic - Bayesian probability updates
+/// 3. Fallacy detection - Check for logical fallacies (optional)
+/// 4. Reflection - Synthesize findings into conclusion
+pub fn evidence_based_conclusion_preset() -> WorkflowPreset {
+    WorkflowPreset {
+        id: "evidence-based-conclusion".to_string(),
+        name: "Evidence-Based Conclusion".to_string(),
+        description:
+            "Evidence quality assessment with Bayesian probability updates and fallacy detection"
+                .to_string(),
+        category: "research".to_string(),
+        estimated_time: "3-4 minutes".to_string(),
+        output_format: "evidence_report".to_string(),
+        tags: vec![
+            "evidence".to_string(),
+            "research".to_string(),
+            "bayesian".to_string(),
+        ],
+        input_schema: HashMap::from([
+            (
+                "claim".to_string(),
+                ParamSpec {
+                    param_type: "string".to_string(),
+                    required: true,
+                    default: None,
+                    description: "The claim or hypothesis to evaluate".to_string(),
+                    examples: vec![json!("The new feature improves user engagement by 20%")],
+                },
+            ),
+            (
+                "evidence".to_string(),
+                ParamSpec {
+                    param_type: "array".to_string(),
+                    required: true,
+                    default: None,
+                    description: "Array of evidence items with content and optional source info"
+                        .to_string(),
+                    examples: vec![json!([
+                        {"content": "A/B test results", "source_type": "primary"},
+                        {"content": "User feedback", "source_type": "anecdotal"}
+                    ])],
+                },
+            ),
+            (
+                "prior".to_string(),
+                ParamSpec {
+                    param_type: "number".to_string(),
+                    required: false,
+                    default: Some(json!(0.5)),
+                    description: "Prior probability (0-1) for Bayesian analysis".to_string(),
+                    examples: vec![json!(0.3), json!(0.7)],
+                },
+            ),
+        ]),
+        steps: vec![
+            PresetStep::new("evidence_assessment", "reasoning_assess_evidence")
+                .with_description("Assess evidence quality and credibility")
+                .with_input("claim", "claim")
+                .with_input("evidence", "evidence")
+                .store_as("assessment"),
+            PresetStep::new("bayesian_update", "reasoning_probabilistic")
+                .with_description("Bayesian probability update based on evidence")
+                .with_input("hypothesis", "claim")
+                .with_input("prior", "prior")
+                .with_input("evidence", "evidence")
+                .store_as("probability")
+                .depends_on(vec!["evidence_assessment".to_string()]),
+            PresetStep::new("fallacy_check", "reasoning_detect_fallacies")
+                .with_description("Check for logical fallacies in reasoning")
+                .with_input("content", "claim")
+                .store_as("fallacies")
+                .depends_on(vec!["evidence_assessment".to_string()])
+                .optional(),
+            PresetStep::new("conclude", "reasoning_reflection")
+                .with_description("Synthesize evidence into final conclusion")
+                .with_input("content", "claim")
+                .with_static("quality_threshold", json!(0.8))
+                .store_as("conclusion")
+                .depends_on(vec![
+                    "evidence_assessment".to_string(),
+                    "bayesian_update".to_string(),
+                    "fallacy_check".to_string(),
+                ]),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,6 +459,91 @@ mod tests {
 
         // Main steps are not optional
         assert!(!preset.steps[0].optional);
+        assert!(!preset.steps[3].optional);
+    }
+
+    #[test]
+    fn test_strategic_decision_preset() {
+        let preset = strategic_decision_preset();
+        assert_eq!(preset.id, "strategic-decision");
+        assert_eq!(preset.category, "decision");
+        assert_eq!(preset.steps.len(), 4);
+        assert!(preset.input_schema.contains_key("question"));
+        assert!(preset.input_schema.contains_key("alternatives"));
+        assert!(preset.input_schema.get("question").unwrap().required);
+        assert!(preset.input_schema.get("alternatives").unwrap().required);
+    }
+
+    #[test]
+    fn test_evidence_based_conclusion_preset() {
+        let preset = evidence_based_conclusion_preset();
+        assert_eq!(preset.id, "evidence-based-conclusion");
+        assert_eq!(preset.category, "research");
+        assert_eq!(preset.steps.len(), 4);
+        assert!(preset.input_schema.contains_key("claim"));
+        assert!(preset.input_schema.contains_key("evidence"));
+        assert!(preset.input_schema.get("claim").unwrap().required);
+        assert!(preset.input_schema.get("evidence").unwrap().required);
+    }
+
+    #[test]
+    fn test_strategic_decision_step_dependencies() {
+        let preset = strategic_decision_preset();
+
+        // First step has no dependencies
+        assert!(preset.steps[0].depends_on.is_empty());
+
+        // Later steps depend on decision_analysis
+        assert!(preset.steps[1]
+            .depends_on
+            .contains(&"decision_analysis".to_string()));
+        assert!(preset.steps[2]
+            .depends_on
+            .contains(&"decision_analysis".to_string()));
+
+        // Final step depends on multiple
+        assert!(preset.steps[3].depends_on.len() >= 2);
+    }
+
+    #[test]
+    fn test_evidence_based_conclusion_step_dependencies() {
+        let preset = evidence_based_conclusion_preset();
+
+        // First step has no dependencies
+        assert!(preset.steps[0].depends_on.is_empty());
+
+        // bayesian_update depends on evidence_assessment
+        assert!(preset.steps[1]
+            .depends_on
+            .contains(&"evidence_assessment".to_string()));
+
+        // Final step depends on multiple
+        assert!(preset.steps[3].depends_on.len() >= 2);
+    }
+
+    #[test]
+    fn test_strategic_decision_optional_steps() {
+        let preset = strategic_decision_preset();
+
+        // bias_check is optional
+        assert!(preset.steps[2].optional);
+
+        // Main steps are not optional
+        assert!(!preset.steps[0].optional);
+        assert!(!preset.steps[1].optional);
+        assert!(!preset.steps[3].optional);
+    }
+
+    #[test]
+    fn test_evidence_based_conclusion_optional_steps() {
+        let preset = evidence_based_conclusion_preset();
+
+        // fallacy_check is optional
+        assert!(preset.steps[2].optional);
+
+        // Main steps are not optional
+        assert!(!preset.steps[0].optional);
+        assert!(!preset.steps[1].optional);
         assert!(!preset.steps[3].optional);
     }
 }

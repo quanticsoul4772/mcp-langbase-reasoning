@@ -857,6 +857,383 @@ Analyze content for logical fallacies including ad hominem, straw man, false dic
 
 ---
 
+### reasoning_make_decision
+
+Multi-criteria decision analysis using weighted scoring, pairwise comparison, or TOPSIS methods. Evaluates alternatives against criteria with optional weights and provides ranked recommendations.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string",
+      "description": "The decision question to analyze"
+    },
+    "alternatives": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "description": "Options to evaluate (minimum 2)"
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Criterion name" },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1, "description": "Importance weight (0-1)" },
+          "description": { "type": "string", "description": "Optional criterion description" }
+        },
+        "required": ["name"]
+      },
+      "description": "Evaluation criteria with optional weights"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["weighted_sum", "pairwise", "topsis"],
+      "description": "Analysis method (default: weighted_sum)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID for context persistence"
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context for the decision"
+    }
+  },
+  "required": ["question", "alternatives"]
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "question": "Which cloud provider should we use?",
+  "method": "weighted_sum",
+  "recommendation": {
+    "alternative": "AWS",
+    "score": 0.85,
+    "rank": 1,
+    "rationale": "AWS scores highest on cost and scalability"
+  },
+  "rankings": [
+    { "alternative": "AWS", "score": 0.85, "rank": 1 },
+    { "alternative": "GCP", "score": 0.78, "rank": 2 },
+    { "alternative": "Azure", "score": 0.72, "rank": 3 }
+  ],
+  "trade_offs": [
+    { "between": ["AWS", "GCP"], "description": "AWS is cheaper but GCP has better ML tools" }
+  ],
+  "sensitivity_analysis": {
+    "stable": true,
+    "critical_criteria": ["cost"],
+    "notes": "Recommendation changes if cost weight drops below 0.3"
+  }
+}
+```
+
+#### Decision Methods
+
+| Method | Description |
+|--------|-------------|
+| `weighted_sum` | Simple additive weighting - sum of (weight × score) for each criterion |
+| `pairwise` | AHP-style pairwise comparison between alternatives |
+| `topsis` | Technique for Order Preference by Similarity to Ideal Solution |
+
+---
+
+### reasoning_analyze_perspectives
+
+Stakeholder power/interest matrix analysis. Maps stakeholders to quadrants (KeyPlayer, KeepSatisfied, KeepInformed, MinimalEffort) and identifies conflicts, alignments, and strategic engagement recommendations.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "The topic or decision to analyze from multiple perspectives"
+    },
+    "stakeholders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Stakeholder name" },
+          "role": { "type": "string", "description": "Stakeholder role" },
+          "interests": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Key interests"
+          },
+          "power_level": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Power/influence level (0-1)"
+          },
+          "interest_level": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Interest/stake level (0-1)"
+          }
+        },
+        "required": ["name"]
+      },
+      "description": "Stakeholders to consider (optional - will infer if not provided)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID for context persistence"
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context for the analysis"
+    }
+  },
+  "required": ["topic"]
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "topic": "Cloud migration decision",
+  "power_matrix": {
+    "key_player": [
+      { "name": "CTO", "power": 0.9, "interest": 0.95, "engagement": "Collaborate closely" }
+    ],
+    "keep_satisfied": [
+      { "name": "CFO", "power": 0.85, "interest": 0.4, "engagement": "Regular updates on cost" }
+    ],
+    "keep_informed": [
+      { "name": "Developers", "power": 0.3, "interest": 0.8, "engagement": "Communicate decisions" }
+    ],
+    "minimal_effort": [
+      { "name": "HR", "power": 0.2, "interest": 0.1, "engagement": "General awareness" }
+    ]
+  },
+  "conflicts": [
+    { "stakeholders": ["CTO", "CFO"], "issue": "Feature scope vs budget constraints" }
+  ],
+  "alignments": [
+    { "stakeholders": ["CTO", "Developers"], "area": "Technical excellence" }
+  ],
+  "synthesis": "Focus on CTO buy-in while managing CFO cost concerns"
+}
+```
+
+#### Quadrant Definitions
+
+| Quadrant | Power | Interest | Strategy |
+|----------|-------|----------|----------|
+| KeyPlayer | High | High | Manage closely, collaborate on decisions |
+| KeepSatisfied | High | Low | Keep satisfied, don't bore with details |
+| KeepInformed | Low | High | Keep informed, address concerns |
+| MinimalEffort | Low | Low | Monitor, minimal engagement |
+
+---
+
+### reasoning_assess_evidence
+
+Evidence quality assessment with source credibility analysis, corroboration tracking, and chain of custody evaluation. Returns credibility scores, confidence assessments, and evidence synthesis.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "claim": {
+      "type": "string",
+      "description": "The claim to assess evidence for"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string", "description": "Evidence content or description" },
+          "source": { "type": "string", "description": "Source of the evidence" },
+          "source_type": {
+            "type": "string",
+            "enum": ["primary", "secondary", "tertiary", "expert", "anecdotal"],
+            "description": "Type of source"
+          },
+          "date": { "type": "string", "description": "Date of evidence (ISO format)" }
+        },
+        "required": ["content"]
+      },
+      "minItems": 1,
+      "description": "Evidence items to assess"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID for context persistence"
+    },
+    "context": {
+      "type": "string",
+      "description": "Additional context for the assessment"
+    }
+  },
+  "required": ["claim", "evidence"]
+}
+```
+
+#### Response
+
+```json
+{
+  "claim": "The new architecture improves performance by 50%",
+  "overall_credibility": 0.75,
+  "confidence": 0.8,
+  "evidence_assessments": [
+    {
+      "content": "Benchmark tests showing 52% improvement",
+      "source_credibility": 0.9,
+      "relevance": 0.95,
+      "corroboration": "Corroborated by production metrics",
+      "notes": "Primary source, controlled conditions"
+    },
+    {
+      "content": "User reports of faster load times",
+      "source_credibility": 0.6,
+      "relevance": 0.7,
+      "corroboration": "Partially corroborated",
+      "notes": "Anecdotal but consistent with benchmarks"
+    }
+  ],
+  "synthesis": "Strong evidence supports the claim with high confidence from primary sources"
+}
+```
+
+#### Source Types
+
+| Type | Description | Typical Credibility |
+|------|-------------|---------------------|
+| `primary` | Original data, firsthand observation | High (0.8-1.0) |
+| `secondary` | Analysis of primary sources | Medium-High (0.6-0.9) |
+| `tertiary` | Summary of secondary sources | Medium (0.4-0.7) |
+| `expert` | Expert opinion without primary data | Medium (0.5-0.8) |
+| `anecdotal` | Individual reports, testimonials | Low-Medium (0.2-0.5) |
+
+---
+
+### reasoning_probabilistic
+
+Bayesian probability updates for belief revision. Takes prior probabilities and new evidence to compute posterior probabilities with entropy and uncertainty metrics.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "hypothesis": {
+      "type": "string",
+      "description": "The hypothesis to evaluate"
+    },
+    "prior": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Prior probability (0-1)"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string", "description": "Evidence description" },
+          "likelihood_if_true": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "P(evidence|hypothesis true)"
+          },
+          "likelihood_if_false": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "P(evidence|hypothesis false)"
+          }
+        },
+        "required": ["description"]
+      },
+      "minItems": 1,
+      "description": "Evidence items with likelihood ratios"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID for context persistence"
+    }
+  },
+  "required": ["hypothesis", "prior", "evidence"]
+}
+```
+
+#### Response
+
+```json
+{
+  "hypothesis": "The bug is in the authentication module",
+  "prior": 0.3,
+  "posterior": 0.78,
+  "entropy": 0.76,
+  "update_steps": [
+    {
+      "evidence": "Error logs show authentication failures",
+      "prior": 0.3,
+      "posterior": 0.65,
+      "likelihood_ratio": 4.0
+    },
+    {
+      "evidence": "Bug reproduces only with certain credentials",
+      "prior": 0.65,
+      "posterior": 0.78,
+      "likelihood_ratio": 2.0
+    }
+  ]
+}
+```
+
+#### Bayesian Formula
+
+```
+P(H|E) = P(E|H) × P(H) / P(E)
+
+where:
+- P(H|E) = posterior probability
+- P(E|H) = likelihood_if_true
+- P(H) = prior
+- P(E) = P(E|H) × P(H) + P(E|¬H) × P(¬H)
+```
+
+#### Entropy Calculation
+
+Shannon entropy measures uncertainty:
+```
+H = -p × log2(p) - (1-p) × log2(1-p)
+```
+
+| Entropy | Interpretation |
+|---------|----------------|
+| 0 | Complete certainty (p=0 or p=1) |
+| 0.5 | Moderate uncertainty |
+| 1.0 | Maximum uncertainty (p=0.5) |
+
+---
+
 ### reasoning_preset_list
 
 List available workflow presets. Presets are composable multi-step reasoning workflows that combine existing tools into higher-level operations.
@@ -892,7 +1269,7 @@ List available workflow presets. Presets are composable multi-step reasoning wor
       }
     }
   ],
-  "count": 3
+  "count": 5
 }
 ```
 
@@ -900,9 +1277,11 @@ List available workflow presets. Presets are composable multi-step reasoning wor
 
 | Preset ID | Category | Description |
 |-----------|----------|-------------|
-| `code-review` | code | 5-step code review: linear analysis → bias detection → fallacy detection → reflection → final synthesis |
-| `debug-analysis` | code | 4-step debugging: divergent exploration → tree branching → reflection → checkpoint save |
-| `architecture-decision` | architecture | 5-step decision: tree exploration → reflection → divergent perspectives → bias check → synthesis |
+| `code-review` | code | 4-step code review: divergent analysis → bias detection → fallacy detection → reflection |
+| `debug-analysis` | code | 4-step debugging: linear analysis → tree exploration → checkpoint save → reflection |
+| `architecture-decision` | architecture | 5-step decision: divergent exploration → GoT init → GoT generate → GoT score → GoT finalize |
+| `strategic-decision` | decision | 4-step decision: multi-criteria analysis → stakeholder perspectives → bias detection → synthesis |
+| `evidence-based-conclusion` | research | 4-step conclusion: evidence assessment → Bayesian probability update → fallacy detection → reflection |
 
 ---
 
@@ -992,6 +1371,89 @@ If a non-optional step fails, execution stops and returns partial results:
     "analysis": { ... },
     "bias_check": { ... }
   }
+}
+```
+
+#### Example: Running Strategic Decision
+
+```json
+{
+  "preset_id": "strategic-decision",
+  "inputs": {
+    "question": "Should we migrate to cloud or stay on-premise?",
+    "alternatives": ["AWS Migration", "Azure Migration", "On-premise Upgrade"]
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "preset_id": "strategic-decision",
+  "status": "completed",
+  "session_id": "uuid",
+  "steps_completed": 4,
+  "total_steps": 4,
+  "results": {
+    "decision": {
+      "ranking": [
+        { "alternative": "AWS Migration", "score": 0.85 },
+        { "alternative": "Azure Migration", "score": 0.78 },
+        { "alternative": "On-premise Upgrade", "score": 0.62 }
+      ],
+      "trade_offs": [...]
+    },
+    "perspectives": {
+      "stakeholders": [...],
+      "power_matrix": {...}
+    },
+    "biases": { "detections": [], "reasoning_quality": 0.88 },
+    "synthesis": { "thought_id": "uuid", "content": "..." }
+  },
+  "execution_time_ms": 3200
+}
+```
+
+#### Example: Running Evidence-Based Conclusion
+
+```json
+{
+  "preset_id": "evidence-based-conclusion",
+  "inputs": {
+    "claim": "The new feature improves user engagement by 20%",
+    "evidence": [
+      { "content": "A/B test results showing 22% improvement", "source_type": "primary" },
+      { "content": "User feedback surveys indicating satisfaction", "source_type": "survey" }
+    ],
+    "prior": 0.5
+  }
+}
+```
+
+#### Response
+
+```json
+{
+  "preset_id": "evidence-based-conclusion",
+  "status": "completed",
+  "session_id": "uuid",
+  "steps_completed": 4,
+  "total_steps": 4,
+  "results": {
+    "assessment": {
+      "overall_credibility": 0.82,
+      "evidence_ratings": [...]
+    },
+    "probability": {
+      "prior": 0.5,
+      "posterior": 0.78,
+      "steps": [...]
+    },
+    "fallacies": { "detections": [], "argument_validity": 0.92 },
+    "conclusion": { "thought_id": "uuid", "content": "..." }
+  },
+  "execution_time_ms": 2800
 }
 ```
 
@@ -1357,3 +1819,7 @@ If the pipe returns non-JSON, the entire response is treated as the thought cont
 | `PIPE_GOT_SCORE` | `got-score-v1` | GoT score pipe |
 | `PIPE_GOT_AGGREGATE` | `got-aggregate-v1` | GoT aggregate pipe |
 | `PIPE_GOT_REFINE` | `got-refine-v1` | GoT refine pipe |
+| `PIPE_DECISION` | `decision-maker-v1` | Decision framework pipe |
+| `PIPE_PERSPECTIVE` | `perspective-analyzer-v1` | Stakeholder perspective pipe |
+| `PIPE_EVIDENCE` | `evidence-assessor-v1` | Evidence assessment pipe |
+| `PIPE_BAYESIAN` | `bayesian-updater-v1` | Bayesian probability pipe |

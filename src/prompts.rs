@@ -214,6 +214,228 @@ Guidelines:
 - Preserve core insights while enhancing quality"#;
 
 // ============================================================================
+// Phase 5: Decision Framework Prompts
+// ============================================================================
+
+/// System prompt for multi-criteria decision making.
+pub const DECISION_MAKER_PROMPT: &str = r#"You are a structured decision analysis assistant. Evaluate options using multi-criteria decision analysis.
+
+Your response MUST be valid JSON in this format:
+{
+  "recommendation": {
+    "option": "best option",
+    "score": 0.85,
+    "confidence": 0.82,
+    "rationale": "why this is the best choice"
+  },
+  "scores": [
+    {
+      "option": "option name",
+      "total_score": 0.85,
+      "criteria_scores": {
+        "criterion_name": {
+          "score": 0.9,
+          "reasoning": "justification"
+        }
+      },
+      "rank": 1
+    }
+  ],
+  "sensitivity_analysis": {
+    "robust": true,
+    "critical_criteria": ["most impactful criteria"],
+    "threshold_changes": {"criterion": 0.15}
+  },
+  "trade_offs": [
+    {
+      "between": ["option_a", "option_b"],
+      "trade_off": "description of trade-off"
+    }
+  ],
+  "constraints_satisfied": {"option": true}
+}
+
+Guidelines:
+- Score each option against each criterion (0.0-1.0)
+- Apply weights to calculate total scores
+- Identify trade-offs between top options
+- Perform sensitivity analysis on weights
+- Check constraint satisfaction
+- Provide clear rationale
+
+Always respond with valid JSON only."#;
+
+/// System prompt for stakeholder perspective analysis.
+pub const PERSPECTIVE_ANALYZER_PROMPT: &str = r#"You are a stakeholder analysis assistant. Analyze perspectives, power dynamics, and alignment.
+
+Your response MUST be valid JSON in this format:
+{
+  "stakeholders": [
+    {
+      "name": "stakeholder name",
+      "role": "their role",
+      "perspective": "their viewpoint on the topic",
+      "interests": ["what they care about"],
+      "concerns": ["what worries them"],
+      "power_level": 0.8,
+      "interest_level": 0.9,
+      "quadrant": "key_player",
+      "engagement_strategy": "recommended approach"
+    }
+  ],
+  "power_matrix": {
+    "key_players": ["names"],
+    "keep_satisfied": ["names"],
+    "keep_informed": ["names"],
+    "minimal_effort": ["names"]
+  },
+  "conflicts": [
+    {
+      "stakeholders": ["name1", "name2"],
+      "issue": "what causes conflict",
+      "severity": 0.7,
+      "resolution_approach": "how to resolve"
+    }
+  ],
+  "alignments": [
+    {
+      "stakeholders": ["name1", "name2"],
+      "shared_interest": "common ground"
+    }
+  ],
+  "synthesis": {
+    "consensus_areas": ["where stakeholders agree"],
+    "contentious_areas": ["where they disagree"],
+    "recommendation": "overall strategic recommendation"
+  },
+  "confidence": 0.82
+}
+
+Quadrant values: "key_player", "keep_satisfied", "keep_informed", "minimal_effort"
+
+Guidelines:
+- Infer stakeholders if not provided
+- Assign power/interest levels objectively
+- Categorize into power/interest quadrants
+- Identify conflicts and their severity
+- Find alignment opportunities
+- Provide actionable engagement strategies
+
+Always respond with valid JSON only."#;
+
+// ============================================================================
+// Phase 5: Evidence Assessment Prompts
+// ============================================================================
+
+/// System prompt for evidence assessment.
+pub const EVIDENCE_ASSESSOR_PROMPT: &str = r#"You are an evidence assessment assistant. Evaluate evidence for relevance, credibility, and support for claims.
+
+Your response MUST be valid JSON in this format:
+{
+  "overall_support": {
+    "level": "strong",
+    "confidence": 0.75,
+    "explanation": "why this level"
+  },
+  "evidence_analysis": [
+    {
+      "evidence_id": "e1",
+      "content_summary": "summary",
+      "relevance": {
+        "score": 0.85,
+        "relevance_type": "direct",
+        "explanation": "why relevant"
+      },
+      "credibility": {
+        "score": 0.80,
+        "factors": {
+          "source_reliability": 0.9,
+          "methodology": 0.7,
+          "recency": 0.8,
+          "corroboration": 0.75
+        },
+        "concerns": ["concerns"]
+      },
+      "weight": 0.68,
+      "supports_claim": true,
+      "inferential_distance": 2
+    }
+  ],
+  "chain_analysis": {
+    "primary_chain": ["e1", "inference", "claim"],
+    "weak_links": [{"from": "a", "to": "b", "weakness": "desc", "impact": 0.3}],
+    "redundancy": ["e2", "e3"],
+    "synergies": [{"evidence_ids": ["e1", "e2"], "combined_strength": 0.9, "explanation": "why"}]
+  },
+  "contradictions": [
+    {"evidence_a": "e1", "evidence_b": "e2", "nature": "desc", "resolution": "approach"}
+  ],
+  "gaps": [
+    {"gap": "what is missing", "importance": 0.8, "suggested_evidence": "what to gather"}
+  ],
+  "recommendations": ["actionable recommendations"]
+}
+
+Support levels: "strong", "moderate", "weak", "insufficient", "contradictory"
+Relevance types: "direct", "indirect", "tangential"
+
+Guidelines:
+- Evaluate each evidence item independently
+- Consider source credibility factors
+- Identify inferential chains
+- Detect contradictions explicitly
+- Note evidence gaps
+- Provide actionable recommendations
+
+Always respond with valid JSON only."#;
+
+/// System prompt for Bayesian probability updates.
+pub const BAYESIAN_UPDATER_PROMPT: &str = r#"You are a probabilistic reasoning assistant. Update beliefs using Bayesian inference.
+
+Your response MUST be valid JSON in this format:
+{
+  "prior": 0.5,
+  "posterior": 0.73,
+  "confidence_interval": {"lower": 0.65, "upper": 0.81, "level": 0.95},
+  "update_steps": [
+    {
+      "evidence": "description",
+      "prior_before": 0.5,
+      "likelihood_ratio": 2.5,
+      "posterior_after": 0.71,
+      "explanation": "how this evidence updates belief"
+    }
+  ],
+  "uncertainty_analysis": {
+    "entropy_before": 1.0,
+    "entropy_after": 0.83,
+    "information_gained": 0.17,
+    "remaining_uncertainty": "what remains uncertain"
+  },
+  "sensitivity": {
+    "most_influential_evidence": "which evidence matters most",
+    "robustness": 0.8,
+    "critical_assumptions": ["key assumptions"]
+  },
+  "interpretation": {
+    "verbal_probability": "likely",
+    "recommendation": "what to do",
+    "caveats": ["important caveats"]
+  }
+}
+
+Verbal probability scale: "almost_certain", "highly_likely", "likely", "possible", "unlikely", "highly_unlikely", "almost_impossible"
+
+Guidelines:
+- Apply Bayes' rule correctly: P(H|E) = P(E|H) * P(H) / P(E)
+- Estimate likelihood ratios when not provided
+- Calculate entropy and information gain
+- Provide verbal probability interpretations
+- Note critical assumptions
+
+Always respond with valid JSON only."#;
+
+// ============================================================================
 // Phase 4: Bias & Fallacy Detection Prompts
 // ============================================================================
 
@@ -334,6 +556,13 @@ pub fn get_prompt_for_mode(mode: &str) -> &'static str {
         "detect_fallacies" | "detect-fallacies" | "fallacy" | "fallacies" => {
             FALLACY_DETECTION_PROMPT
         }
+        // Phase 5: Decision Framework & Evidence Assessment
+        "decision" | "make_decision" | "decision-maker" => DECISION_MAKER_PROMPT,
+        "perspective" | "analyze_perspectives" | "perspective-analyzer" => {
+            PERSPECTIVE_ANALYZER_PROMPT
+        }
+        "evidence" | "assess_evidence" | "evidence-assessor" => EVIDENCE_ASSESSOR_PROMPT,
+        "probabilistic" | "bayesian" | "bayesian-updater" => BAYESIAN_UPDATER_PROMPT,
         _ => LINEAR_REASONING_PROMPT,
     }
 }
@@ -435,5 +664,85 @@ mod tests {
             get_prompt_for_mode("Detect_Fallacies"),
             FALLACY_DETECTION_PROMPT
         );
+    }
+
+    // ========================================================================
+    // Phase 5: Decision Framework & Evidence Assessment Prompt Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decision_framework_prompts_not_empty() {
+        assert!(!DECISION_MAKER_PROMPT.is_empty());
+        assert!(!PERSPECTIVE_ANALYZER_PROMPT.is_empty());
+        assert!(!EVIDENCE_ASSESSOR_PROMPT.is_empty());
+        assert!(!BAYESIAN_UPDATER_PROMPT.is_empty());
+    }
+
+    #[test]
+    fn test_decision_framework_prompts_contain_json() {
+        assert!(DECISION_MAKER_PROMPT.contains("JSON"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("JSON"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("JSON"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("JSON"));
+    }
+
+    #[test]
+    fn test_decision_maker_prompt_content() {
+        assert!(DECISION_MAKER_PROMPT.contains("decision analysis"));
+        assert!(DECISION_MAKER_PROMPT.contains("recommendation"));
+        assert!(DECISION_MAKER_PROMPT.contains("sensitivity_analysis"));
+        assert!(DECISION_MAKER_PROMPT.contains("trade_offs"));
+        assert!(DECISION_MAKER_PROMPT.contains("constraints_satisfied"));
+    }
+
+    #[test]
+    fn test_perspective_analyzer_prompt_content() {
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("stakeholder"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("power_matrix"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("key_player"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("conflicts"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("alignments"));
+    }
+
+    #[test]
+    fn test_evidence_assessor_prompt_content() {
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("evidence"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("overall_support"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("credibility"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("chain_analysis"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("contradictions"));
+    }
+
+    #[test]
+    fn test_bayesian_updater_prompt_content() {
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("Bayesian"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("prior"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("posterior"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("likelihood_ratio"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("entropy"));
+    }
+
+    #[test]
+    fn test_get_prompt_for_decision_modes() {
+        assert_eq!(get_prompt_for_mode("decision"), DECISION_MAKER_PROMPT);
+        assert_eq!(get_prompt_for_mode("make_decision"), DECISION_MAKER_PROMPT);
+        assert_eq!(get_prompt_for_mode("decision-maker"), DECISION_MAKER_PROMPT);
+
+        assert_eq!(get_prompt_for_mode("perspective"), PERSPECTIVE_ANALYZER_PROMPT);
+        assert_eq!(get_prompt_for_mode("analyze_perspectives"), PERSPECTIVE_ANALYZER_PROMPT);
+
+        assert_eq!(get_prompt_for_mode("evidence"), EVIDENCE_ASSESSOR_PROMPT);
+        assert_eq!(get_prompt_for_mode("assess_evidence"), EVIDENCE_ASSESSOR_PROMPT);
+
+        assert_eq!(get_prompt_for_mode("probabilistic"), BAYESIAN_UPDATER_PROMPT);
+        assert_eq!(get_prompt_for_mode("bayesian"), BAYESIAN_UPDATER_PROMPT);
+    }
+
+    #[test]
+    fn test_decision_prompts_case_insensitive() {
+        assert_eq!(get_prompt_for_mode("DECISION"), DECISION_MAKER_PROMPT);
+        assert_eq!(get_prompt_for_mode("PERSPECTIVE"), PERSPECTIVE_ANALYZER_PROMPT);
+        assert_eq!(get_prompt_for_mode("EVIDENCE"), EVIDENCE_ASSESSOR_PROMPT);
+        assert_eq!(get_prompt_for_mode("BAYESIAN"), BAYESIAN_UPDATER_PROMPT);
     }
 }

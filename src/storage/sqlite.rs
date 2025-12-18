@@ -5,8 +5,9 @@ use std::str::FromStr;
 use tracing::{info, warn};
 
 use super::{
-    Branch, Checkpoint, CrossRef, Detection, DetectionType, GraphEdge, GraphNode, Invocation,
-    Session, StateSnapshot, Storage, Thought,
+    Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
+    GraphEdge, GraphNode, Invocation, PerspectiveAnalysis, ProbabilityUpdate, Session,
+    StateSnapshot, Storage, StoredCriterion, Thought,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -1007,6 +1008,392 @@ impl Storage for SqliteStorage {
 
         Ok(())
     }
+
+    // ========================================================================
+    // Decision operations (decision framework)
+    // ========================================================================
+
+    async fn create_decision(&self, decision: &Decision) -> StorageResult<()> {
+        let options_json = serialize_json_required(&decision.options, "decision.options")?;
+        let criteria_json = serialize_json(&decision.criteria, "decision.criteria")?;
+        let sensitivity_json = decision
+            .sensitivity_analysis
+            .as_ref()
+            .map(|v| v.to_string());
+        let trade_offs_json = decision.trade_offs.as_ref().map(|v| v.to_string());
+        let constraints_json = decision.constraints_satisfied.as_ref().map(|v| v.to_string());
+        let metadata_json = decision.metadata.as_ref().map(|v| v.to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO decisions (
+                id, session_id, question, options, criteria, method,
+                recommendation, scores, sensitivity_analysis, trade_offs,
+                constraints_satisfied, created_at, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&decision.id)
+        .bind(&decision.session_id)
+        .bind(&decision.question)
+        .bind(&options_json)
+        .bind(&criteria_json)
+        .bind(&decision.method)
+        .bind(decision.recommendation.to_string())
+        .bind(decision.scores.to_string())
+        .bind(&sensitivity_json)
+        .bind(&trade_offs_json)
+        .bind(&constraints_json)
+        .bind(decision.created_at.to_rfc3339())
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_decision(&self, id: &str) -> StorageResult<Option<Decision>> {
+        let row: Option<DecisionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, question, options, criteria, method,
+                   recommendation, scores, sensitivity_analysis, trade_offs,
+                   constraints_satisfied, created_at, metadata
+            FROM decisions
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_decisions(&self, session_id: &str) -> StorageResult<Vec<Decision>> {
+        let rows: Vec<DecisionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, question, options, criteria, method,
+                   recommendation, scores, sensitivity_analysis, trade_offs,
+                   constraints_satisfied, created_at, metadata
+            FROM decisions
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_decisions_by_method(&self, method: &str) -> StorageResult<Vec<Decision>> {
+        let rows: Vec<DecisionRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, question, options, criteria, method,
+                   recommendation, scores, sensitivity_analysis, trade_offs,
+                   constraints_satisfied, created_at, metadata
+            FROM decisions
+            WHERE method = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(method)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_decision(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM decisions WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Perspective analysis operations (decision framework)
+    // ========================================================================
+
+    async fn create_perspective(&self, analysis: &PerspectiveAnalysis) -> StorageResult<()> {
+        let power_matrix_json = analysis.power_matrix.as_ref().map(|v| v.to_string());
+        let conflicts_json = analysis.conflicts.as_ref().map(|v| v.to_string());
+        let alignments_json = analysis.alignments.as_ref().map(|v| v.to_string());
+        let metadata_json = analysis.metadata.as_ref().map(|v| v.to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO perspective_analyses (
+                id, session_id, topic, stakeholders, power_matrix,
+                conflicts, alignments, synthesis, confidence, created_at, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&analysis.id)
+        .bind(&analysis.session_id)
+        .bind(&analysis.topic)
+        .bind(analysis.stakeholders.to_string())
+        .bind(&power_matrix_json)
+        .bind(&conflicts_json)
+        .bind(&alignments_json)
+        .bind(analysis.synthesis.to_string())
+        .bind(analysis.confidence)
+        .bind(analysis.created_at.to_rfc3339())
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_perspective(&self, id: &str) -> StorageResult<Option<PerspectiveAnalysis>> {
+        let row: Option<PerspectiveRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, topic, stakeholders, power_matrix,
+                   conflicts, alignments, synthesis, confidence, created_at, metadata
+            FROM perspective_analyses
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_perspectives(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<PerspectiveAnalysis>> {
+        let rows: Vec<PerspectiveRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, topic, stakeholders, power_matrix,
+                   conflicts, alignments, synthesis, confidence, created_at, metadata
+            FROM perspective_analyses
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_perspective(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM perspective_analyses WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Evidence assessment operations (evidence mode)
+    // ========================================================================
+
+    async fn create_evidence_assessment(
+        &self,
+        assessment: &EvidenceAssessment,
+    ) -> StorageResult<()> {
+        let chain_json = assessment.chain_analysis.as_ref().map(|v| v.to_string());
+        let contradictions_json = assessment.contradictions.as_ref().map(|v| v.to_string());
+        let gaps_json = assessment.gaps.as_ref().map(|v| v.to_string());
+        let recommendations_json = assessment.recommendations.as_ref().map(|v| v.to_string());
+        let metadata_json = assessment.metadata.as_ref().map(|v| v.to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO evidence_assessments (
+                id, session_id, claim, evidence, overall_support, evidence_analysis,
+                chain_analysis, contradictions, gaps, recommendations, created_at, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&assessment.id)
+        .bind(&assessment.session_id)
+        .bind(&assessment.claim)
+        .bind(assessment.evidence.to_string())
+        .bind(assessment.overall_support.to_string())
+        .bind(assessment.evidence_analysis.to_string())
+        .bind(&chain_json)
+        .bind(&contradictions_json)
+        .bind(&gaps_json)
+        .bind(&recommendations_json)
+        .bind(assessment.created_at.to_rfc3339())
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_evidence_assessment(&self, id: &str) -> StorageResult<Option<EvidenceAssessment>> {
+        let row: Option<EvidenceAssessmentRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, claim, evidence, overall_support, evidence_analysis,
+                   chain_analysis, contradictions, gaps, recommendations, created_at, metadata
+            FROM evidence_assessments
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_evidence_assessments(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<EvidenceAssessment>> {
+        let rows: Vec<EvidenceAssessmentRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, claim, evidence, overall_support, evidence_analysis,
+                   chain_analysis, contradictions, gaps, recommendations, created_at, metadata
+            FROM evidence_assessments
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_evidence_assessment(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM evidence_assessments WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Probability update operations (evidence mode)
+    // ========================================================================
+
+    async fn create_probability_update(&self, update: &ProbabilityUpdate) -> StorageResult<()> {
+        let uncertainty_json = update.uncertainty_analysis.as_ref().map(|v| v.to_string());
+        let sensitivity_json = update.sensitivity.as_ref().map(|v| v.to_string());
+        let metadata_json = update.metadata.as_ref().map(|v| v.to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO probability_updates (
+                id, session_id, hypothesis, prior, posterior,
+                confidence_lower, confidence_upper, confidence_level,
+                update_steps, uncertainty_analysis, sensitivity,
+                interpretation, created_at, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&update.id)
+        .bind(&update.session_id)
+        .bind(&update.hypothesis)
+        .bind(update.prior)
+        .bind(update.posterior)
+        .bind(update.confidence_lower)
+        .bind(update.confidence_upper)
+        .bind(update.confidence_level)
+        .bind(update.update_steps.to_string())
+        .bind(&uncertainty_json)
+        .bind(&sensitivity_json)
+        .bind(update.interpretation.to_string())
+        .bind(update.created_at.to_rfc3339())
+        .bind(&metadata_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_probability_update(&self, id: &str) -> StorageResult<Option<ProbabilityUpdate>> {
+        let row: Option<ProbabilityUpdateRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, hypothesis, prior, posterior,
+                   confidence_lower, confidence_upper, confidence_level,
+                   update_steps, uncertainty_analysis, sensitivity,
+                   interpretation, created_at, metadata
+            FROM probability_updates
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_probability_updates(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<ProbabilityUpdate>> {
+        let rows: Vec<ProbabilityUpdateRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, hypothesis, prior, posterior,
+                   confidence_lower, confidence_upper, confidence_level,
+                   update_steps, uncertainty_analysis, sensitivity,
+                   interpretation, created_at, metadata
+            FROM probability_updates
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_hypothesis_updates(
+        &self,
+        session_id: &str,
+        hypothesis: &str,
+    ) -> StorageResult<Vec<ProbabilityUpdate>> {
+        let rows: Vec<ProbabilityUpdateRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, hypothesis, prior, posterior,
+                   confidence_lower, confidence_upper, confidence_level,
+                   update_steps, uncertainty_analysis, sensitivity,
+                   interpretation, created_at, metadata
+            FROM probability_updates
+            WHERE session_id = ? AND hypothesis = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .bind(hypothesis)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_probability_update(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM probability_updates WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -1400,6 +1787,318 @@ impl From<DetectionRow> for Detection {
                 &format!("detection {} created_at", row.id),
             ),
             metadata,
+        }
+    }
+}
+
+// ============================================================================
+// Decision Framework Row Types
+// ============================================================================
+
+/// Row struct for Decision queries
+#[derive(Debug, sqlx::FromRow)]
+struct DecisionRow {
+    id: String,
+    session_id: String,
+    question: String,
+    options: String,
+    criteria: Option<String>,
+    method: String,
+    recommendation: String,
+    scores: String,
+    sensitivity_analysis: Option<String>,
+    trade_offs: Option<String>,
+    constraints_satisfied: Option<String>,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<DecisionRow> for Decision {
+    fn from(row: DecisionRow) -> Self {
+        let options: Vec<String> = serde_json::from_str(&row.options).unwrap_or_else(|e| {
+            warn!(
+                error = %e,
+                decision_id = row.id,
+                "Failed to parse decision options, using empty vec"
+            );
+            Vec::new()
+        });
+
+        let criteria: Option<Vec<StoredCriterion>> = row.criteria.as_deref().and_then(|s| {
+            serde_json::from_str(s).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    decision_id = row.id,
+                    "Failed to parse decision criteria, using None"
+                );
+                None
+            })
+        });
+
+        let recommendation: serde_json::Value =
+            serde_json::from_str(&row.recommendation).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    decision_id = row.id,
+                    "Failed to parse recommendation, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        let scores: serde_json::Value = serde_json::from_str(&row.scores).unwrap_or_else(|e| {
+            warn!(
+                error = %e,
+                decision_id = row.id,
+                "Failed to parse scores, using null"
+            );
+            serde_json::Value::Null
+        });
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            question: row.question,
+            options,
+            criteria,
+            method: row.method,
+            recommendation,
+            scores,
+            sensitivity_analysis: row
+                .sensitivity_analysis
+                .as_deref()
+                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} sensitivity", row.id))),
+            trade_offs: row
+                .trade_offs
+                .as_deref()
+                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} trade_offs", row.id))),
+            constraints_satisfied: row.constraints_satisfied.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("decision {} constraints", row.id))
+            }),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("decision {} created_at", row.id),
+            ),
+            metadata: row
+                .metadata
+                .as_deref()
+                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} metadata", row.id))),
+        }
+    }
+}
+
+/// Row struct for PerspectiveAnalysis queries
+#[derive(Debug, sqlx::FromRow)]
+struct PerspectiveRow {
+    id: String,
+    session_id: String,
+    topic: String,
+    stakeholders: String,
+    power_matrix: Option<String>,
+    conflicts: Option<String>,
+    alignments: Option<String>,
+    synthesis: String,
+    confidence: f64,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<PerspectiveRow> for PerspectiveAnalysis {
+    fn from(row: PerspectiveRow) -> Self {
+        let stakeholders: serde_json::Value =
+            serde_json::from_str(&row.stakeholders).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    perspective_id = row.id,
+                    "Failed to parse stakeholders, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        let synthesis: serde_json::Value =
+            serde_json::from_str(&row.synthesis).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    perspective_id = row.id,
+                    "Failed to parse synthesis, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            topic: row.topic,
+            stakeholders,
+            power_matrix: row.power_matrix.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("perspective {} power_matrix", row.id))
+            }),
+            conflicts: row.conflicts.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("perspective {} conflicts", row.id))
+            }),
+            alignments: row.alignments.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("perspective {} alignments", row.id))
+            }),
+            synthesis,
+            confidence: row.confidence,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("perspective {} created_at", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("perspective {} metadata", row.id))
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// Evidence Assessment Row Types
+// ============================================================================
+
+/// Row struct for EvidenceAssessment queries
+#[derive(Debug, sqlx::FromRow)]
+struct EvidenceAssessmentRow {
+    id: String,
+    session_id: String,
+    claim: String,
+    evidence: String,
+    overall_support: String,
+    evidence_analysis: String,
+    chain_analysis: Option<String>,
+    contradictions: Option<String>,
+    gaps: Option<String>,
+    recommendations: Option<String>,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<EvidenceAssessmentRow> for EvidenceAssessment {
+    fn from(row: EvidenceAssessmentRow) -> Self {
+        let evidence: serde_json::Value =
+            serde_json::from_str(&row.evidence).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    assessment_id = row.id,
+                    "Failed to parse evidence, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        let overall_support: serde_json::Value =
+            serde_json::from_str(&row.overall_support).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    assessment_id = row.id,
+                    "Failed to parse overall_support, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        let evidence_analysis: serde_json::Value =
+            serde_json::from_str(&row.evidence_analysis).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    assessment_id = row.id,
+                    "Failed to parse evidence_analysis, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            claim: row.claim,
+            evidence,
+            overall_support,
+            evidence_analysis,
+            chain_analysis: row.chain_analysis.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("assessment {} chain_analysis", row.id))
+            }),
+            contradictions: row.contradictions.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("assessment {} contradictions", row.id))
+            }),
+            gaps: row.gaps.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("assessment {} gaps", row.id))
+            }),
+            recommendations: row.recommendations.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("assessment {} recommendations", row.id))
+            }),
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("assessment {} created_at", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("assessment {} metadata", row.id))
+            }),
+        }
+    }
+}
+
+/// Row struct for ProbabilityUpdate queries
+#[derive(Debug, sqlx::FromRow)]
+struct ProbabilityUpdateRow {
+    id: String,
+    session_id: String,
+    hypothesis: String,
+    prior: f64,
+    posterior: f64,
+    confidence_lower: Option<f64>,
+    confidence_upper: Option<f64>,
+    confidence_level: Option<f64>,
+    update_steps: String,
+    uncertainty_analysis: Option<String>,
+    sensitivity: Option<String>,
+    interpretation: String,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<ProbabilityUpdateRow> for ProbabilityUpdate {
+    fn from(row: ProbabilityUpdateRow) -> Self {
+        let update_steps: serde_json::Value =
+            serde_json::from_str(&row.update_steps).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    update_id = row.id,
+                    "Failed to parse update_steps, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        let interpretation: serde_json::Value =
+            serde_json::from_str(&row.interpretation).unwrap_or_else(|e| {
+                warn!(
+                    error = %e,
+                    update_id = row.id,
+                    "Failed to parse interpretation, using null"
+                );
+                serde_json::Value::Null
+            });
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            hypothesis: row.hypothesis,
+            prior: row.prior,
+            posterior: row.posterior,
+            confidence_lower: row.confidence_lower,
+            confidence_upper: row.confidence_upper,
+            confidence_level: row.confidence_level,
+            update_steps,
+            uncertainty_analysis: row.uncertainty_analysis.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("probability {} uncertainty", row.id))
+            }),
+            sensitivity: row.sensitivity.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("probability {} sensitivity", row.id))
+            }),
+            interpretation,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("probability {} created_at", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("probability {} metadata", row.id))
+            }),
         }
     }
 }

@@ -48,6 +48,8 @@ fn create_test_config(mock_url: &str, db_path: std::path::PathBuf) -> Config {
             backtracking: None,
             got: None,
             detection: None,
+            decision: None,
+            evidence: None,
         },
     }
 }

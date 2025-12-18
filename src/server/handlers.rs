@@ -8,9 +8,10 @@ use super::SharedState;
 use crate::error::{McpError, McpResult};
 use crate::langbase::{BiasDetectionResponse, FallacyDetectionResponse, Message, PipeRequest};
 use crate::modes::{
-    AutoParams, BacktrackingParams, DivergentParams, GotAggregateParams, GotFinalizeParams,
-    GotGenerateParams, GotGetStateParams, GotInitParams, GotPruneParams, GotRefineParams,
-    GotScoreParams, LinearParams, ReflectionParams, TreeParams,
+    AutoParams, BacktrackingParams, DecisionParams, DivergentParams, EvidenceParams,
+    GotAggregateParams, GotFinalizeParams, GotGenerateParams, GotGetStateParams, GotInitParams,
+    GotPruneParams, GotRefineParams, GotScoreParams, LinearParams, PerspectiveParams,
+    ProbabilisticParams, ReflectionParams, TreeParams,
 };
 use crate::presets::execute_preset;
 use crate::prompts::{BIAS_DETECTION_PROMPT, FALLACY_DETECTION_PROMPT};
@@ -55,6 +56,11 @@ pub async fn handle_tool_call(
         // Phase 5 tools - Workflow Presets
         "reasoning_preset_list" => handle_preset_list(state, arguments).await,
         "reasoning_preset_run" => handle_preset_run(state, arguments).await,
+        // Phase 6 tools - Decision Framework & Evidence Assessment
+        "reasoning_make_decision" => handle_make_decision(state, arguments).await,
+        "reasoning_analyze_perspectives" => handle_analyze_perspectives(state, arguments).await,
+        "reasoning_assess_evidence" => handle_assess_evidence(state, arguments).await,
+        "reasoning_probabilistic" => handle_probabilistic(state, arguments).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
@@ -849,6 +855,56 @@ where
         })?;
 
     serde_json::to_value(result).map_err(McpError::Json)
+}
+
+// ============================================================================
+// Phase 6 Handlers - Decision Framework & Evidence Assessment
+// ============================================================================
+
+/// Handle reasoning_make_decision tool call
+async fn handle_make_decision(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.make_decision",
+        arguments,
+        |params: DecisionParams| state.decision_mode.make_decision(params),
+    )
+    .await
+}
+
+/// Handle reasoning_analyze_perspectives tool call
+async fn handle_analyze_perspectives(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.analyze_perspectives",
+        arguments,
+        |params: PerspectiveParams| state.decision_mode.analyze_perspectives(params),
+    )
+    .await
+}
+
+/// Handle reasoning_assess_evidence tool call
+async fn handle_assess_evidence(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.assess_evidence",
+        arguments,
+        |params: EvidenceParams| state.evidence_mode.assess_evidence(params),
+    )
+    .await
+}
+
+/// Handle reasoning_probabilistic tool call
+async fn handle_probabilistic(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.probabilistic",
+        arguments,
+        |params: ProbabilisticParams| state.evidence_mode.update_probability(params),
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -85,6 +85,12 @@ impl PresetRegistry {
 
         // Architecture category
         let _ = self.register(builtins::architecture_decision_preset());
+
+        // Decision category
+        let _ = self.register(builtins::strategic_decision_preset());
+
+        // Research category
+        let _ = self.register(builtins::evidence_based_conclusion_preset());
     }
 }
 
@@ -116,10 +122,12 @@ mod tests {
     #[test]
     fn test_registry_new_has_builtins() {
         let registry = PresetRegistry::new();
-        assert!(registry.count() >= 3);
+        assert!(registry.count() >= 5);
         assert!(registry.get("code-review").is_some());
         assert!(registry.get("debug-analysis").is_some());
         assert!(registry.get("architecture-decision").is_some());
+        assert!(registry.get("strategic-decision").is_some());
+        assert!(registry.get("evidence-based-conclusion").is_some());
     }
 
     #[test]
@@ -168,7 +176,7 @@ mod tests {
     fn test_registry_list_all() {
         let registry = PresetRegistry::new();
         let presets = registry.list(None);
-        assert!(presets.len() >= 3);
+        assert!(presets.len() >= 5);
     }
 
     #[test]
@@ -189,5 +197,23 @@ mod tests {
         let categories = registry.categories();
         assert!(categories.contains(&"code".to_string()));
         assert!(categories.contains(&"architecture".to_string()));
+        assert!(categories.contains(&"decision".to_string()));
+        assert!(categories.contains(&"research".to_string()));
+    }
+
+    #[test]
+    fn test_registry_list_by_decision_category() {
+        let registry = PresetRegistry::new();
+        let decision_presets = registry.list(Some("decision"));
+        assert!(decision_presets.len() >= 1);
+        assert!(decision_presets.iter().all(|p| p.category == "decision"));
+    }
+
+    #[test]
+    fn test_registry_list_by_research_category() {
+        let registry = PresetRegistry::new();
+        let research_presets = registry.list(Some("research"));
+        assert!(research_presets.len() >= 1);
+        assert!(research_presets.iter().all(|p| p.category == "research"));
     }
 }

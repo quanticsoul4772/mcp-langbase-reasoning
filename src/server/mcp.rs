@@ -329,6 +329,11 @@ impl McpServer {
             // Phase 5 tools - Workflow Presets
             get_preset_list_tool(),
             get_preset_run_tool(),
+            // Phase 6 tools - Decision Framework & Evidence Assessment
+            get_make_decision_tool(),
+            get_analyze_perspectives_tool(),
+            get_assess_evidence_tool(),
+            get_probabilistic_tool(),
         ];
 
         JsonRpcResponse::success(
@@ -1107,6 +1112,216 @@ fn get_preset_run_tool() -> Tool {
                 }
             },
             "required": ["preset_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+// ============================================================================
+// Phase 6 Tool Definitions - Decision Framework & Evidence Assessment
+// ============================================================================
+
+/// Get the make decision tool definition
+fn get_make_decision_tool() -> Tool {
+    Tool {
+        name: "reasoning_make_decision".to_string(),
+        description: "Multi-criteria decision analysis using weighted scoring, pairwise comparison, or TOPSIS methods. Evaluates alternatives against criteria with optional weights and provides ranked recommendations.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The decision question to analyze"
+                },
+                "alternatives": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 2,
+                    "description": "Options to evaluate (minimum 2)"
+                },
+                "criteria": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Criterion name" },
+                            "weight": { "type": "number", "minimum": 0, "maximum": 1, "description": "Importance weight (0-1)" },
+                            "description": { "type": "string", "description": "Optional criterion description" }
+                        },
+                        "required": ["name"]
+                    },
+                    "description": "Evaluation criteria with optional weights"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["weighted_sum", "pairwise", "topsis"],
+                    "description": "Analysis method (default: weighted_sum)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context persistence"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context for the decision"
+                }
+            },
+            "required": ["question", "alternatives"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the analyze perspectives tool definition
+fn get_analyze_perspectives_tool() -> Tool {
+    Tool {
+        name: "reasoning_analyze_perspectives".to_string(),
+        description: "Stakeholder power/interest matrix analysis. Maps stakeholders to quadrants (KeyPlayer, KeepSatisfied, KeepInformed, MinimalEffort) and identifies conflicts, alignments, and strategic engagement recommendations.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "The topic or decision to analyze from multiple perspectives"
+                },
+                "stakeholders": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "Stakeholder name" },
+                            "role": { "type": "string", "description": "Stakeholder role" },
+                            "interests": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Key interests"
+                            },
+                            "power_level": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Power/influence level (0-1)"
+                            },
+                            "interest_level": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Interest/stake level (0-1)"
+                            }
+                        },
+                        "required": ["name"]
+                    },
+                    "description": "Stakeholders to consider (optional - will infer if not provided)"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context persistence"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context for the analysis"
+                }
+            },
+            "required": ["topic"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the assess evidence tool definition
+fn get_assess_evidence_tool() -> Tool {
+    Tool {
+        name: "reasoning_assess_evidence".to_string(),
+        description: "Evidence quality assessment with source credibility analysis, corroboration tracking, and chain of custody evaluation. Returns credibility scores, confidence assessments, and evidence synthesis.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "claim": {
+                    "type": "string",
+                    "description": "The claim to assess evidence for"
+                },
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": { "type": "string", "description": "Evidence content or description" },
+                            "source": { "type": "string", "description": "Source of the evidence" },
+                            "source_type": {
+                                "type": "string",
+                                "enum": ["primary", "secondary", "tertiary", "expert", "anecdotal"],
+                                "description": "Type of source"
+                            },
+                            "date": { "type": "string", "description": "Date of evidence (ISO format)" }
+                        },
+                        "required": ["content"]
+                    },
+                    "minItems": 1,
+                    "description": "Evidence items to assess"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context persistence"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context for the assessment"
+                }
+            },
+            "required": ["claim", "evidence"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the probabilistic reasoning tool definition
+fn get_probabilistic_tool() -> Tool {
+    Tool {
+        name: "reasoning_probabilistic".to_string(),
+        description: "Bayesian probability updates for belief revision. Takes prior probabilities and new evidence to compute posterior probabilities with entropy and uncertainty metrics.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "hypothesis": {
+                    "type": "string",
+                    "description": "The hypothesis to evaluate"
+                },
+                "prior": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Prior probability (0-1)"
+                },
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": { "type": "string", "description": "Evidence description" },
+                            "likelihood_if_true": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "P(evidence|hypothesis true)"
+                            },
+                            "likelihood_if_false": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "P(evidence|hypothesis false)"
+                            }
+                        },
+                        "required": ["description"]
+                    },
+                    "minItems": 1,
+                    "description": "Evidence items with likelihood ratios"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context persistence"
+                }
+            },
+            "required": ["hypothesis", "prior", "evidence"],
             "additionalProperties": false
         }),
     }

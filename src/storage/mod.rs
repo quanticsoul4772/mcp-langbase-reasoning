@@ -884,6 +884,368 @@ impl Detection {
     }
 }
 
+// ============================================================================
+// Decision Framework Storage Types
+// ============================================================================
+
+/// Stored decision analysis result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Decision {
+    /// Unique decision identifier.
+    pub id: String,
+    /// Parent session ID.
+    pub session_id: String,
+    /// The decision question.
+    pub question: String,
+    /// Available options (JSON array).
+    pub options: Vec<String>,
+    /// Evaluation criteria with weights (JSON array).
+    pub criteria: Option<Vec<StoredCriterion>>,
+    /// Decision method ('weighted_sum', 'pairwise', 'topsis').
+    pub method: String,
+    /// Recommendation (JSON object).
+    pub recommendation: serde_json::Value,
+    /// Option scores (JSON array).
+    pub scores: serde_json::Value,
+    /// Sensitivity analysis results.
+    pub sensitivity_analysis: Option<serde_json::Value>,
+    /// Trade-offs between options.
+    pub trade_offs: Option<serde_json::Value>,
+    /// Constraint satisfaction per option.
+    pub constraints_satisfied: Option<serde_json::Value>,
+    /// When the decision was created.
+    pub created_at: DateTime<Utc>,
+    /// Optional metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Stored criterion for decision analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredCriterion {
+    /// Criterion name.
+    pub name: String,
+    /// Weight (0.0-1.0).
+    pub weight: f64,
+    /// Optional description.
+    pub description: Option<String>,
+}
+
+impl Decision {
+    /// Create a new decision.
+    pub fn new(
+        session_id: impl Into<String>,
+        question: impl Into<String>,
+        options: Vec<String>,
+        method: impl Into<String>,
+        recommendation: serde_json::Value,
+        scores: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            question: question.into(),
+            options,
+            criteria: None,
+            method: method.into(),
+            recommendation,
+            scores,
+            sensitivity_analysis: None,
+            trade_offs: None,
+            constraints_satisfied: None,
+            created_at: Utc::now(),
+            metadata: None,
+        }
+    }
+
+    /// Set criteria.
+    pub fn with_criteria(mut self, criteria: Vec<StoredCriterion>) -> Self {
+        self.criteria = Some(criteria);
+        self
+    }
+
+    /// Set sensitivity analysis.
+    pub fn with_sensitivity(mut self, analysis: serde_json::Value) -> Self {
+        self.sensitivity_analysis = Some(analysis);
+        self
+    }
+
+    /// Set trade-offs.
+    pub fn with_trade_offs(mut self, trade_offs: serde_json::Value) -> Self {
+        self.trade_offs = Some(trade_offs);
+        self
+    }
+
+    /// Set constraints satisfied.
+    pub fn with_constraints(mut self, satisfied: serde_json::Value) -> Self {
+        self.constraints_satisfied = Some(satisfied);
+        self
+    }
+
+    /// Set metadata.
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+/// Stored perspective analysis result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerspectiveAnalysis {
+    /// Unique analysis identifier.
+    pub id: String,
+    /// Parent session ID.
+    pub session_id: String,
+    /// The topic analyzed.
+    pub topic: String,
+    /// Stakeholder analyses (JSON array).
+    pub stakeholders: serde_json::Value,
+    /// Power/interest matrix (JSON object).
+    pub power_matrix: Option<serde_json::Value>,
+    /// Identified conflicts (JSON array).
+    pub conflicts: Option<serde_json::Value>,
+    /// Identified alignments (JSON array).
+    pub alignments: Option<serde_json::Value>,
+    /// Synthesis of perspectives (JSON object).
+    pub synthesis: serde_json::Value,
+    /// Overall confidence (0.0-1.0).
+    pub confidence: f64,
+    /// When the analysis was created.
+    pub created_at: DateTime<Utc>,
+    /// Optional metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl PerspectiveAnalysis {
+    /// Create a new perspective analysis.
+    pub fn new(
+        session_id: impl Into<String>,
+        topic: impl Into<String>,
+        stakeholders: serde_json::Value,
+        synthesis: serde_json::Value,
+        confidence: f64,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            topic: topic.into(),
+            stakeholders,
+            power_matrix: None,
+            conflicts: None,
+            alignments: None,
+            synthesis,
+            confidence: confidence.clamp(0.0, 1.0),
+            created_at: Utc::now(),
+            metadata: None,
+        }
+    }
+
+    /// Set power matrix.
+    pub fn with_power_matrix(mut self, matrix: serde_json::Value) -> Self {
+        self.power_matrix = Some(matrix);
+        self
+    }
+
+    /// Set conflicts.
+    pub fn with_conflicts(mut self, conflicts: serde_json::Value) -> Self {
+        self.conflicts = Some(conflicts);
+        self
+    }
+
+    /// Set alignments.
+    pub fn with_alignments(mut self, alignments: serde_json::Value) -> Self {
+        self.alignments = Some(alignments);
+        self
+    }
+
+    /// Set metadata.
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+// ============================================================================
+// Evidence Assessment Storage Types
+// ============================================================================
+
+/// Stored evidence assessment result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceAssessment {
+    /// Unique assessment identifier.
+    pub id: String,
+    /// Parent session ID.
+    pub session_id: String,
+    /// The claim being assessed.
+    pub claim: String,
+    /// Evidence items (JSON array).
+    pub evidence: serde_json::Value,
+    /// Overall support level (JSON object).
+    pub overall_support: serde_json::Value,
+    /// Individual evidence analyses (JSON array).
+    pub evidence_analysis: serde_json::Value,
+    /// Chain of reasoning analysis (JSON object).
+    pub chain_analysis: Option<serde_json::Value>,
+    /// Detected contradictions (JSON array).
+    pub contradictions: Option<serde_json::Value>,
+    /// Identified gaps (JSON array).
+    pub gaps: Option<serde_json::Value>,
+    /// Recommendations (JSON array).
+    pub recommendations: Option<serde_json::Value>,
+    /// When the assessment was created.
+    pub created_at: DateTime<Utc>,
+    /// Optional metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl EvidenceAssessment {
+    /// Create a new evidence assessment.
+    pub fn new(
+        session_id: impl Into<String>,
+        claim: impl Into<String>,
+        evidence: serde_json::Value,
+        overall_support: serde_json::Value,
+        evidence_analysis: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            claim: claim.into(),
+            evidence,
+            overall_support,
+            evidence_analysis,
+            chain_analysis: None,
+            contradictions: None,
+            gaps: None,
+            recommendations: None,
+            created_at: Utc::now(),
+            metadata: None,
+        }
+    }
+
+    /// Set chain analysis.
+    pub fn with_chain_analysis(mut self, analysis: serde_json::Value) -> Self {
+        self.chain_analysis = Some(analysis);
+        self
+    }
+
+    /// Set contradictions.
+    pub fn with_contradictions(mut self, contradictions: serde_json::Value) -> Self {
+        self.contradictions = Some(contradictions);
+        self
+    }
+
+    /// Set gaps.
+    pub fn with_gaps(mut self, gaps: serde_json::Value) -> Self {
+        self.gaps = Some(gaps);
+        self
+    }
+
+    /// Set recommendations.
+    pub fn with_recommendations(mut self, recommendations: serde_json::Value) -> Self {
+        self.recommendations = Some(recommendations);
+        self
+    }
+
+    /// Set metadata.
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
+/// Stored probability update result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbabilityUpdate {
+    /// Unique update identifier.
+    pub id: String,
+    /// Parent session ID.
+    pub session_id: String,
+    /// The hypothesis evaluated.
+    pub hypothesis: String,
+    /// Prior probability (0-1).
+    pub prior: f64,
+    /// Posterior probability (0-1).
+    pub posterior: f64,
+    /// Lower bound of confidence interval.
+    pub confidence_lower: Option<f64>,
+    /// Upper bound of confidence interval.
+    pub confidence_upper: Option<f64>,
+    /// Confidence interval level (e.g., 0.95).
+    pub confidence_level: Option<f64>,
+    /// Bayesian update steps (JSON array).
+    pub update_steps: serde_json::Value,
+    /// Uncertainty analysis (JSON object).
+    pub uncertainty_analysis: Option<serde_json::Value>,
+    /// Sensitivity analysis (JSON object).
+    pub sensitivity: Option<serde_json::Value>,
+    /// Human interpretation (JSON object).
+    pub interpretation: serde_json::Value,
+    /// When the update was created.
+    pub created_at: DateTime<Utc>,
+    /// Optional metadata.
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl ProbabilityUpdate {
+    /// Create a new probability update.
+    pub fn new(
+        session_id: impl Into<String>,
+        hypothesis: impl Into<String>,
+        prior: f64,
+        posterior: f64,
+        update_steps: serde_json::Value,
+        interpretation: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            hypothesis: hypothesis.into(),
+            prior: prior.clamp(0.0, 1.0),
+            posterior: posterior.clamp(0.0, 1.0),
+            confidence_lower: None,
+            confidence_upper: None,
+            confidence_level: None,
+            update_steps,
+            uncertainty_analysis: None,
+            sensitivity: None,
+            interpretation,
+            created_at: Utc::now(),
+            metadata: None,
+        }
+    }
+
+    /// Set confidence interval.
+    pub fn with_confidence_interval(
+        mut self,
+        lower: Option<f64>,
+        upper: Option<f64>,
+        level: Option<f64>,
+    ) -> Self {
+        self.confidence_lower = lower.map(|v| v.clamp(0.0, 1.0));
+        self.confidence_upper = upper.map(|v| v.clamp(0.0, 1.0));
+        self.confidence_level = level.map(|v| v.clamp(0.0, 1.0));
+        self
+    }
+
+    /// Set uncertainty analysis.
+    pub fn with_uncertainty(mut self, analysis: serde_json::Value) -> Self {
+        self.uncertainty_analysis = Some(analysis);
+        self
+    }
+
+    /// Set sensitivity analysis.
+    pub fn with_sensitivity(mut self, sensitivity: serde_json::Value) -> Self {
+        self.sensitivity = Some(sensitivity);
+        self
+    }
+
+    /// Set metadata.
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+}
+
 /// Storage trait for database operations.
 ///
 /// This trait defines all persistence operations for reasoning sessions,
@@ -1028,4 +1390,90 @@ pub trait Storage: Send + Sync {
     ) -> StorageResult<Vec<Detection>>;
     /// Delete a detection by ID.
     async fn delete_detection(&self, id: &str) -> StorageResult<()>;
+
+    // ========================================================================
+    // Decision operations (decision framework)
+    // ========================================================================
+
+    /// Create a new decision analysis.
+    async fn create_decision(&self, decision: &Decision) -> StorageResult<()>;
+
+    /// Get a decision by ID.
+    async fn get_decision(&self, id: &str) -> StorageResult<Option<Decision>>;
+
+    /// Get all decisions in a session.
+    async fn get_session_decisions(&self, session_id: &str) -> StorageResult<Vec<Decision>>;
+
+    /// Get decisions by method type.
+    async fn get_decisions_by_method(&self, method: &str) -> StorageResult<Vec<Decision>>;
+
+    /// Delete a decision by ID.
+    async fn delete_decision(&self, id: &str) -> StorageResult<()>;
+
+    // ========================================================================
+    // Perspective analysis operations (decision framework)
+    // ========================================================================
+
+    /// Create a new perspective analysis.
+    async fn create_perspective(&self, analysis: &PerspectiveAnalysis) -> StorageResult<()>;
+
+    /// Get a perspective analysis by ID.
+    async fn get_perspective(&self, id: &str) -> StorageResult<Option<PerspectiveAnalysis>>;
+
+    /// Get all perspective analyses in a session.
+    async fn get_session_perspectives(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<PerspectiveAnalysis>>;
+
+    /// Delete a perspective analysis by ID.
+    async fn delete_perspective(&self, id: &str) -> StorageResult<()>;
+
+    // ========================================================================
+    // Evidence assessment operations (evidence mode)
+    // ========================================================================
+
+    /// Create a new evidence assessment.
+    async fn create_evidence_assessment(
+        &self,
+        assessment: &EvidenceAssessment,
+    ) -> StorageResult<()>;
+
+    /// Get an evidence assessment by ID.
+    async fn get_evidence_assessment(&self, id: &str) -> StorageResult<Option<EvidenceAssessment>>;
+
+    /// Get all evidence assessments in a session.
+    async fn get_session_evidence_assessments(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<EvidenceAssessment>>;
+
+    /// Delete an evidence assessment by ID.
+    async fn delete_evidence_assessment(&self, id: &str) -> StorageResult<()>;
+
+    // ========================================================================
+    // Probability update operations (evidence mode)
+    // ========================================================================
+
+    /// Create a new probability update.
+    async fn create_probability_update(&self, update: &ProbabilityUpdate) -> StorageResult<()>;
+
+    /// Get a probability update by ID.
+    async fn get_probability_update(&self, id: &str) -> StorageResult<Option<ProbabilityUpdate>>;
+
+    /// Get all probability updates in a session.
+    async fn get_session_probability_updates(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<ProbabilityUpdate>>;
+
+    /// Get probability updates for a hypothesis in a session.
+    async fn get_hypothesis_updates(
+        &self,
+        session_id: &str,
+        hypothesis: &str,
+    ) -> StorageResult<Vec<ProbabilityUpdate>>;
+
+    /// Delete a probability update by ID.
+    async fn delete_probability_update(&self, id: &str) -> StorageResult<()>;
 }

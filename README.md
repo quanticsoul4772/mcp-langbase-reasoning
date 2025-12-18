@@ -4,8 +4,9 @@ A Model Context Protocol (MCP) server that provides structured reasoning capabil
 
 ## Features
 
-- **7 Reasoning Modes**: Linear, tree, divergent, reflection, backtracking, auto-selection, and Graph-of-Thoughts
+- **9 Reasoning Modes**: Linear, tree, divergent, reflection, backtracking, auto-selection, Graph-of-Thoughts, decision framework, and evidence assessment
 - **Workflow Presets**: Composable multi-step reasoning workflows for code review, debugging, and architecture decisions
+- **Decision & Evidence Tools**: Multi-criteria decision analysis, stakeholder perspectives, evidence assessment, and Bayesian probability updates
 - **Cognitive Analysis**: Bias detection and logical fallacy identification tools
 - **Session Persistence**: SQLite storage for sessions, thoughts, branches, checkpoints, and graphs
 - **MCP Compliant**: Works with Claude Desktop and any MCP-compatible client
@@ -106,6 +107,20 @@ Run the code-review preset on this function to check for issues.
 | `reasoning_got_finalize` | Mark terminal nodes and extract conclusions |
 | `reasoning_got_state` | Get current graph structure and statistics |
 
+### Decision Framework
+
+| Tool | Description |
+|------|-------------|
+| `reasoning_make_decision` | Multi-criteria decision analysis using weighted scoring, pairwise comparison, or TOPSIS |
+| `reasoning_analyze_perspectives` | Stakeholder power/interest matrix analysis with conflict/alignment identification |
+
+### Evidence Assessment
+
+| Tool | Description |
+|------|-------------|
+| `reasoning_assess_evidence` | Evidence quality assessment with source credibility and corroboration tracking |
+| `reasoning_probabilistic` | Bayesian probability updates for belief revision with entropy metrics |
+
 ### Cognitive Analysis
 
 | Tool | Description |
@@ -124,6 +139,8 @@ Run the code-review preset on this function to check for issues.
 - `code-review` - Divergent analysis + bias/fallacy detection + reflection
 - `debug-analysis` - Linear analysis + tree exploration + checkpointing + reflection
 - `architecture-decision` - Multi-perspective analysis for architectural choices
+- `strategic-decision` - Multi-criteria decision analysis with stakeholder perspectives and bias detection
+- `evidence-based-conclusion` - Evidence quality assessment with Bayesian probability updates and fallacy detection
 
 ## Configuration
 
@@ -159,6 +176,10 @@ Override default Langbase pipe names:
 | `PIPE_AUTO` | `mode-router-v1` |
 | `PIPE_BACKTRACKING` | `backtracking-reasoning-v1` |
 | `PIPE_GOT_*` | `got-{operation}-v1` |
+| `PIPE_DECISION` | `decision-maker-v1` |
+| `PIPE_PERSPECTIVE` | `perspective-analyzer-v1` |
+| `PIPE_EVIDENCE` | `evidence-assessor-v1` |
+| `PIPE_BAYESIAN` | `bayesian-updater-v1` |
 
 ## Architecture
 
@@ -196,7 +217,7 @@ cargo build --release    # Release (optimized)
 ### Test
 
 ```bash
-cargo test               # All tests (523 unit + integration)
+cargo test               # All tests (559 unit + integration)
 cargo test modes::       # Test specific module
 ```
 
@@ -244,7 +265,8 @@ src/
 │   ├── reflection.rs # Meta-cognitive analysis
 │   ├── backtracking.rs # Checkpoint/restore
 │   ├── auto.rs       # Automatic mode selection
-│   └── got.rs        # Graph-of-Thoughts
+│   ├── got.rs        # Graph-of-Thoughts
+│   └── decision.rs   # Decision framework & evidence
 ├── presets/          # Workflow preset system
 │   ├── types.rs      # Preset data structures
 │   ├── registry.rs   # Preset registration

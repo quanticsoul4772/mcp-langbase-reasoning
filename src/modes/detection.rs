@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::info;
 
+use super::ModeCore;
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{
@@ -97,10 +98,8 @@ pub struct DetectFallaciesResult {
 /// Detection mode handler for bias and fallacy detection.
 #[derive(Clone)]
 pub struct DetectionMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered detection.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// Pipe name for bias detection.
     bias_pipe: String,
     /// Pipe name for fallacy detection.
@@ -125,8 +124,7 @@ impl DetectionMode {
             .unwrap_or_else(|| "detect-fallacies-v1".to_string());
 
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             bias_pipe,
             fallacy_pipe,
         }
@@ -169,7 +167,7 @@ impl DetectionMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.bias_pipe, messages);
-        let response = self.langbase.call_pipe(request).await?;
+        let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response
         let bias_response = BiasDetectionResponse::from_completion(&response.completion);
@@ -199,7 +197,7 @@ impl DetectionMode {
             }
 
             // Persist to storage
-            self.storage.create_detection(&detection).await?;
+            self.core.storage().create_detection(&detection).await?;
             detections.push(detection);
         }
 
@@ -262,7 +260,7 @@ impl DetectionMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.fallacy_pipe, messages);
-        let response = self.langbase.call_pipe(request).await?;
+        let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response
         let fallacy_response = FallacyDetectionResponse::from_completion(&response.completion);
@@ -303,7 +301,7 @@ impl DetectionMode {
             detection = detection.with_metadata(serde_json::Value::Object(meta));
 
             // Persist to storage
-            self.storage.create_detection(&detection).await?;
+            self.core.storage().create_detection(&detection).await?;
             detections.push(detection);
         }
 
@@ -334,7 +332,7 @@ impl DetectionMode {
             (Some(content), _) => Ok((content.to_string(), thought_id.map(|s| s.to_string()))),
             (None, Some(thought_id)) => {
                 let thought = self
-                    .storage
+                    .core.storage()
                     .get_thought(thought_id)
                     .await?
                     .ok_or_else(|| ToolError::Session(format!("Thought not found: {}", thought_id)))?;

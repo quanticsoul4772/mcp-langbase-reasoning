@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+use super::ModeCore;
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -92,10 +93,8 @@ impl BacktrackingResponse {
 /// Backtracking mode handler for checkpoint-based exploration.
 #[derive(Clone)]
 pub struct BacktrackingMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for backtracking.
     pipe_name: String,
 }
@@ -104,8 +103,7 @@ impl BacktrackingMode {
     /// Create a new backtracking mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config
                 .pipes
                 .backtracking
@@ -120,7 +118,7 @@ impl BacktrackingMode {
 
         // Get the checkpoint
         let checkpoint = self
-            .storage
+            .core.storage()
             .get_checkpoint(&params.checkpoint_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -140,7 +138,7 @@ impl BacktrackingMode {
                     }
                     .into());
                 }
-                self.storage
+                self.core.storage()
                     .get_session(id)
                     .await?
                     .ok_or_else(|| ToolError::Validation {
@@ -149,7 +147,7 @@ impl BacktrackingMode {
                     })?
             }
             None => self
-                .storage
+                .core.storage()
                 .get_session(&checkpoint.session_id)
                 .await?
                 .ok_or_else(|| ToolError::Validation {
@@ -166,14 +164,14 @@ impl BacktrackingMode {
             .with_type(SnapshotType::Branch)
             .with_description(format!("Backtrack from checkpoint: {}", checkpoint.name));
 
-        self.storage.create_snapshot(&snapshot).await?;
+        self.core.storage().create_snapshot(&snapshot).await?;
 
         // Build context for Langbase
         let messages = self.build_messages(&checkpoint, params.new_direction.as_deref());
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.pipe_name, messages);
-        let response = self.langbase.call_pipe(request).await?;
+        let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response
         let backtrack_response = BacktrackingResponse::from_completion(&response.completion);
@@ -182,7 +180,7 @@ impl BacktrackingMode {
         let thought = Thought::new(&session.id, &backtrack_response.thought, "backtracking")
             .with_confidence(backtrack_response.confidence.max(params.confidence));
 
-        self.storage.create_thought(&thought).await?;
+        self.core.storage().create_thought(&thought).await?;
 
         let latency = start.elapsed().as_millis() as i64;
         info!(
@@ -248,8 +246,8 @@ impl BacktrackingMode {
         description: Option<&str>,
     ) -> AppResult<Checkpoint> {
         // Get current session state
-        let thoughts = self.storage.get_session_thoughts(session_id).await?;
-        let branches = self.storage.get_session_branches(session_id).await?;
+        let thoughts = self.core.storage().get_session_thoughts(session_id).await?;
+        let branches = self.core.storage().get_session_branches(session_id).await?;
 
         // Serialize state
         let state = serde_json::json!({
@@ -263,7 +261,7 @@ impl BacktrackingMode {
             checkpoint = checkpoint.with_description(desc);
         }
 
-        self.storage.create_checkpoint(&checkpoint).await?;
+        self.core.storage().create_checkpoint(&checkpoint).await?;
 
         info!(
             session_id = %session_id,
@@ -276,7 +274,7 @@ impl BacktrackingMode {
 
     /// List available checkpoints for a session
     pub async fn list_checkpoints(&self, session_id: &str) -> AppResult<Vec<Checkpoint>> {
-        Ok(self.storage.get_session_checkpoints(session_id).await?)
+        Ok(self.core.storage().get_session_checkpoints(session_id).await?)
     }
 }
 

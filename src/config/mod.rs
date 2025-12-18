@@ -6,6 +6,8 @@
 use std::env;
 use std::path::PathBuf;
 
+use tracing::{debug, warn};
+
 use crate::error::AppError;
 
 /// Application configuration loaded from environment variables.
@@ -148,8 +150,22 @@ pub struct EvidencePipeConfig {
 impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Result<Self, AppError> {
-        // Load .env file if present (ignore errors if not found)
-        let _ = dotenvy::dotenv();
+        // Load .env file if present, with discriminated error handling
+        match dotenvy::dotenv() {
+            Ok(path) => {
+                debug!(path = %path.display(), "Loaded .env file");
+            }
+            Err(dotenvy::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                // .env file not found - this is normal, use environment variables
+                debug!("No .env file found, using environment variables");
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "Failed to load .env file - check file permissions and syntax"
+                );
+            }
+        }
 
         let langbase = LangbaseConfig {
             api_key: env::var("LANGBASE_API_KEY").map_err(|_| AppError::Config {

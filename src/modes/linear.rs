@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info};
 
-use super::serialize_for_log;
+use super::{serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest, ReasoningResponse};
@@ -51,10 +51,8 @@ pub struct LinearResult {
 /// Linear reasoning mode handler for sequential reasoning.
 #[derive(Clone)]
 pub struct LinearMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for linear reasoning.
     pipe_name: String,
 }
@@ -63,8 +61,7 @@ impl LinearMode {
     /// Create a new linear mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config.pipes.linear.clone(),
         }
     }
@@ -84,14 +81,15 @@ impl LinearMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "linear")
             .await?;
 
         debug!(session_id = %session.id, "Processing linear reasoning");
 
         // Get previous thoughts for context
-        let previous_thoughts = self.storage.get_session_thoughts(&session.id).await?;
+        let previous_thoughts = self.core.storage().get_session_thoughts(&session.id).await?;
         let previous_thought = previous_thoughts.last().cloned();
 
         // Build context for Langbase
@@ -107,12 +105,12 @@ impl LinearMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.pipe_name, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -124,7 +122,7 @@ impl LinearMode {
         let thought = Thought::new(&session.id, &reasoning.thought, "linear")
             .with_confidence(reasoning.confidence.max(params.confidence));
 
-        self.storage.create_thought(&thought).await?;
+        self.core.storage().create_thought(&thought).await?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -132,7 +130,7 @@ impl LinearMode {
             serialize_for_log(&reasoning, "reasoning.linear output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             session_id = %session.id,

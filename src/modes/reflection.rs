@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::{extract_json_from_completion, serialize_for_log};
+use super::{extract_json_from_completion, serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -119,10 +119,8 @@ pub struct ImprovedThought {
 /// Reflection reasoning mode handler for meta-cognitive analysis.
 #[derive(Clone)]
 pub struct ReflectionMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reflection.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for reflection.
     pipe_name: String,
 }
@@ -131,8 +129,7 @@ impl ReflectionMode {
     /// Create a new reflection mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config.pipes.reflection.clone(),
         }
     }
@@ -152,7 +149,7 @@ impl ReflectionMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "reflection")
             .await?;
         debug!(session_id = %session.id, "Processing reflection reasoning");
@@ -160,7 +157,7 @@ impl ReflectionMode {
         // Get the content to reflect upon
         let (original_content, original_thought) = if let Some(thought_id) = &params.thought_id {
             let thought =
-                self.storage.get_thought(thought_id).await?.ok_or_else(|| {
+                self.core.storage().get_thought(thought_id).await?.ok_or_else(|| {
                     ToolError::Session(format!("Thought not found: {}", thought_id))
                 })?;
             (thought.content.clone(), Some(thought))
@@ -205,12 +202,12 @@ impl ReflectionMode {
 
             // Call Langbase pipe
             let request = PipeRequest::new(&self.pipe_name, messages);
-            let response = match self.langbase.call_pipe(request).await {
+            let response = match self.core.langbase().call_pipe(request).await {
                 Ok(resp) => resp,
                 Err(e) => {
                     let latency = start.elapsed().as_millis() as i64;
                     invocation = invocation.failure(e.to_string(), latency);
-                    self.storage.log_invocation(&invocation).await?;
+                    self.core.storage().log_invocation(&invocation).await?;
                     return Err(e.into());
                 }
             };
@@ -225,7 +222,7 @@ impl ReflectionMode {
                 serialize_for_log(&reflection, "reasoning.reflection output"),
                 latency,
             );
-            self.storage.log_invocation(&invocation).await?;
+            self.core.storage().log_invocation(&invocation).await?;
 
             // Check if quality threshold met
             if quality >= params.quality_threshold {
@@ -278,7 +275,7 @@ impl ReflectionMode {
             reflection_thought
         };
 
-        self.storage.create_thought(&reflection_thought).await?;
+        self.core.storage().create_thought(&reflection_thought).await?;
 
         // Create improved thought if available and different from original
         let improved_thought = if let Some(ref improved_content) = reflection.improved_thought {
@@ -297,7 +294,7 @@ impl ReflectionMode {
                     improved
                 };
 
-                self.storage.create_thought(&improved).await?;
+                self.core.storage().create_thought(&improved).await?;
 
                 Some(ImprovedThought {
                     thought_id: improved.id,
@@ -345,7 +342,7 @@ impl ReflectionMode {
 
     /// Self-evaluate a session's reasoning quality
     pub async fn evaluate_session(&self, session_id: &str) -> AppResult<SessionEvaluation> {
-        let thoughts = self.storage.get_session_thoughts(session_id).await?;
+        let thoughts = self.core.storage().get_session_thoughts(session_id).await?;
 
         if thoughts.is_empty() {
             return Err(
@@ -387,7 +384,7 @@ impl ReflectionMode {
         session_id: &str,
         thought: &Thought,
     ) -> AppResult<Vec<Thought>> {
-        let all_thoughts = self.storage.get_session_thoughts(session_id).await?;
+        let all_thoughts = self.core.storage().get_session_thoughts(session_id).await?;
 
         // Build chain by following parent_id references
         let mut chain = Vec::new();

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::{extract_json_from_completion, serialize_for_log};
+use super::{extract_json_from_completion, serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -125,10 +125,8 @@ pub struct BranchInfo {
 /// Tree reasoning mode handler for branching exploration.
 #[derive(Clone)]
 pub struct TreeMode {
-    /// Storage backend for persisting branches and thoughts.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for tree reasoning.
     pipe_name: String,
 }
@@ -137,8 +135,7 @@ impl TreeMode {
     /// Create a new tree mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config.pipes.tree.clone(),
         }
     }
@@ -160,14 +157,14 @@ impl TreeMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "tree")
             .await?;
         debug!(session_id = %session.id, "Processing tree reasoning");
 
         // Get or create branch
         let parent_branch = match &params.branch_id {
-            Some(id) => self.storage.get_branch(id).await?,
+            Some(id) => self.core.storage().get_branch(id).await?,
             None => None,
         };
 
@@ -178,24 +175,24 @@ impl TreeMode {
                     .with_parent(&parent.id)
                     .with_name(format!("Branch from {}", &parent.id[..8]))
                     .with_confidence(params.confidence);
-                self.storage.create_branch(&b).await?;
+                self.core.storage().create_branch(&b).await?;
                 b
             }
             None => {
                 // Check if session has an active branch, or create root
                 match &session.active_branch_id {
                     Some(active_id) => self
-                        .storage
+                        .core.storage()
                         .get_branch(active_id)
                         .await?
                         .unwrap_or_else(|| Branch::new(&session.id).with_name("Root")),
                     None => {
                         let b = Branch::new(&session.id).with_name("Root");
-                        self.storage.create_branch(&b).await?;
+                        self.core.storage().create_branch(&b).await?;
                         // Update session with active branch
                         let mut updated_session = session.clone();
                         updated_session.active_branch_id = Some(b.id.clone());
-                        self.storage.update_session(&updated_session).await?;
+                        self.core.storage().update_session(&updated_session).await?;
                         b
                     }
                 }
@@ -203,7 +200,7 @@ impl TreeMode {
         };
 
         // Get context from branch history
-        let branch_thoughts = self.storage.get_branch_thoughts(&branch.id).await?;
+        let branch_thoughts = self.core.storage().get_branch_thoughts(&branch.id).await?;
 
         // Build messages for Langbase
         let messages = self.build_messages(&params.content, &branch_thoughts, num_branches);
@@ -218,12 +215,12 @@ impl TreeMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.pipe_name, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -235,7 +232,7 @@ impl TreeMode {
         let thought = Thought::new(&session.id, &params.content, "tree")
             .with_confidence(params.confidence)
             .with_branch(&branch.id);
-        self.storage.create_thought(&thought).await?;
+        self.core.storage().create_thought(&thought).await?;
 
         // Create child branches for each explored path
         let mut child_branches = Vec::new();
@@ -250,14 +247,14 @@ impl TreeMode {
                     1.0
                 });
 
-            self.storage.create_branch(&child).await?;
+            self.core.storage().create_branch(&child).await?;
 
             // Create thought for this branch
             let child_thought = Thought::new(&session.id, &tb.thought, "tree")
                 .with_confidence(tb.confidence)
                 .with_branch(&child.id)
                 .with_parent(&thought.id);
-            self.storage.create_thought(&child_thought).await?;
+            self.core.storage().create_thought(&child_thought).await?;
 
             child_branches.push(BranchInfo {
                 id: child.id,
@@ -278,7 +275,7 @@ impl TreeMode {
                 } else {
                     cr
                 };
-                self.storage.create_cross_ref(&cr).await?;
+                self.core.storage().create_cross_ref(&cr).await?;
                 cross_refs_created += 1;
             }
         }
@@ -289,7 +286,7 @@ impl TreeMode {
             serialize_for_log(&tree_response, "reasoning.tree output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             session_id = %session.id,
@@ -316,7 +313,7 @@ impl TreeMode {
     /// Focus on a specific branch, making it the active branch
     pub async fn focus_branch(&self, session_id: &str, branch_id: &str) -> AppResult<Branch> {
         let branch = self
-            .storage
+            .core.storage()
             .get_branch(branch_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;
@@ -330,21 +327,21 @@ impl TreeMode {
 
         // Update session's active branch
         let session = self
-            .storage
+            .core.storage()
             .get_session(session_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Session not found: {}", session_id)))?;
 
         let mut updated_session = session;
         updated_session.active_branch_id = Some(branch_id.to_string());
-        self.storage.update_session(&updated_session).await?;
+        self.core.storage().update_session(&updated_session).await?;
 
         Ok(branch)
     }
 
     /// Get all branches for a session
     pub async fn list_branches(&self, session_id: &str) -> AppResult<Vec<Branch>> {
-        Ok(self.storage.get_session_branches(session_id).await?)
+        Ok(self.core.storage().get_session_branches(session_id).await?)
     }
 
     /// Update branch state (complete, abandon)
@@ -354,14 +351,14 @@ impl TreeMode {
         state: BranchState,
     ) -> AppResult<Branch> {
         let mut branch = self
-            .storage
+            .core.storage()
             .get_branch(branch_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;
 
         branch.state = state;
         branch.updated_at = chrono::Utc::now();
-        self.storage.update_branch(&branch).await?;
+        self.core.storage().update_branch(&branch).await?;
 
         Ok(branch)
     }

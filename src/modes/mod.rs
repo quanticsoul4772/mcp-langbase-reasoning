@@ -11,9 +11,12 @@
 //! - [`DecisionMode`]: Multi-criteria decision analysis and stakeholder perspectives
 //! - [`EvidenceMode`]: Evidence assessment and Bayesian probability updates
 //! - [`DetectionMode`]: Bias and fallacy detection in reasoning
+//!
+//! All modes share common infrastructure via [`ModeCore`] composition.
 
 mod auto;
 mod backtracking;
+mod core;
 mod decision;
 mod detection;
 mod divergent;
@@ -25,6 +28,7 @@ mod tree;
 
 pub use auto::*;
 pub use backtracking::*;
+pub use core::*;
 pub use decision::*;
 pub use detection::*;
 pub use divergent::*;

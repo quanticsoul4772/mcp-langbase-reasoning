@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::serialize_for_log;
+use super::{serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::AppResult;
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -93,8 +93,9 @@ impl AutoResponse {
 /// Auto mode router
 #[derive(Clone)]
 pub struct AutoMode {
-    storage: SqliteStorage,
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
+    /// The Langbase pipe name for auto routing.
     pipe_name: String,
 }
 
@@ -102,8 +103,7 @@ impl AutoMode {
     /// Create a new auto mode router
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config
                 .pipes
                 .auto
@@ -145,12 +145,18 @@ impl AutoMode {
 
         // Call Langbase
         let request = PipeRequest::new(&self.pipe_name, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                let _ = self.storage.log_invocation(&invocation).await;
+                if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+                    warn!(
+                        error = %log_err,
+                        tool = %invocation.tool_name,
+                        "Failed to log invocation - audit trail incomplete"
+                    );
+                }
                 return Err(e.into());
             }
         };
@@ -178,7 +184,13 @@ impl AutoMode {
             serialize_for_log(&auto_response, "reasoning.auto output"),
             latency,
         );
-        let _ = self.storage.log_invocation(&invocation).await;
+        if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+            warn!(
+                error = %log_err,
+                tool = %invocation.tool_name,
+                "Failed to log invocation - audit trail incomplete"
+            );
+        }
 
         info!(
             mode = %recommended_mode,

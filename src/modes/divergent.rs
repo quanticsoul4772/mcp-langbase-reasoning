@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::{extract_json_from_completion, serialize_for_log};
+use super::{extract_json_from_completion, serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -119,10 +119,8 @@ pub struct PerspectiveInfo {
 /// Divergent reasoning mode handler for creative exploration.
 #[derive(Clone)]
 pub struct DivergentMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for divergent reasoning.
     pipe_name: String,
 }
@@ -131,8 +129,7 @@ impl DivergentMode {
     /// Create a new divergent mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             pipe_name: config.pipes.divergent.clone(),
         }
     }
@@ -154,13 +151,13 @@ impl DivergentMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "divergent")
             .await?;
         debug!(session_id = %session.id, "Processing divergent reasoning");
 
         // Get previous context
-        let previous_thoughts = self.storage.get_session_thoughts(&session.id).await?;
+        let previous_thoughts = self.core.storage().get_session_thoughts(&session.id).await?;
 
         // Build messages for Langbase
         let messages = self.build_messages(
@@ -181,12 +178,12 @@ impl DivergentMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.pipe_name, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -202,7 +199,7 @@ impl DivergentMode {
         } else {
             main_thought
         };
-        self.storage.create_thought(&main_thought).await?;
+        self.core.storage().create_thought(&main_thought).await?;
 
         // Create thoughts for each perspective
         let mut perspectives = Vec::new();
@@ -229,7 +226,7 @@ impl DivergentMode {
                 perspective_thought
             };
 
-            self.storage.create_thought(&perspective_thought).await?;
+            self.core.storage().create_thought(&perspective_thought).await?;
 
             total_novelty += p.novelty;
 
@@ -267,7 +264,7 @@ impl DivergentMode {
             synthesis_thought
         };
 
-        self.storage.create_thought(&synthesis_thought).await?;
+        self.core.storage().create_thought(&synthesis_thought).await?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -275,7 +272,7 @@ impl DivergentMode {
             serialize_for_log(&divergent_response, "reasoning.divergent output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         let avg_novelty = if !perspectives.is_empty() {
             total_novelty / perspectives.len() as f64

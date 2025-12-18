@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use super::serialize_for_log;
+use super::{serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -564,10 +564,8 @@ pub struct GotStateResult {
 /// Graph-of-Thoughts mode handler for managing complex reasoning graphs.
 #[derive(Clone)]
 pub struct GotMode {
-    /// Storage backend for persisting graph data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered operations.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// Pipe name for the generate operation.
     generate_pipe: String,
     /// Pipe name for the score operation.
@@ -596,8 +594,7 @@ impl GotMode {
             .unwrap_or_default();
 
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             generate_pipe: config
                 .pipes
                 .got
@@ -641,7 +638,7 @@ impl GotMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "got")
             .await?;
 
@@ -655,7 +652,7 @@ impl GotMode {
             .as_root()
             .as_active();
 
-        self.storage.create_graph_node(&root_node).await?;
+        self.core.storage().create_graph_node(&root_node).await?;
 
         let latency = start.elapsed().as_millis() as i64;
         info!(
@@ -680,7 +677,7 @@ impl GotMode {
         // Get source node (specified or first active)
         let source_node = match &params.node_id {
             Some(id) => {
-                self.storage
+                self.core.storage()
                     .get_graph_node(id)
                     .await?
                     .ok_or_else(|| ToolError::Validation {
@@ -690,7 +687,7 @@ impl GotMode {
             }
             None => {
                 let active = self
-                    .storage
+                    .core.storage()
                     .get_active_graph_nodes(&params.session_id)
                     .await?;
                 active
@@ -733,12 +730,18 @@ impl GotMode {
 
         // Call Langbase
         let request = PipeRequest::new(&self.generate_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                let _ = self.storage.log_invocation(&invocation).await;
+                if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+                    warn!(
+                        error = %log_err,
+                        tool = %invocation.tool_name,
+                        "Failed to log invocation - audit trail incomplete"
+                    );
+                }
                 return Err(e.into());
             }
         };
@@ -756,14 +759,14 @@ impl GotMode {
                 .with_score(item.confidence)
                 .as_active();
 
-            self.storage.create_graph_node(&node).await?;
+            self.core.storage().create_graph_node(&node).await?;
 
             // Create edge from source to new node
             let edge = GraphEdge::new(&params.session_id, &source_node.id, &node.id)
                 .with_type(EdgeType::Generates)
                 .with_weight(item.confidence);
 
-            self.storage.create_graph_edge(&edge).await?;
+            self.core.storage().create_graph_edge(&edge).await?;
 
             continuations.push(GeneratedContinuation {
                 node_id: node.id,
@@ -777,14 +780,20 @@ impl GotMode {
         // Mark source node as no longer active (branched)
         let mut updated_source = source_node.clone();
         updated_source.is_active = false;
-        self.storage.update_graph_node(&updated_source).await?;
+        self.core.storage().update_graph_node(&updated_source).await?;
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
             serialize_for_log(&continuations, "reasoning.got.generate output"),
             latency,
         );
-        let _ = self.storage.log_invocation(&invocation).await;
+        if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+            warn!(
+                error = %log_err,
+                tool = %invocation.tool_name,
+                "Failed to log invocation - audit trail incomplete"
+            );
+        }
 
         info!(
             session_id = %params.session_id,
@@ -808,7 +817,7 @@ impl GotMode {
 
         // Get the node
         let node = self
-            .storage
+            .core.storage()
             .get_graph_node(&params.node_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -835,12 +844,18 @@ impl GotMode {
 
         // Call Langbase
         let request = PipeRequest::new(&self.score_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                let _ = self.storage.log_invocation(&invocation).await;
+                if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+                    warn!(
+                        error = %log_err,
+                        tool = %invocation.tool_name,
+                        "Failed to log invocation - audit trail incomplete"
+                    );
+                }
                 return Err(e.into());
             }
         };
@@ -851,14 +866,20 @@ impl GotMode {
         // Update node with score
         let mut updated_node = node.clone();
         updated_node.score = Some(score_response.overall_score);
-        self.storage.update_graph_node(&updated_node).await?;
+        self.core.storage().update_graph_node(&updated_node).await?;
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
             serialize_for_log(&score_response, "reasoning.got.score output"),
             latency,
         );
-        let _ = self.storage.log_invocation(&invocation).await;
+        if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+            warn!(
+                error = %log_err,
+                tool = %invocation.tool_name,
+                "Failed to log invocation - audit trail incomplete"
+            );
+        }
 
         info!(
             session_id = %params.session_id,
@@ -899,7 +920,7 @@ impl GotMode {
         let mut nodes = Vec::new();
         for id in &params.node_ids {
             let node =
-                self.storage
+                self.core.storage()
                     .get_graph_node(id)
                     .await?
                     .ok_or_else(|| ToolError::Validation {
@@ -928,12 +949,18 @@ impl GotMode {
 
         // Call Langbase
         let request = PipeRequest::new(&self.aggregate_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                let _ = self.storage.log_invocation(&invocation).await;
+                if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+                    warn!(
+                        error = %log_err,
+                        tool = %invocation.tool_name,
+                        "Failed to log invocation - audit trail incomplete"
+                    );
+                }
                 return Err(e.into());
             }
         };
@@ -951,18 +978,18 @@ impl GotMode {
             .with_score(agg_response.confidence)
             .as_active();
 
-        self.storage.create_graph_node(&agg_node).await?;
+        self.core.storage().create_graph_node(&agg_node).await?;
 
         // Create edges from source nodes to aggregated node
         for node in &nodes {
             let edge = GraphEdge::new(&params.session_id, &node.id, &agg_node.id)
                 .with_type(EdgeType::Aggregates);
-            self.storage.create_graph_edge(&edge).await?;
+            self.core.storage().create_graph_edge(&edge).await?;
 
             // Mark source nodes as no longer active
             let mut updated = node.clone();
             updated.is_active = false;
-            self.storage.update_graph_node(&updated).await?;
+            self.core.storage().update_graph_node(&updated).await?;
         }
 
         let latency = start.elapsed().as_millis() as i64;
@@ -970,7 +997,13 @@ impl GotMode {
             serialize_for_log(&agg_response, "reasoning.got.aggregate output"),
             latency,
         );
-        let _ = self.storage.log_invocation(&invocation).await;
+        if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+            warn!(
+                error = %log_err,
+                tool = %invocation.tool_name,
+                "Failed to log invocation - audit trail incomplete"
+            );
+        }
 
         info!(
             session_id = %params.session_id,
@@ -997,7 +1030,7 @@ impl GotMode {
 
         // Get the node
         let node = self
-            .storage
+            .core.storage()
             .get_graph_node(&params.node_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -1024,12 +1057,18 @@ impl GotMode {
 
         // Call Langbase
         let request = PipeRequest::new(&self.refine_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                let _ = self.storage.log_invocation(&invocation).await;
+                if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+                    warn!(
+                        error = %log_err,
+                        tool = %invocation.tool_name,
+                        "Failed to log invocation - audit trail incomplete"
+                    );
+                }
                 return Err(e.into());
             }
         };
@@ -1044,24 +1083,30 @@ impl GotMode {
             .with_score(refine_response.confidence)
             .as_active();
 
-        self.storage.create_graph_node(&refined_node).await?;
+        self.core.storage().create_graph_node(&refined_node).await?;
 
         // Create edge from original to refined
         let edge = GraphEdge::new(&params.session_id, &node.id, &refined_node.id)
             .with_type(EdgeType::Refines);
-        self.storage.create_graph_edge(&edge).await?;
+        self.core.storage().create_graph_edge(&edge).await?;
 
         // Mark original as no longer active
         let mut updated_node = node.clone();
         updated_node.is_active = false;
-        self.storage.update_graph_node(&updated_node).await?;
+        self.core.storage().update_graph_node(&updated_node).await?;
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
             serialize_for_log(&refine_response, "reasoning.got.refine output"),
             latency,
         );
-        let _ = self.storage.log_invocation(&invocation).await;
+        if let Err(log_err) = self.core.storage().log_invocation(&invocation).await {
+            warn!(
+                error = %log_err,
+                tool = %invocation.tool_name,
+                "Failed to log invocation - audit trail incomplete"
+            );
+        }
 
         info!(
             session_id = %params.session_id,
@@ -1091,7 +1136,7 @@ impl GotMode {
 
         // Get all nodes for session
         let nodes = self
-            .storage
+            .core.storage()
             .get_session_graph_nodes(&params.session_id)
             .await?;
 
@@ -1107,7 +1152,7 @@ impl GotMode {
             if let Some(score) = node.score {
                 if score < threshold {
                     // Check if this node has children (don't prune if it does)
-                    let children = self.storage.get_edges_from(&node.id).await?;
+                    let children = self.core.storage().get_edges_from(&node.id).await?;
                     if children.is_empty() {
                         pruned_ids.push(node.id.clone());
                     }
@@ -1118,15 +1163,15 @@ impl GotMode {
         // Delete pruned nodes and their edges
         for id in &pruned_ids {
             // Delete edges to/from this node
-            let edges_from = self.storage.get_edges_from(id).await?;
-            let edges_to = self.storage.get_edges_to(id).await?;
+            let edges_from = self.core.storage().get_edges_from(id).await?;
+            let edges_to = self.core.storage().get_edges_to(id).await?;
 
             for edge in edges_from.iter().chain(edges_to.iter()) {
-                self.storage.delete_graph_edge(&edge.id).await?;
+                self.core.storage().delete_graph_edge(&edge.id).await?;
             }
 
             // Delete the node
-            self.storage.delete_graph_node(id).await?;
+            self.core.storage().delete_graph_node(id).await?;
         }
 
         let remaining_count = nodes.len() - pruned_ids.len();
@@ -1157,7 +1202,7 @@ impl GotMode {
         let nodes_to_finalize = if params.terminal_node_ids.is_empty() {
             // Auto-select best active nodes as terminal
             let active = self
-                .storage
+                .core.storage()
                 .get_active_graph_nodes(&params.session_id)
                 .await?;
             let mut scored: Vec<_> = active.into_iter().filter(|n| n.score.is_some()).collect();
@@ -1173,7 +1218,7 @@ impl GotMode {
             // Use specified nodes
             let mut nodes = Vec::new();
             for id in &params.terminal_node_ids {
-                let node = self.storage.get_graph_node(id).await?.ok_or_else(|| {
+                let node = self.core.storage().get_graph_node(id).await?.ok_or_else(|| {
                     ToolError::Validation {
                         field: "terminal_node_ids".to_string(),
                         reason: format!("Node not found: {}", id),
@@ -1191,7 +1236,7 @@ impl GotMode {
             updated.is_terminal = true;
             updated.is_active = false;
             updated.node_type = NodeType::Terminal;
-            self.storage.update_graph_node(&updated).await?;
+            self.core.storage().update_graph_node(&updated).await?;
 
             conclusions.push(TerminalConclusion {
                 node_id: node.id,
@@ -1219,10 +1264,10 @@ impl GotMode {
     /// Get current graph state
     pub async fn get_state(&self, params: GotGetStateParams) -> AppResult<GotStateResult> {
         let nodes = self
-            .storage
+            .core.storage()
             .get_session_graph_nodes(&params.session_id)
             .await?;
-        let edges = self.storage.get_session_edges(&params.session_id).await?;
+        let edges = self.core.storage().get_session_edges(&params.session_id).await?;
 
         let active_nodes: Vec<_> = nodes.iter().filter(|n| n.is_active).collect();
         let terminal_nodes: Vec<_> = nodes.iter().filter(|n| n.is_terminal).collect();
@@ -1244,8 +1289,8 @@ impl GotMode {
 
     /// Detect cycles in the graph (returns true if cycle exists)
     pub async fn has_cycle(&self, session_id: &str) -> AppResult<bool> {
-        let nodes = self.storage.get_session_graph_nodes(session_id).await?;
-        let edges = self.storage.get_session_edges(session_id).await?;
+        let nodes = self.core.storage().get_session_graph_nodes(session_id).await?;
+        let edges = self.core.storage().get_session_edges(session_id).await?;
 
         // Build adjacency list
         let mut adj: std::collections::HashMap<String, Vec<String>> =

@@ -9,9 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
-use super::{extract_json_from_completion, serialize_for_log};
+use super::{extract_json_from_completion, serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -460,10 +460,8 @@ pub struct ProbabilityInterpretation {
 /// Evidence assessment mode handler.
 #[derive(Clone)]
 pub struct EvidenceMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for evidence assessment.
     evidence_pipe: String,
     /// The Langbase pipe name for Bayesian updates.
@@ -474,8 +472,7 @@ impl EvidenceMode {
     /// Create a new evidence mode handler.
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             evidence_pipe: config
                 .pipes
                 .evidence
@@ -500,7 +497,7 @@ impl EvidenceMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "evidence")
             .await?;
         debug!(session_id = %session.id, "Processing evidence assessment");
@@ -518,12 +515,12 @@ impl EvidenceMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.evidence_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -610,13 +607,14 @@ impl EvidenceMode {
                 stored_evidence.with_chain_analysis(serde_json::to_value(chain).unwrap_or_default());
         }
 
-        if let Err(e) = self.storage.create_evidence_assessment(&stored_evidence).await {
-            warn!(
+        self.core.storage().create_evidence_assessment(&stored_evidence).await.map_err(|e| {
+            error!(
                 error = %e,
                 assessment_id = %assessment_id,
-                "Failed to persist evidence assessment to storage"
+                "Failed to persist evidence assessment - operation failed"
             );
-        }
+            e
+        })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -624,7 +622,7 @@ impl EvidenceMode {
             serialize_for_log(&result, "reasoning.assess_evidence output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             assessment_id = %assessment_id,
@@ -648,7 +646,7 @@ impl EvidenceMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "evidence")
             .await?;
         debug!(session_id = %session.id, "Processing probabilistic update");
@@ -666,12 +664,12 @@ impl EvidenceMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.bayesian_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
 
                 // Fallback: calculate locally
                 warn!(error = %e, "Langbase call failed, using local Bayesian calculation");
@@ -771,13 +769,14 @@ impl EvidenceMode {
                 stored_probability.with_confidence_interval(Some(ci.lower), Some(ci.upper), Some(ci.level));
         }
 
-        if let Err(e) = self.storage.create_probability_update(&stored_probability).await {
-            warn!(
+        self.core.storage().create_probability_update(&stored_probability).await.map_err(|e| {
+            error!(
                 error = %e,
                 update_id = %update_id,
-                "Failed to persist probability update to storage"
+                "Failed to persist probability update - operation failed"
             );
-        }
+            e
+        })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -785,7 +784,7 @@ impl EvidenceMode {
             serialize_for_log(&result, "reasoning.probabilistic output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             update_id = %update_id,

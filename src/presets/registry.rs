@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use tracing::error;
+
 use super::builtins;
 use super::types::{PresetSummary, WorkflowPreset};
 
@@ -79,18 +81,23 @@ impl PresetRegistry {
     }
 
     fn register_builtins(&self) {
-        // Code category
-        let _ = self.register(builtins::code_review_preset());
-        let _ = self.register(builtins::debug_analysis_preset());
+        let presets = [
+            ("code-review", builtins::code_review_preset()),
+            ("debug-analysis", builtins::debug_analysis_preset()),
+            ("architecture-decision", builtins::architecture_decision_preset()),
+            ("strategic-decision", builtins::strategic_decision_preset()),
+            ("evidence-based-conclusion", builtins::evidence_based_conclusion_preset()),
+        ];
 
-        // Architecture category
-        let _ = self.register(builtins::architecture_decision_preset());
-
-        // Decision category
-        let _ = self.register(builtins::strategic_decision_preset());
-
-        // Research category
-        let _ = self.register(builtins::evidence_based_conclusion_preset());
+        for (name, preset) in presets {
+            if let Err(e) = self.register(preset) {
+                error!(
+                    preset = name,
+                    error = %e,
+                    "Failed to register builtin preset - this indicates a programming error"
+                );
+            }
+        }
     }
 }
 

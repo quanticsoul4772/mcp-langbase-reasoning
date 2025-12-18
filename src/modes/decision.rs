@@ -10,9 +10,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
-use super::{extract_json_from_completion, serialize_for_log};
+use super::{extract_json_from_completion, serialize_for_log, ModeCore};
 use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
@@ -376,10 +376,8 @@ pub struct Synthesis {
 /// Decision framework mode handler.
 #[derive(Clone)]
 pub struct DecisionMode {
-    /// Storage backend for persisting data.
-    storage: SqliteStorage,
-    /// Langbase client for LLM-powered reasoning.
-    langbase: LangbaseClient,
+    /// Core infrastructure (storage and langbase client).
+    core: ModeCore,
     /// The Langbase pipe name for decision analysis.
     decision_pipe: String,
     /// The Langbase pipe name for perspective analysis.
@@ -390,8 +388,7 @@ impl DecisionMode {
     /// Create a new decision mode handler.
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
-            storage,
-            langbase,
+            core: ModeCore::new(storage, langbase),
             decision_pipe: config
                 .pipes
                 .decision
@@ -416,7 +413,7 @@ impl DecisionMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "decision")
             .await?;
         debug!(session_id = %session.id, "Processing decision analysis");
@@ -434,12 +431,12 @@ impl DecisionMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.decision_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -499,13 +496,14 @@ impl DecisionMode {
         .with_trade_offs(serde_json::to_value(&result.trade_offs).unwrap_or_default())
         .with_constraints(serde_json::to_value(&result.constraints_satisfied).unwrap_or_default());
 
-        if let Err(e) = self.storage.create_decision(&stored_decision).await {
-            warn!(
+        self.core.storage().create_decision(&stored_decision).await.map_err(|e| {
+            error!(
                 error = %e,
                 decision_id = %decision_id,
-                "Failed to persist decision to storage"
+                "Failed to persist decision - operation failed"
             );
-        }
+            e
+        })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -513,7 +511,7 @@ impl DecisionMode {
             serialize_for_log(&result, "reasoning.make_decision output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             decision_id = %decision_id,
@@ -543,7 +541,7 @@ impl DecisionMode {
 
         // Get or create session
         let session = self
-            .storage
+            .core.storage()
             .get_or_create_session(&params.session_id, "decision")
             .await?;
         debug!(session_id = %session.id, "Processing perspective analysis");
@@ -561,12 +559,12 @@ impl DecisionMode {
 
         // Call Langbase pipe
         let request = PipeRequest::new(&self.perspective_pipe, messages);
-        let response = match self.langbase.call_pipe(request).await {
+        let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
                 let latency = start.elapsed().as_millis() as i64;
                 invocation = invocation.failure(e.to_string(), latency);
-                self.storage.log_invocation(&invocation).await?;
+                self.core.storage().log_invocation(&invocation).await?;
                 return Err(e.into());
             }
         };
@@ -634,13 +632,14 @@ impl DecisionMode {
                 stored_perspective.with_power_matrix(serde_json::to_value(pm).unwrap_or_default());
         }
 
-        if let Err(e) = self.storage.create_perspective(&stored_perspective).await {
-            warn!(
+        self.core.storage().create_perspective(&stored_perspective).await.map_err(|e| {
+            error!(
                 error = %e,
                 analysis_id = %analysis_id,
-                "Failed to persist perspective analysis to storage"
+                "Failed to persist perspective analysis - operation failed"
             );
-        }
+            e
+        })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -648,7 +647,7 @@ impl DecisionMode {
             serialize_for_log(&result, "reasoning.analyze_perspectives output"),
             latency,
         );
-        self.storage.log_invocation(&invocation).await?;
+        self.core.storage().log_invocation(&invocation).await?;
 
         info!(
             analysis_id = %analysis_id,

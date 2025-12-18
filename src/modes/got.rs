@@ -22,7 +22,7 @@ use crate::prompts::{
     GOT_AGGREGATE_PROMPT, GOT_GENERATE_PROMPT, GOT_REFINE_PROMPT, GOT_SCORE_PROMPT,
 };
 use crate::storage::{
-    EdgeType, GraphEdge, GraphNode, Invocation, NodeType, Session, SqliteStorage, Storage,
+    EdgeType, GraphEdge, GraphNode, Invocation, NodeType, SqliteStorage, Storage,
 };
 
 #[cfg(test)]
@@ -640,22 +640,10 @@ impl GotMode {
         }
 
         // Get or create session
-        let session = match &params.session_id {
-            Some(id) => match self.storage.get_session(id).await? {
-                Some(s) => s,
-                None => {
-                    let mut new_session = Session::new("got");
-                    new_session.id = id.clone();
-                    self.storage.create_session(&new_session).await?;
-                    new_session
-                }
-            },
-            None => {
-                let session = Session::new("got");
-                self.storage.create_session(&session).await?;
-                session
-            }
-        };
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "got")
+            .await?;
 
         // Merge config with params override
         let effective_config = params.config.unwrap_or_else(|| self.config.clone());

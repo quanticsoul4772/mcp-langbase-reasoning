@@ -14,7 +14,7 @@ use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest, ReasoningResponse};
 use crate::prompts::LINEAR_REASONING_PROMPT;
-use crate::storage::{Invocation, Session, SqliteStorage, Storage, Thought};
+use crate::storage::{Invocation, SqliteStorage, Storage, Thought};
 
 /// Input parameters for linear reasoning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,25 +83,10 @@ impl LinearMode {
         }
 
         // Get or create session
-        let session = match &params.session_id {
-            Some(id) => {
-                match self.storage.get_session(id).await? {
-                    Some(s) => s,
-                    None => {
-                        // Create new session with provided ID
-                        let mut new_session = Session::new("linear");
-                        new_session.id = id.clone();
-                        self.storage.create_session(&new_session).await?;
-                        new_session
-                    }
-                }
-            }
-            None => {
-                let session = Session::new("linear");
-                self.storage.create_session(&session).await?;
-                session
-            }
-        };
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "linear")
+            .await?;
 
         debug!(session_id = %session.id, "Processing linear reasoning");
 

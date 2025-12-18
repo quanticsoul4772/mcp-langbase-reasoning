@@ -10,10 +10,12 @@
 //! - [`GotMode`]: Graph-of-Thoughts reasoning
 //! - [`DecisionMode`]: Multi-criteria decision analysis and stakeholder perspectives
 //! - [`EvidenceMode`]: Evidence assessment and Bayesian probability updates
+//! - [`DetectionMode`]: Bias and fallacy detection in reasoning
 
 mod auto;
 mod backtracking;
 mod decision;
+mod detection;
 mod divergent;
 mod evidence;
 mod got;
@@ -24,6 +26,7 @@ mod tree;
 pub use auto::*;
 pub use backtracking::*;
 pub use decision::*;
+pub use detection::*;
 pub use divergent::*;
 pub use evidence::*;
 pub use got::*;

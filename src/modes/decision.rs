@@ -18,7 +18,7 @@ use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::{DECISION_MAKER_PROMPT, PERSPECTIVE_ANALYZER_PROMPT};
 use crate::storage::{
-    Decision as StoredDecision, Invocation, PerspectiveAnalysis as StoredPerspective, Session,
+    Decision as StoredDecision, Invocation, PerspectiveAnalysis as StoredPerspective,
     SqliteStorage, Storage, StoredCriterion,
 };
 
@@ -415,7 +415,10 @@ impl DecisionMode {
         self.validate_decision_params(&params)?;
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "decision")
+            .await?;
         debug!(session_id = %session.id, "Processing decision analysis");
 
         // Build messages for Langbase
@@ -539,7 +542,10 @@ impl DecisionMode {
         }
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "decision")
+            .await?;
         debug!(session_id = %session.id, "Processing perspective analysis");
 
         // Build messages for Langbase
@@ -695,25 +701,6 @@ impl DecisionMode {
         }
 
         Ok(())
-    }
-
-    async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
-        match session_id {
-            Some(id) => match self.storage.get_session(id).await? {
-                Some(s) => Ok(s),
-                None => {
-                    let mut new_session = Session::new("decision");
-                    new_session.id = id.clone();
-                    self.storage.create_session(&new_session).await?;
-                    Ok(new_session)
-                }
-            },
-            None => {
-                let session = Session::new("decision");
-                self.storage.create_session(&session).await?;
-                Ok(session)
-            }
-        }
     }
 
     fn build_decision_messages(&self, params: &DecisionParams) -> Vec<Message> {

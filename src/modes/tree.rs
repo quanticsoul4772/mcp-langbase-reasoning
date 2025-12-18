@@ -16,8 +16,7 @@ use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::TREE_REASONING_PROMPT;
 use crate::storage::{
-    Branch, BranchState, CrossRef, CrossRefType, Invocation, Session, SqliteStorage, Storage,
-    Thought,
+    Branch, BranchState, CrossRef, CrossRefType, Invocation, SqliteStorage, Storage, Thought,
 };
 
 /// Input parameters for tree reasoning
@@ -160,7 +159,10 @@ impl TreeMode {
         let num_branches = params.num_branches.clamp(2, 4);
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "tree")
+            .await?;
         debug!(session_id = %session.id, "Processing tree reasoning");
 
         // Get or create branch
@@ -362,25 +364,6 @@ impl TreeMode {
         self.storage.update_branch(&branch).await?;
 
         Ok(branch)
-    }
-
-    async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
-        match session_id {
-            Some(id) => match self.storage.get_session(id).await? {
-                Some(s) => Ok(s),
-                None => {
-                    let mut new_session = Session::new("tree");
-                    new_session.id = id.clone();
-                    self.storage.create_session(&new_session).await?;
-                    Ok(new_session)
-                }
-            },
-            None => {
-                let session = Session::new("tree");
-                self.storage.create_session(&session).await?;
-                Ok(session)
-            }
-        }
     }
 
     fn build_messages(

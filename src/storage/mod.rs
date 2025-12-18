@@ -1263,6 +1263,42 @@ pub trait Storage: Send + Sync {
     /// Delete a session by ID.
     async fn delete_session(&self, id: &str) -> StorageResult<()>;
 
+    /// Get an existing session or create a new one.
+    ///
+    /// If `session_id` is `Some`, looks up the session:
+    /// - If found, returns it
+    /// - If not found, creates a new session with that ID
+    ///
+    /// If `session_id` is `None`, creates a new session with a generated ID.
+    ///
+    /// This is a provided method with a default implementation that uses
+    /// `get_session` and `create_session`.
+    async fn get_or_create_session(
+        &self,
+        session_id: &Option<String>,
+        mode: &str,
+    ) -> StorageResult<Session>
+    where
+        Self: Sized,
+    {
+        match session_id {
+            Some(id) => match self.get_session(id).await? {
+                Some(session) => Ok(session),
+                None => {
+                    let mut new_session = Session::new(mode);
+                    new_session.id = id.clone();
+                    self.create_session(&new_session).await?;
+                    Ok(new_session)
+                }
+            },
+            None => {
+                let session = Session::new(mode);
+                self.create_session(&session).await?;
+                Ok(session)
+            }
+        }
+    }
+
     // Thought operations
 
     /// Create a new thought.

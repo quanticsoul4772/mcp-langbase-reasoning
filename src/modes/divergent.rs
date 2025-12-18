@@ -15,7 +15,7 @@ use crate::config::Config;
 use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::DIVERGENT_REASONING_PROMPT;
-use crate::storage::{Invocation, Session, SqliteStorage, Storage, Thought};
+use crate::storage::{Invocation, SqliteStorage, Storage, Thought};
 
 /// Input parameters for divergent reasoning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +153,10 @@ impl DivergentMode {
         let num_perspectives = params.num_perspectives.clamp(2, 5);
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "divergent")
+            .await?;
         debug!(session_id = %session.id, "Processing divergent reasoning");
 
         // Get previous context
@@ -300,25 +303,6 @@ impl DivergentMode {
             most_novel_perspective: most_novel_idx,
             branch_id: params.branch_id,
         })
-    }
-
-    async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
-        match session_id {
-            Some(id) => match self.storage.get_session(id).await? {
-                Some(s) => Ok(s),
-                None => {
-                    let mut new_session = Session::new("divergent");
-                    new_session.id = id.clone();
-                    self.storage.create_session(&new_session).await?;
-                    Ok(new_session)
-                }
-            },
-            None => {
-                let session = Session::new("divergent");
-                self.storage.create_session(&session).await?;
-                Ok(session)
-            }
-        }
     }
 
     fn build_messages(

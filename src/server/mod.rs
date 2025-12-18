@@ -16,8 +16,8 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::langbase::LangbaseClient;
 use crate::modes::{
-    AutoMode, BacktrackingMode, DecisionMode, DivergentMode, EvidenceMode, GotMode, LinearMode,
-    ReflectionMode, TreeMode,
+    AutoMode, BacktrackingMode, DecisionMode, DetectionMode, DivergentMode, EvidenceMode, GotMode,
+    LinearMode, ReflectionMode, TreeMode,
 };
 use crate::presets::PresetRegistry;
 use crate::storage::SqliteStorage;
@@ -52,6 +52,8 @@ pub struct AppState {
     pub decision_mode: DecisionMode,
     /// Evidence assessment mode handler.
     pub evidence_mode: EvidenceMode,
+    /// Detection mode handler for bias/fallacy detection.
+    pub detection_mode: DetectionMode,
     /// Workflow preset registry.
     pub preset_registry: Arc<PresetRegistry>,
 }
@@ -68,6 +70,7 @@ impl AppState {
         let got_mode = GotMode::new(storage.clone(), langbase.clone(), &config);
         let decision_mode = DecisionMode::new(storage.clone(), langbase.clone(), &config);
         let evidence_mode = EvidenceMode::new(storage.clone(), langbase.clone(), &config);
+        let detection_mode = DetectionMode::new(storage.clone(), langbase.clone(), &config);
         let preset_registry = Arc::new(PresetRegistry::new());
 
         Self {
@@ -83,6 +86,7 @@ impl AppState {
             got_mode,
             decision_mode,
             evidence_mode,
+            detection_mode,
             preset_registry,
         }
     }

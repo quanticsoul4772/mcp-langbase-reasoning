@@ -18,7 +18,7 @@ use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::prompts::{BAYESIAN_UPDATER_PROMPT, EVIDENCE_ASSESSOR_PROMPT};
 use crate::storage::{
     EvidenceAssessment as StoredEvidence, Invocation, ProbabilityUpdate as StoredProbability,
-    Session, SqliteStorage, Storage,
+    SqliteStorage, Storage,
 };
 
 // ============================================================================
@@ -499,7 +499,10 @@ impl EvidenceMode {
         self.validate_evidence_params(&params)?;
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "evidence")
+            .await?;
         debug!(session_id = %session.id, "Processing evidence assessment");
 
         // Build messages for Langbase
@@ -644,7 +647,10 @@ impl EvidenceMode {
         self.validate_probabilistic_params(&params)?;
 
         // Get or create session
-        let session = self.get_or_create_session(&params.session_id).await?;
+        let session = self
+            .storage
+            .get_or_create_session(&params.session_id, "evidence")
+            .await?;
         debug!(session_id = %session.id, "Processing probabilistic update");
 
         // Build messages for Langbase
@@ -834,25 +840,6 @@ impl EvidenceMode {
         }
 
         Ok(())
-    }
-
-    async fn get_or_create_session(&self, session_id: &Option<String>) -> AppResult<Session> {
-        match session_id {
-            Some(id) => match self.storage.get_session(id).await? {
-                Some(s) => Ok(s),
-                None => {
-                    let mut new_session = Session::new("evidence");
-                    new_session.id = id.clone();
-                    self.storage.create_session(&new_session).await?;
-                    Ok(new_session)
-                }
-            },
-            None => {
-                let session = Session::new("evidence");
-                self.storage.create_session(&session).await?;
-                Ok(session)
-            }
-        }
     }
 
     fn build_evidence_messages(&self, params: &EvidenceParams) -> Vec<Message> {

@@ -1,21 +1,77 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::time::Instant;
 use tracing::info;
 
 use super::SharedState;
 use crate::error::{McpError, McpResult};
-use crate::langbase::{BiasDetectionResponse, FallacyDetectionResponse, Message, PipeRequest};
 use crate::modes::{
-    AutoParams, BacktrackingParams, DecisionParams, DivergentParams, EvidenceParams,
-    GotAggregateParams, GotFinalizeParams, GotGenerateParams, GotGetStateParams, GotInitParams,
-    GotPruneParams, GotRefineParams, GotScoreParams, LinearParams, PerspectiveParams,
-    ProbabilisticParams, ReflectionParams, TreeParams,
+    AutoParams, BacktrackingParams, DecisionParams, DetectBiasesParams, DetectFallaciesParams,
+    DivergentParams, EvidenceParams, GotAggregateParams, GotFinalizeParams, GotGenerateParams,
+    GotGetStateParams, GotInitParams, GotPruneParams, GotRefineParams, GotScoreParams,
+    LinearParams, PerspectiveParams, ProbabilisticParams, ReflectionParams, TreeParams,
 };
 use crate::presets::execute_preset;
-use crate::prompts::{BIAS_DETECTION_PROMPT, FALLACY_DETECTION_PROMPT};
-use crate::storage::{BranchState, Detection, DetectionType, Storage};
+use crate::storage::BranchState;
+
+// ============================================================================
+// Auxiliary Handler Param Structs
+// ============================================================================
+
+/// Parameters for tree focus operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeFocusParams {
+    /// Session ID containing the branch
+    pub session_id: String,
+    /// Branch ID to focus on
+    pub branch_id: String,
+}
+
+/// Parameters for tree list operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeListParams {
+    /// Session ID to list branches for
+    pub session_id: String,
+}
+
+/// Parameters for tree complete operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct TreeCompleteParams {
+    /// Branch ID to mark as complete/abandoned
+    pub branch_id: String,
+    /// Whether to mark as completed (true) or abandoned (false)
+    #[serde(default = "default_completed")]
+    pub completed: bool,
+}
+
+fn default_completed() -> bool {
+    true
+}
+
+/// Parameters for reflection evaluate operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReflectionEvaluateParams {
+    /// Session ID to evaluate
+    pub session_id: String,
+}
+
+/// Parameters for checkpoint create operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckpointCreateParams {
+    /// Session ID to create checkpoint for
+    pub session_id: String,
+    /// Name for the checkpoint
+    pub name: String,
+    /// Optional description
+    pub description: Option<String>,
+}
+
+/// Parameters for checkpoint list operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckpointListParams {
+    /// Session ID to list checkpoints for
+    pub session_id: String,
+}
 
 /// Route tool calls to appropriate handlers
 pub async fn handle_tool_call(
@@ -85,75 +141,43 @@ async fn handle_tree(state: &SharedState, arguments: Option<Value>) -> McpResult
 
 /// Handle reasoning.tree.focus - focus on a specific branch
 async fn handle_tree_focus(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct FocusParams {
-        session_id: String,
-        branch_id: String,
-    }
-
-    let params: FocusParams = parse_arguments("reasoning.tree.focus", arguments)?;
-
-    let result = state
-        .tree_mode
-        .focus_branch(&params.session_id, &params.branch_id)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.tree.focus",
+        arguments,
+        |params: TreeFocusParams| {
+            let session_id = params.session_id;
+            let branch_id = params.branch_id;
+            async move { state.tree_mode.focus_branch(&session_id, &branch_id).await }
+        },
+    )
+    .await
 }
 
 /// Handle reasoning.tree.list - list all branches in a session
 async fn handle_tree_list(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct ListParams {
-        session_id: String,
-    }
-
-    let params: ListParams = parse_arguments("reasoning.tree.list", arguments)?;
-
-    let result = state
-        .tree_mode
-        .list_branches(&params.session_id)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler("reasoning.tree.list", arguments, |params: TreeListParams| {
+        let session_id = params.session_id;
+        async move { state.tree_mode.list_branches(&session_id).await }
+    })
+    .await
 }
 
 /// Handle reasoning.tree.complete - mark a branch as completed or abandoned
 async fn handle_tree_complete(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct CompleteParams {
-        branch_id: String,
-        #[serde(default = "default_completed")]
-        completed: bool,
-    }
-
-    fn default_completed() -> bool {
-        true
-    }
-
-    let params: CompleteParams = parse_arguments("reasoning.tree.complete", arguments)?;
-
-    let state_to_set = if params.completed {
-        BranchState::Completed
-    } else {
-        BranchState::Abandoned
-    };
-
-    let result = state
-        .tree_mode
-        .update_branch_state(&params.branch_id, state_to_set)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.tree.complete",
+        arguments,
+        |params: TreeCompleteParams| {
+            let branch_id = params.branch_id;
+            let branch_state = if params.completed {
+                BranchState::Completed
+            } else {
+                BranchState::Abandoned
+            };
+            async move { state.tree_mode.update_branch_state(&branch_id, branch_state).await }
+        },
+    )
+    .await
 }
 
 /// Handle reasoning.divergent tool call
@@ -181,22 +205,15 @@ async fn handle_reflection_evaluate(
     state: &SharedState,
     arguments: Option<Value>,
 ) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct EvaluateParams {
-        session_id: String,
-    }
-
-    let params: EvaluateParams = parse_arguments("reasoning.reflection.evaluate", arguments)?;
-
-    let result = state
-        .reflection_mode
-        .evaluate_session(&params.session_id)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.reflection.evaluate",
+        arguments,
+        |params: ReflectionEvaluateParams| {
+            let session_id = params.session_id;
+            async move { state.reflection_mode.evaluate_session(&session_id).await }
+        },
+    )
+    .await
 }
 
 // ============================================================================
@@ -218,48 +235,35 @@ async fn handle_checkpoint_create(
     state: &SharedState,
     arguments: Option<Value>,
 ) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct CreateParams {
-        session_id: String,
-        name: String,
-        description: Option<String>,
-    }
-
-    let params: CreateParams = parse_arguments("reasoning.checkpoint.create", arguments)?;
-
-    let result = state
-        .backtracking_mode
-        .create_checkpoint(
-            &params.session_id,
-            &params.name,
-            params.description.as_deref(),
-        )
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.checkpoint.create",
+        arguments,
+        |params: CheckpointCreateParams| {
+            let session_id = params.session_id;
+            let name = params.name;
+            let description = params.description;
+            async move {
+                state
+                    .backtracking_mode
+                    .create_checkpoint(&session_id, &name, description.as_deref())
+                    .await
+            }
+        },
+    )
+    .await
 }
 
 /// Handle reasoning.checkpoint.list tool call
 async fn handle_checkpoint_list(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    #[derive(serde::Deserialize)]
-    struct ListParams {
-        session_id: String,
-    }
-
-    let params: ListParams = parse_arguments("reasoning.checkpoint.list", arguments)?;
-
-    let result = state
-        .backtracking_mode
-        .list_checkpoints(&params.session_id)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: e.to_string(),
-        })?;
-
-    serde_json::to_value(result).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.checkpoint.list",
+        arguments,
+        |params: CheckpointListParams| {
+            let session_id = params.session_id;
+            async move { state.backtracking_mode.list_checkpoints(&session_id).await }
+        },
+    )
+    .await
 }
 
 // ============================================================================
@@ -360,200 +364,14 @@ async fn handle_got_state(state: &SharedState, arguments: Option<Value>) -> McpR
 // Phase 4 Handlers - Bias & Fallacy Detection
 // ============================================================================
 
-/// Parameters for bias detection
-#[derive(Debug, Clone, Deserialize)]
-pub struct DetectBiasesParams {
-    /// Content to analyze for biases
-    pub content: Option<String>,
-    /// ID of an existing thought to analyze
-    pub thought_id: Option<String>,
-    /// Session ID for context and persistence
-    pub session_id: Option<String>,
-    /// Specific bias types to check (optional)
-    pub check_types: Option<Vec<String>>,
-}
-
-/// Parameters for fallacy detection
-#[derive(Debug, Clone, Deserialize)]
-pub struct DetectFallaciesParams {
-    /// Content to analyze for fallacies
-    pub content: Option<String>,
-    /// ID of an existing thought to analyze
-    pub thought_id: Option<String>,
-    /// Session ID for context and persistence
-    pub session_id: Option<String>,
-    /// Check for formal logical fallacies (default: true)
-    #[serde(default = "default_true")]
-    pub check_formal: bool,
-    /// Check for informal logical fallacies (default: true)
-    #[serde(default = "default_true")]
-    pub check_informal: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-/// Response for bias detection
-#[derive(Debug, Clone, Serialize)]
-pub struct DetectBiasesResponse {
-    /// Detected biases
-    pub detections: Vec<Detection>,
-    /// Number of detections
-    pub detection_count: usize,
-    /// Length of analyzed content
-    pub analyzed_content_length: usize,
-    /// Overall assessment
-    pub overall_assessment: Option<String>,
-    /// Reasoning quality score (0.0-1.0)
-    pub reasoning_quality: Option<f64>,
-}
-
-/// Response for fallacy detection
-#[derive(Debug, Clone, Serialize)]
-pub struct DetectFallaciesResponse {
-    /// Detected fallacies
-    pub detections: Vec<Detection>,
-    /// Number of detections
-    pub detection_count: usize,
-    /// Length of analyzed content
-    pub analyzed_content_length: usize,
-    /// Overall assessment
-    pub overall_assessment: Option<String>,
-    /// Argument validity score (0.0-1.0)
-    pub argument_validity: Option<f64>,
-}
-
 /// Handle reasoning_detect_biases tool call
 async fn handle_detect_biases(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let start = Instant::now();
-    let params: DetectBiasesParams = parse_arguments("reasoning_detect_biases", arguments)?;
-
-    // Validate: either content or thought_id must be provided
-    let (analysis_content, thought_id) = match (&params.content, &params.thought_id) {
-        (Some(content), _) => (content.clone(), params.thought_id.clone()),
-        (None, Some(thought_id)) => {
-            // Get thought content from storage
-            let thought = state
-                .storage
-                .get_thought(thought_id)
-                .await
-                .map_err(|e| McpError::ExecutionFailed {
-                    message: format!("Failed to get thought: {}", e),
-                })?
-                .ok_or_else(|| McpError::InvalidParameters {
-                    tool_name: "reasoning_detect_biases".to_string(),
-                    message: format!("Thought not found: {}", thought_id),
-                })?;
-            (thought.content, Some(thought_id.clone()))
-        }
-        (None, None) => {
-            return Err(McpError::InvalidParameters {
-                tool_name: "reasoning_detect_biases".to_string(),
-                message: "Either 'content' or 'thought_id' must be provided".to_string(),
-            });
-        }
-    };
-
-    // Get pipe name from config or use default
-    let pipe_name = state
-        .config
-        .pipes
-        .detection
-        .as_ref()
-        .and_then(|d| d.bias_pipe.clone())
-        .unwrap_or_else(|| "detect-biases-v1".to_string());
-
-    // Build messages for Langbase
-    let mut messages = vec![Message::system(BIAS_DETECTION_PROMPT)];
-
-    // Add specific bias types to check if provided
-    if let Some(check_types) = &params.check_types {
-        if !check_types.is_empty() {
-            messages.push(Message::user(format!(
-                "Focus specifically on detecting these bias types: {}\n\nContent to analyze:\n{}",
-                check_types.join(", "),
-                analysis_content
-            )));
-        } else {
-            messages.push(Message::user(format!(
-                "Analyze the following content for cognitive biases:\n\n{}",
-                analysis_content
-            )));
-        }
-    } else {
-        messages.push(Message::user(format!(
-            "Analyze the following content for cognitive biases:\n\n{}",
-            analysis_content
-        )));
-    }
-
-    // Call Langbase pipe
-    let request = PipeRequest::new(&pipe_name, messages);
-    let response =
-        state
-            .langbase
-            .call_pipe(request)
-            .await
-            .map_err(|e| McpError::ExecutionFailed {
-                message: format!("Langbase call failed: {}", e),
-            })?;
-
-    // Parse response
-    let bias_response = BiasDetectionResponse::from_completion(&response.completion);
-
-    // Convert to Detection structs and persist
-    let mut detections = Vec::new();
-    for detected in &bias_response.detections {
-        let mut detection = Detection::new(
-            DetectionType::Bias,
-            &detected.bias_type,
-            detected.severity,
-            detected.confidence,
-            &detected.explanation,
-        );
-
-        if let Some(session_id) = &params.session_id {
-            detection = detection.with_session(session_id);
-        }
-        if let Some(tid) = &thought_id {
-            detection = detection.with_thought(tid);
-        }
-        if let Some(remediation) = &detected.remediation {
-            detection = detection.with_remediation(remediation);
-        }
-        if let Some(excerpt) = &detected.excerpt {
-            detection = detection.with_metadata(serde_json::json!({ "excerpt": excerpt }));
-        }
-
-        // Persist to storage
-        state
-            .storage
-            .create_detection(&detection)
-            .await
-            .map_err(|e| McpError::ExecutionFailed {
-                message: format!("Failed to save detection: {}", e),
-            })?;
-
-        detections.push(detection);
-    }
-
-    let latency = start.elapsed().as_millis();
-    info!(
-        detection_count = detections.len(),
-        latency_ms = latency,
-        "Bias detection completed"
-    );
-
-    let response = DetectBiasesResponse {
-        detections,
-        detection_count: bias_response.detections.len(),
-        analyzed_content_length: analysis_content.len(),
-        overall_assessment: Some(bias_response.overall_assessment),
-        reasoning_quality: Some(bias_response.reasoning_quality),
-    };
-
-    serde_json::to_value(response).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.detect_biases",
+        arguments,
+        |params: DetectBiasesParams| state.detection_mode.detect_biases(params),
+    )
+    .await
 }
 
 /// Handle reasoning_detect_fallacies tool call
@@ -561,151 +379,12 @@ async fn handle_detect_fallacies(
     state: &SharedState,
     arguments: Option<Value>,
 ) -> McpResult<Value> {
-    let start = Instant::now();
-    let params: DetectFallaciesParams = parse_arguments("reasoning_detect_fallacies", arguments)?;
-
-    // Validate: either content or thought_id must be provided
-    let (analysis_content, thought_id) = match (&params.content, &params.thought_id) {
-        (Some(content), _) => (content.clone(), params.thought_id.clone()),
-        (None, Some(thought_id)) => {
-            // Get thought content from storage
-            let thought = state
-                .storage
-                .get_thought(thought_id)
-                .await
-                .map_err(|e| McpError::ExecutionFailed {
-                    message: format!("Failed to get thought: {}", e),
-                })?
-                .ok_or_else(|| McpError::InvalidParameters {
-                    tool_name: "reasoning_detect_fallacies".to_string(),
-                    message: format!("Thought not found: {}", thought_id),
-                })?;
-            (thought.content, Some(thought_id.clone()))
-        }
-        (None, None) => {
-            return Err(McpError::InvalidParameters {
-                tool_name: "reasoning_detect_fallacies".to_string(),
-                message: "Either 'content' or 'thought_id' must be provided".to_string(),
-            });
-        }
-    };
-
-    // Log what types we're checking
-    info!(
-        check_formal = %params.check_formal,
-        check_informal = %params.check_informal,
-        "Detecting fallacies"
-    );
-
-    // Get pipe name from config or use default
-    let pipe_name = state
-        .config
-        .pipes
-        .detection
-        .as_ref()
-        .and_then(|d| d.fallacy_pipe.clone())
-        .unwrap_or_else(|| "detect-fallacies-v1".to_string());
-
-    // Build messages for Langbase
-    let mut messages = vec![Message::system(FALLACY_DETECTION_PROMPT)];
-
-    // Build instruction based on what types to check
-    let check_instruction = match (params.check_formal, params.check_informal) {
-        (true, true) => "Check for both formal and informal logical fallacies.".to_string(),
-        (true, false) => "Focus only on formal logical fallacies (structural errors).".to_string(),
-        (false, true) => {
-            "Focus only on informal logical fallacies (content/context errors).".to_string()
-        }
-        (false, false) => {
-            return Err(McpError::InvalidParameters {
-                tool_name: "reasoning_detect_fallacies".to_string(),
-                message: "At least one of check_formal or check_informal must be true".to_string(),
-            });
-        }
-    };
-
-    messages.push(Message::user(format!(
-        "{}\n\nContent to analyze:\n{}",
-        check_instruction, analysis_content
-    )));
-
-    // Call Langbase pipe
-    let request = PipeRequest::new(&pipe_name, messages);
-    let response =
-        state
-            .langbase
-            .call_pipe(request)
-            .await
-            .map_err(|e| McpError::ExecutionFailed {
-                message: format!("Langbase call failed: {}", e),
-            })?;
-
-    // Parse response
-    let fallacy_response = FallacyDetectionResponse::from_completion(&response.completion);
-
-    // Convert to Detection structs and persist
-    let mut detections = Vec::new();
-    for detected in &fallacy_response.detections {
-        // Filter based on check_formal/check_informal params
-        let is_formal = detected.category.to_lowercase() == "formal";
-        if (is_formal && !params.check_formal) || (!is_formal && !params.check_informal) {
-            continue;
-        }
-
-        let mut detection = Detection::new(
-            DetectionType::Fallacy,
-            &detected.fallacy_type,
-            detected.severity,
-            detected.confidence,
-            &detected.explanation,
-        );
-
-        if let Some(session_id) = &params.session_id {
-            detection = detection.with_session(session_id);
-        }
-        if let Some(tid) = &thought_id {
-            detection = detection.with_thought(tid);
-        }
-        if let Some(remediation) = &detected.remediation {
-            detection = detection.with_remediation(remediation);
-        }
-
-        // Store category and excerpt in metadata
-        let mut meta = serde_json::Map::new();
-        meta.insert("category".to_string(), serde_json::json!(detected.category));
-        if let Some(excerpt) = &detected.excerpt {
-            meta.insert("excerpt".to_string(), serde_json::json!(excerpt));
-        }
-        detection = detection.with_metadata(serde_json::Value::Object(meta));
-
-        // Persist to storage
-        state
-            .storage
-            .create_detection(&detection)
-            .await
-            .map_err(|e| McpError::ExecutionFailed {
-                message: format!("Failed to save detection: {}", e),
-            })?;
-
-        detections.push(detection);
-    }
-
-    let latency = start.elapsed().as_millis();
-    info!(
-        detection_count = detections.len(),
-        latency_ms = latency,
-        "Fallacy detection completed"
-    );
-
-    let response = DetectFallaciesResponse {
-        detections,
-        detection_count: fallacy_response.detections.len(),
-        analyzed_content_length: analysis_content.len(),
-        overall_assessment: Some(fallacy_response.overall_assessment),
-        argument_validity: Some(fallacy_response.argument_validity),
-    };
-
-    serde_json::to_value(response).map_err(McpError::Json)
+    execute_handler(
+        "reasoning.detect_fallacies",
+        arguments,
+        |params: DetectFallaciesParams| state.detection_mode.detect_fallacies(params),
+    )
+    .await
 }
 
 // ============================================================================
@@ -713,9 +392,10 @@ async fn handle_detect_fallacies(
 // ============================================================================
 
 /// Parameters for preset list
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct PresetListParams {
     /// Optional category filter
+    #[serde(default)]
     pub category: Option<String>,
 }
 
@@ -744,15 +424,8 @@ pub struct PresetListResponse {
 
 /// Handle reasoning_preset_list tool call
 async fn handle_preset_list(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    let params: PresetListParams = match arguments {
-        Some(args) => {
-            serde_json::from_value(args).map_err(|e| McpError::InvalidParameters {
-                tool_name: "reasoning_preset_list".to_string(),
-                message: e.to_string(),
-            })?
-        }
-        None => PresetListParams { category: None },
-    };
+    // Use default params if no arguments provided (allows calling with no args)
+    let params: PresetListParams = parse_arguments_or_default(arguments)?;
 
     info!(category = ?params.category, "Listing presets");
 
@@ -819,6 +492,21 @@ fn parse_arguments<T: serde::de::DeserializeOwned>(
             tool_name: tool_name.to_string(),
             message: "Missing arguments".to_string(),
         }),
+    }
+}
+
+/// Helper to parse arguments with Default fallback for missing arguments.
+///
+/// This is useful for tools that can be called with no arguments.
+fn parse_arguments_or_default<T: serde::de::DeserializeOwned + Default>(
+    arguments: Option<Value>,
+) -> McpResult<T> {
+    match arguments {
+        Some(args) => serde_json::from_value(args).map_err(|e| McpError::InvalidParameters {
+            tool_name: "parse_arguments_or_default".to_string(),
+            message: e.to_string(),
+        }),
+        None => Ok(T::default()),
     }
 }
 

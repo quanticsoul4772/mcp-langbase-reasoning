@@ -217,7 +217,7 @@ cargo build --release    # Release (optimized)
 ### Test
 
 ```bash
-cargo test               # All tests (559 unit + integration)
+cargo test               # All tests (591 unit + integration)
 cargo test modes::       # Test specific module
 ```
 

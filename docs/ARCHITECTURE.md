@@ -21,8 +21,17 @@ Technical architecture documentation for mcp-langbase-reasoning.
 |  |             |  | - Reflection  |  | - Checks  |  |                 | |
 |  |             |  | - Backtrack   |  | - Graphs  |  |                 | |
 |  |             |  | - Auto        |  | - Invoc.  |  |                 | |
-|  |             |  | - GoT         |  |           |  |                 | |
+|  |             |  | - GoT         |  | - Detect. |  |                 | |
+|  |             |  | - Detection   |  | - Decis.  |  |                 | |
+|  |             |  | - Decision    |  | - Evid.   |  |                 | |
+|  |             |  | - Evidence    |  |           |  |                 | |
 |  +-------------+  +---------------+  +-----------+  +-----------------+ |
+|                                                                         |
+|  +-------------------------------------------------------------------+ |
+|  |                          Presets Module                            | |
+|  |  - Registry (built-ins)   - Executor (workflow orchestration)      | |
+|  |  - Types (preset/step)    - Builtins (code-review, debug, etc.)    | |
+|  +-------------------------------------------------------------------+ |
 |                           |                |                  |         |
 |                           v                v                  |         |
 |                    +---------------------------+              |         |
@@ -67,13 +76,23 @@ src/
 │   └── types.rs         # Request/response types
 ├── modes/
 │   ├── mod.rs           # Mode exports, ReasoningMode enum
+│   ├── core.rs          # ModeCore shared infrastructure
 │   ├── linear.rs        # Linear reasoning implementation
 │   ├── tree.rs          # Tree/branching reasoning
 │   ├── divergent.rs     # Divergent/creative reasoning
 │   ├── reflection.rs    # Meta-cognitive reflection
 │   ├── backtracking.rs  # Checkpoint and backtrack
 │   ├── auto.rs          # Automatic mode selection
-│   └── got.rs           # Graph-of-Thoughts operations
+│   ├── got.rs           # Graph-of-Thoughts operations
+│   ├── detection.rs     # Bias and fallacy detection
+│   ├── decision.rs      # Multi-criteria decision framework
+│   └── evidence.rs      # Evidence assessment and Bayesian updates
+├── presets/
+│   ├── mod.rs           # Module exports
+│   ├── types.rs         # WorkflowPreset, PresetStep types
+│   ├── registry.rs      # Preset registration and lookup
+│   ├── builtins.rs      # Built-in preset definitions
+│   └── executor.rs      # Workflow execution engine
 ├── prompts.rs           # Centralized system prompts
 ├── server/
 │   ├── mod.rs           # AppState, SharedState
@@ -146,6 +165,10 @@ Tool routing:
 - `reasoning_backtrack`, `reasoning_checkpoint_*` -> BacktrackingMode
 - `reasoning_auto` -> AutoMode
 - `reasoning_got_*` -> GotMode
+- `reasoning_detect_biases`, `reasoning_detect_fallacies` -> DetectionMode
+- `reasoning_make_decision`, `reasoning_analyze_perspectives` -> DecisionMode
+- `reasoning_assess_evidence`, `reasoning_probabilistic` -> EvidenceMode
+- `reasoning_preset_list`, `reasoning_preset_run` -> PresetRegistry/Executor
 
 ### Reasoning Modes (modes/)
 
@@ -205,14 +228,87 @@ pub struct TreeMode {
 
 ```rust
 pub struct GotMode {
-    storage: SqliteStorage,
-    langbase: LangbaseClient,
+    core: ModeCore,  // Shared infrastructure
     generate_pipe: String,
     score_pipe: String,
     aggregate_pipe: String,
     refine_pipe: String,
 }
 ```
+
+#### Detection Mode (modes/detection.rs)
+- Cognitive bias detection (confirmation, anchoring, availability, etc.)
+- Logical fallacy detection (formal and informal)
+- Severity scoring and remediation suggestions
+- Persisted detection results for auditing
+
+#### Decision Mode (modes/decision.rs)
+- Multi-criteria decision analysis (weighted sum, pairwise, TOPSIS)
+- Stakeholder perspective analysis with power/interest matrix
+- Trade-off identification and sensitivity analysis
+- Persisted decisions with rankings and rationale
+
+#### Evidence Mode (modes/evidence.rs)
+- Evidence quality assessment with source credibility
+- Corroboration tracking across evidence items
+- Bayesian probability updates with entropy metrics
+- Persisted assessments and probability chains
+
+### ModeCore Architecture (modes/core.rs)
+
+All reasoning modes share common infrastructure via composition:
+
+```rust
+pub struct ModeCore {
+    storage: SqliteStorage,
+    langbase: LangbaseClient,
+}
+
+impl ModeCore {
+    pub fn storage(&self) -> &SqliteStorage;
+    pub fn langbase(&self) -> &LangbaseClient;
+}
+```
+
+Benefits:
+- Eliminates field duplication across 10 mode structs
+- Consistent storage and Langbase access patterns
+- Simplified initialization and dependency injection
+- Single point for cross-cutting concerns
+
+### Presets Module (presets/)
+
+Composable multi-step reasoning workflows.
+
+```rust
+pub struct WorkflowPreset {
+    id: String,
+    name: String,
+    description: String,
+    category: String,
+    steps: Vec<PresetStep>,
+    input_schema: HashMap<String, InputField>,
+}
+
+pub struct PresetStep {
+    id: String,
+    tool: String,           // MCP tool to invoke
+    input_map: InputMap,    // Maps inputs to tool params
+    store_as: Option<String>, // Key for result storage
+    depends_on: Vec<String>,  // Step dependencies
+    condition: Option<StepCondition>,
+    optional: bool,
+}
+```
+
+Built-in Presets:
+| ID | Category | Steps | Description |
+|----|----------|-------|-------------|
+| `code-review` | code | 4 | Divergent → Bias → Fallacy → Reflection |
+| `debug-analysis` | code | 4 | Linear → Tree → Checkpoint → Reflection |
+| `architecture-decision` | architecture | 5 | Divergent → GoT workflow |
+| `strategic-decision` | decision | 4 | Decision → Perspectives → Bias → Synthesis |
+| `evidence-based-conclusion` | research | 4 | Evidence → Bayesian → Fallacy → Reflection |
 
 ### Langbase Client (langbase/client.rs)
 
@@ -519,6 +615,9 @@ pub struct Config {
 | Langbase Client | Integration (mocked) | `tests/langbase_test.rs` |
 | Config | Unit | `tests/config_env_test.rs` |
 | Modes | Unit/Integration | `tests/modes_test.rs`, `tests/integration_test.rs` |
+| Presets | Unit/Integration | `src/presets/` (inline), `tests/` |
+| Detection | Unit | `src/modes/detection.rs` (inline) |
+| Decision/Evidence | Unit | `src/modes/{decision,evidence}.rs` (inline) |
 | Prompts | Unit | `src/prompts.rs` (inline) |
 
-Total test count: 482 tests across all modules.
+Total test count: 591 tests across all modules.

@@ -607,9 +607,11 @@ mod tests {
     use serde::Deserialize;
     use serde_json::json;
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Default, Deserialize, PartialEq)]
     struct TestParams {
+        #[serde(default)]
         content: String,
+        #[serde(default)]
         value: i32,
     }
 
@@ -641,9 +643,11 @@ mod tests {
 
     #[test]
     fn test_parse_arguments_invalid_json() {
+        // TestParams now has default fields, so missing fields are OK.
+        // Test with wrong type instead to trigger actual error
         let args = Some(json!({
-            "content": "test",
-            // missing "value" field
+            "content": 123,  // wrong type: expected string, got number
+            "value": "not a number"  // wrong type: expected i32
         }));
 
         let result: McpResult<TestParams> = parse_arguments("reasoning.linear", args);
@@ -951,5 +955,309 @@ mod tests {
         // Default values should be true
         assert!(params.check_formal);
         assert!(params.check_informal);
+    }
+
+    // ============================================================================
+    // Auxiliary parameter parsing tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_tree_focus_params() {
+        let args = Some(json!({
+            "session_id": "sess-123",
+            "branch_id": "branch-456"
+        }));
+
+        let result: McpResult<TreeFocusParams> = parse_arguments("reasoning.tree.focus", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-123");
+        assert_eq!(params.branch_id, "branch-456");
+    }
+
+    #[test]
+    fn test_parse_tree_focus_params_missing_field() {
+        let args = Some(json!({
+            "session_id": "sess-123"
+            // missing branch_id
+        }));
+
+        let result: McpResult<TreeFocusParams> = parse_arguments("reasoning.tree.focus", args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tree_list_params() {
+        let args = Some(json!({
+            "session_id": "sess-789"
+        }));
+
+        let result: McpResult<TreeListParams> = parse_arguments("reasoning.tree.list", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-789");
+    }
+
+    #[test]
+    fn test_parse_tree_complete_params_default_completed() {
+        let args = Some(json!({
+            "branch_id": "branch-123"
+        }));
+
+        let result: McpResult<TreeCompleteParams> =
+            parse_arguments("reasoning.tree.complete", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.branch_id, "branch-123");
+        assert!(params.completed); // Should default to true
+    }
+
+    #[test]
+    fn test_parse_tree_complete_params_completed_true() {
+        let args = Some(json!({
+            "branch_id": "branch-456",
+            "completed": true
+        }));
+
+        let result: McpResult<TreeCompleteParams> =
+            parse_arguments("reasoning.tree.complete", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.branch_id, "branch-456");
+        assert!(params.completed);
+    }
+
+    #[test]
+    fn test_parse_tree_complete_params_completed_false() {
+        let args = Some(json!({
+            "branch_id": "branch-789",
+            "completed": false
+        }));
+
+        let result: McpResult<TreeCompleteParams> =
+            parse_arguments("reasoning.tree.complete", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.branch_id, "branch-789");
+        assert!(!params.completed);
+    }
+
+    #[test]
+    fn test_parse_reflection_evaluate_params() {
+        let args = Some(json!({
+            "session_id": "sess-reflection-123"
+        }));
+
+        let result: McpResult<ReflectionEvaluateParams> =
+            parse_arguments("reasoning.reflection.evaluate", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-reflection-123");
+    }
+
+    #[test]
+    fn test_parse_checkpoint_create_params_with_description() {
+        let args = Some(json!({
+            "session_id": "sess-checkpoint-1",
+            "name": "before-refactor",
+            "description": "Checkpoint before major refactoring"
+        }));
+
+        let result: McpResult<CheckpointCreateParams> =
+            parse_arguments("reasoning.checkpoint.create", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-checkpoint-1");
+        assert_eq!(params.name, "before-refactor");
+        assert_eq!(
+            params.description,
+            Some("Checkpoint before major refactoring".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_checkpoint_create_params_without_description() {
+        let args = Some(json!({
+            "session_id": "sess-checkpoint-2",
+            "name": "milestone-v1"
+        }));
+
+        let result: McpResult<CheckpointCreateParams> =
+            parse_arguments("reasoning.checkpoint.create", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-checkpoint-2");
+        assert_eq!(params.name, "milestone-v1");
+        assert!(params.description.is_none());
+    }
+
+    #[test]
+    fn test_parse_checkpoint_list_params() {
+        let args = Some(json!({
+            "session_id": "sess-list-checkpoints"
+        }));
+
+        let result: McpResult<CheckpointListParams> =
+            parse_arguments("reasoning.checkpoint.list", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.session_id, "sess-list-checkpoints");
+    }
+
+    #[test]
+    fn test_parse_preset_list_params_with_category() {
+        let args = Some(json!({
+            "category": "analysis"
+        }));
+
+        let result: McpResult<PresetListParams> = parse_arguments("reasoning.preset.list", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.category, Some("analysis".to_string()));
+    }
+
+    #[test]
+    fn test_parse_preset_list_params_without_category() {
+        let args = Some(json!({}));
+
+        let result: McpResult<PresetListParams> = parse_arguments("reasoning.preset.list", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(params.category.is_none());
+    }
+
+    #[test]
+    fn test_parse_preset_run_params_with_all_fields() {
+        let args = Some(json!({
+            "preset_id": "critical-analysis-v1",
+            "inputs": {
+                "content": "Analyze this text",
+                "depth": 3
+            },
+            "session_id": "sess-preset-123"
+        }));
+
+        let result: McpResult<PresetRunParams> = parse_arguments("reasoning.preset.run", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.preset_id, "critical-analysis-v1");
+        assert_eq!(params.inputs.len(), 2);
+        assert_eq!(
+            params.inputs.get("content"),
+            Some(&json!("Analyze this text"))
+        );
+        assert_eq!(params.inputs.get("depth"), Some(&json!(3)));
+        assert_eq!(params.session_id, Some("sess-preset-123".to_string()));
+    }
+
+    #[test]
+    fn test_parse_preset_run_params_without_session_id() {
+        let args = Some(json!({
+            "preset_id": "quick-check",
+            "inputs": {
+                "text": "Sample input"
+            }
+        }));
+
+        let result: McpResult<PresetRunParams> = parse_arguments("reasoning.preset.run", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.preset_id, "quick-check");
+        assert!(params.session_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_preset_run_params_empty_inputs() {
+        let args = Some(json!({
+            "preset_id": "no-input-preset"
+        }));
+
+        let result: McpResult<PresetRunParams> = parse_arguments("reasoning.preset.run", args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.preset_id, "no-input-preset");
+        assert!(params.inputs.is_empty());
+    }
+
+    // ============================================================================
+    // Helper function tests
+    // ============================================================================
+
+    #[test]
+    fn test_default_completed_function() {
+        assert_eq!(default_completed(), true);
+    }
+
+    #[test]
+    fn test_parse_arguments_or_default_with_arguments() {
+        let args = Some(json!({
+            "content": "test",
+            "value": 99
+        }));
+
+        let result: McpResult<TestParams> = parse_arguments_or_default(args);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.content, "test");
+        assert_eq!(params.value, 99);
+    }
+
+    #[test]
+    fn test_parse_arguments_or_default_without_arguments() {
+        #[derive(Debug, Default, Deserialize, PartialEq)]
+        struct DefaultParams {
+            #[serde(default)]
+            name: String,
+            #[serde(default)]
+            count: i32,
+        }
+
+        let result: McpResult<DefaultParams> = parse_arguments_or_default(None);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.name, "");
+        assert_eq!(params.count, 0);
+    }
+
+    #[test]
+    fn test_parse_arguments_or_default_preset_list_params() {
+        // Test the actual use case from handle_preset_list
+        let result: McpResult<PresetListParams> = parse_arguments_or_default(None);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(params.category.is_none());
+    }
+
+    #[test]
+    fn test_parse_arguments_or_default_invalid_json() {
+        // TestParams now has default fields, so missing fields are OK.
+        // Test with wrong type instead to trigger actual error
+        let args = Some(json!({
+            "content": 999,  // wrong type: expected string
+            "value": "invalid"  // wrong type: expected i32
+        }));
+
+        let result: McpResult<TestParams> = parse_arguments_or_default(args);
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, McpError::InvalidParameters { .. }));
     }
 }

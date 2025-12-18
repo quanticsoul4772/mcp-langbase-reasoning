@@ -970,4 +970,1450 @@ mod tests {
         assert_eq!(eval.coherence_score, 0.9);
         assert_eq!(eval.recommendation, "Good quality");
     }
+
+    // ============================================================================
+    // Serialization Round-Trip Tests
+    // ============================================================================
+
+    #[test]
+    fn test_reflection_params_roundtrip() {
+        let original = ReflectionParams::for_thought("t-1")
+            .with_session("sess-1")
+            .with_branch("branch-1")
+            .with_max_iterations(4)
+            .with_quality_threshold(0.85)
+            .with_chain();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ReflectionParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.thought_id, deserialized.thought_id);
+        assert_eq!(original.session_id, deserialized.session_id);
+        assert_eq!(original.branch_id, deserialized.branch_id);
+        assert_eq!(original.max_iterations, deserialized.max_iterations);
+        assert_eq!(original.quality_threshold, deserialized.quality_threshold);
+        assert_eq!(original.include_chain, deserialized.include_chain);
+    }
+
+    #[test]
+    fn test_reflection_response_roundtrip() {
+        let original = ReflectionResponse {
+            analysis: "Deep analysis".to_string(),
+            strengths: vec!["S1".to_string(), "S2".to_string()],
+            weaknesses: vec!["W1".to_string()],
+            recommendations: vec!["R1".to_string(), "R2".to_string()],
+            confidence: 0.87,
+            quality_score: Some(0.92),
+            improved_thought: Some("Improved version".to_string()),
+            metadata: serde_json::json!({"extra": "data"}),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ReflectionResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.analysis, deserialized.analysis);
+        assert_eq!(original.strengths, deserialized.strengths);
+        assert_eq!(original.weaknesses, deserialized.weaknesses);
+        assert_eq!(original.recommendations, deserialized.recommendations);
+        assert_eq!(original.confidence, deserialized.confidence);
+        assert_eq!(original.quality_score, deserialized.quality_score);
+        assert_eq!(original.improved_thought, deserialized.improved_thought);
+    }
+
+    #[test]
+    fn test_reflection_result_roundtrip() {
+        let original = ReflectionResult {
+            session_id: "s-123".to_string(),
+            reflection_thought_id: "t-refl".to_string(),
+            original_thought_id: Some("t-orig".to_string()),
+            analysis: "Complete analysis".to_string(),
+            strengths: vec!["Strength".to_string()],
+            weaknesses: vec!["Weakness".to_string()],
+            recommendations: vec!["Recommendation".to_string()],
+            quality_score: 0.88,
+            improved_thought: Some(ImprovedThought {
+                thought_id: "t-imp".to_string(),
+                content: "Better".to_string(),
+                confidence: 0.91,
+            }),
+            iterations_performed: 3,
+            quality_improved: true,
+            branch_id: Some("br-1".to_string()),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ReflectionResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.session_id, deserialized.session_id);
+        assert_eq!(
+            original.reflection_thought_id,
+            deserialized.reflection_thought_id
+        );
+        assert_eq!(
+            original.original_thought_id,
+            deserialized.original_thought_id
+        );
+        assert_eq!(original.quality_score, deserialized.quality_score);
+        assert_eq!(
+            original.iterations_performed,
+            deserialized.iterations_performed
+        );
+        assert_eq!(original.quality_improved, deserialized.quality_improved);
+        assert_eq!(original.branch_id, deserialized.branch_id);
+    }
+
+    #[test]
+    fn test_session_evaluation_roundtrip() {
+        let mut mode_dist = std::collections::HashMap::new();
+        mode_dist.insert("linear".to_string(), 7);
+        mode_dist.insert("tree".to_string(), 3);
+        mode_dist.insert("reflection".to_string(), 2);
+
+        let original = SessionEvaluation {
+            session_id: "eval-session".to_string(),
+            total_thoughts: 12,
+            average_confidence: 0.73,
+            mode_distribution: mode_dist,
+            coherence_score: 0.85,
+            recommendation: "Continue with current approach".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: SessionEvaluation = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.session_id, deserialized.session_id);
+        assert_eq!(original.total_thoughts, deserialized.total_thoughts);
+        assert_eq!(original.average_confidence, deserialized.average_confidence);
+        assert_eq!(original.coherence_score, deserialized.coherence_score);
+        assert_eq!(original.recommendation, deserialized.recommendation);
+        assert_eq!(
+            original.mode_distribution.len(),
+            deserialized.mode_distribution.len()
+        );
+    }
+
+    // ============================================================================
+    // Edge Cases Tests
+    // ============================================================================
+
+    #[test]
+    fn test_reflection_params_empty_strings() {
+        let params = ReflectionParams::for_content("");
+        assert_eq!(params.content, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_reflection_params_builder_empty_session() {
+        let params = ReflectionParams::for_thought("t-1").with_session("");
+        assert_eq!(params.session_id, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_reflection_params_builder_empty_branch() {
+        let params = ReflectionParams::for_thought("t-1").with_branch("");
+        assert_eq!(params.branch_id, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_reflection_params_max_iterations_boundary() {
+        // Test boundary values
+        let params1 = ReflectionParams::for_thought("t-1").with_max_iterations(1);
+        assert_eq!(params1.max_iterations, 1);
+
+        let params5 = ReflectionParams::for_thought("t-1").with_max_iterations(5);
+        assert_eq!(params5.max_iterations, 5);
+    }
+
+    #[test]
+    fn test_reflection_params_quality_threshold_boundary() {
+        // Test boundary values
+        let params0 = ReflectionParams::for_thought("t-1").with_quality_threshold(0.0);
+        assert_eq!(params0.quality_threshold, 0.0);
+
+        let params1 = ReflectionParams::for_thought("t-1").with_quality_threshold(1.0);
+        assert_eq!(params1.quality_threshold, 1.0);
+    }
+
+    #[test]
+    fn test_reflection_response_empty_arrays() {
+        let response = ReflectionResponse {
+            analysis: "Analysis".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            confidence: 0.5,
+            quality_score: None,
+            improved_thought: None,
+            metadata: serde_json::Value::Null,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ReflectionResponse = serde_json::from_str(&json).unwrap();
+
+        assert!(deserialized.strengths.is_empty());
+        assert!(deserialized.weaknesses.is_empty());
+        assert!(deserialized.recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_improved_thought_roundtrip() {
+        let original = ImprovedThought {
+            thought_id: "imp-123".to_string(),
+            content: "Significantly improved reasoning".to_string(),
+            confidence: 0.95,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ImprovedThought = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.thought_id, deserialized.thought_id);
+        assert_eq!(original.content, deserialized.content);
+        assert_eq!(original.confidence, deserialized.confidence);
+    }
+
+    #[test]
+    fn test_reflection_params_deserialize_with_defaults() {
+        // Test that missing fields get default values
+        let json = r#"{"content": "Test content"}"#;
+        let params: ReflectionParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.max_iterations, 3);
+        assert_eq!(params.quality_threshold, 0.8);
+        assert!(!params.include_chain);
+    }
+
+    #[test]
+    fn test_reflection_response_quality_score_none() {
+        let json = r#"{
+            "analysis": "Test",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.6
+        }"#;
+        let response: ReflectionResponse = serde_json::from_str(json).unwrap();
+
+        assert!(response.quality_score.is_none());
+        assert!(response.improved_thought.is_none());
+    }
+
+    #[test]
+    fn test_reflection_params_very_long_content() {
+        let long_content = "x".repeat(10000);
+        let params = ReflectionParams::for_content(&long_content);
+        assert_eq!(params.content.as_ref().unwrap().len(), 10000);
+    }
+
+    #[test]
+    fn test_reflection_params_special_characters() {
+        let special = "Test with \n newlines \t tabs and \"quotes\" and 'apostrophes'";
+        let params = ReflectionParams::for_content(special);
+        assert_eq!(params.content, Some(special.to_string()));
+    }
+
+    #[test]
+    fn test_reflection_params_unicode() {
+        let unicode = "Unicode test: 你好世界 🌍 مرحبا";
+        let params = ReflectionParams::for_content(unicode);
+        assert_eq!(params.content, Some(unicode.to_string()));
+    }
+
+    #[test]
+    fn test_reflection_result_none_values() {
+        let result = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-r".to_string(),
+            original_thought_id: None,
+            analysis: "Analysis".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            quality_score: 0.5,
+            improved_thought: None,
+            iterations_performed: 1,
+            quality_improved: false,
+            branch_id: None,
+        };
+
+        assert!(result.original_thought_id.is_none());
+        assert!(result.improved_thought.is_none());
+        assert!(result.branch_id.is_none());
+    }
+
+    #[test]
+    fn test_session_evaluation_empty_mode_distribution() {
+        let eval = SessionEvaluation {
+            session_id: "s-1".to_string(),
+            total_thoughts: 0,
+            average_confidence: 0.0,
+            mode_distribution: std::collections::HashMap::new(),
+            coherence_score: 0.0,
+            recommendation: "No data".to_string(),
+        };
+
+        assert!(eval.mode_distribution.is_empty());
+        assert_eq!(eval.total_thoughts, 0);
+    }
+
+    // ============================================================================
+    // Additional Integration Tests (without build_messages - tested via integration tests)
+    // ============================================================================
+
+    #[test]
+    fn test_default_values_consistency() {
+        // Ensure default functions match struct defaults
+        let params_thought = ReflectionParams::for_thought("t-1");
+        let params_content = ReflectionParams::for_content("content");
+
+        assert_eq!(params_thought.max_iterations, default_max_iterations());
+        assert_eq!(
+            params_thought.quality_threshold,
+            default_quality_threshold()
+        );
+        assert_eq!(params_content.max_iterations, default_max_iterations());
+        assert_eq!(
+            params_content.quality_threshold,
+            default_quality_threshold()
+        );
+    }
+
+    #[test]
+    fn test_clamp_values_negative() {
+        // Test that negative values are properly clamped
+        let params = ReflectionParams::for_thought("t-1")
+            .with_max_iterations(0)
+            .with_quality_threshold(-1.0);
+
+        assert_eq!(params.max_iterations, 1);
+        assert_eq!(params.quality_threshold, 0.0);
+    }
+
+    #[test]
+    fn test_clamp_values_very_high() {
+        // Test that very high values are properly clamped
+        let params = ReflectionParams::for_thought("t-1")
+            .with_max_iterations(100)
+            .with_quality_threshold(5.0);
+
+        assert_eq!(params.max_iterations, 5);
+        assert_eq!(params.quality_threshold, 1.0);
+    }
+
+    #[test]
+    fn test_reflection_result_quality_improved_logic() {
+        // Test different quality_improved scenarios
+        let result_improved = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-1".to_string(),
+            original_thought_id: Some("t-orig".to_string()),
+            analysis: "A".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            quality_score: 0.9,
+            improved_thought: None,
+            iterations_performed: 1,
+            quality_improved: true,
+            branch_id: None,
+        };
+
+        assert!(result_improved.quality_improved);
+        assert!(result_improved.quality_score > 0.5);
+    }
+
+    // ============================================================================
+    // Additional Builder Pattern Tests
+    // ============================================================================
+
+    #[test]
+    fn test_reflection_params_multiple_with_calls() {
+        let params = ReflectionParams::for_thought("t-1")
+            .with_session("s1")
+            .with_session("s2") // Should override
+            .with_max_iterations(2)
+            .with_max_iterations(4); // Should override
+
+        assert_eq!(params.session_id, Some("s2".to_string()));
+        assert_eq!(params.max_iterations, 4);
+    }
+
+    #[test]
+    fn test_reflection_params_content_builder_full_chain() {
+        let params = ReflectionParams::for_content("My content")
+            .with_session("session-abc")
+            .with_branch("branch-xyz")
+            .with_max_iterations(2)
+            .with_quality_threshold(0.75)
+            .with_chain();
+
+        assert!(params.thought_id.is_none());
+        assert_eq!(params.content, Some("My content".to_string()));
+        assert_eq!(params.session_id, Some("session-abc".to_string()));
+        assert_eq!(params.branch_id, Some("branch-xyz".to_string()));
+        assert_eq!(params.max_iterations, 2);
+        assert_eq!(params.quality_threshold, 0.75);
+        assert!(params.include_chain);
+    }
+
+    #[test]
+    fn test_reflection_params_default_include_chain_false() {
+        let params1 = ReflectionParams::for_thought("t-1");
+        let params2 = ReflectionParams::for_content("content");
+
+        assert!(!params1.include_chain);
+        assert!(!params2.include_chain);
+    }
+
+    #[test]
+    fn test_reflection_response_metadata_default() {
+        let json = r#"{
+            "analysis": "Test",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.5
+        }"#;
+        let response: ReflectionResponse = serde_json::from_str(json).unwrap();
+
+        // metadata should default to null
+        assert_eq!(response.metadata, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_reflection_params_skip_serializing_none() {
+        let params = ReflectionParams::for_content("content");
+        let json = serde_json::to_string(&params).unwrap();
+
+        // Fields that are None should be omitted
+        assert!(!json.contains("thought_id"));
+        assert!(!json.contains("session_id"));
+        assert!(!json.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_reflection_result_skip_serializing_branch_none() {
+        let result = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-1".to_string(),
+            original_thought_id: None,
+            analysis: "A".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            quality_score: 0.5,
+            improved_thought: None,
+            iterations_performed: 1,
+            quality_improved: false,
+            branch_id: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_reflection_result_with_all_fields() {
+        let result = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-refl".to_string(),
+            original_thought_id: Some("t-orig".to_string()),
+            analysis: "Full analysis".to_string(),
+            strengths: vec!["S1".to_string(), "S2".to_string()],
+            weaknesses: vec!["W1".to_string()],
+            recommendations: vec!["R1".to_string(), "R2".to_string(), "R3".to_string()],
+            quality_score: 0.88,
+            improved_thought: Some(ImprovedThought {
+                thought_id: "t-imp".to_string(),
+                content: "Improved".to_string(),
+                confidence: 0.92,
+            }),
+            iterations_performed: 4,
+            quality_improved: true,
+            branch_id: Some("b-1".to_string()),
+        };
+
+        assert_eq!(result.strengths.len(), 2);
+        assert_eq!(result.weaknesses.len(), 1);
+        assert_eq!(result.recommendations.len(), 3);
+        assert!(result.improved_thought.is_some());
+        assert!(result.branch_id.is_some());
+    }
+
+    #[test]
+    fn test_session_evaluation_single_mode() {
+        let mut mode_dist = std::collections::HashMap::new();
+        mode_dist.insert("reflection".to_string(), 1);
+
+        let eval = SessionEvaluation {
+            session_id: "s-1".to_string(),
+            total_thoughts: 1,
+            average_confidence: 0.9,
+            mode_distribution: mode_dist,
+            coherence_score: 1.0,
+            recommendation: "Single thought".to_string(),
+        };
+
+        assert_eq!(eval.mode_distribution.len(), 1);
+        assert_eq!(eval.total_thoughts, 1);
+    }
+
+    #[test]
+    fn test_improved_thought_zero_confidence() {
+        let improved = ImprovedThought {
+            thought_id: "t-1".to_string(),
+            content: "Low confidence improvement".to_string(),
+            confidence: 0.0,
+        };
+
+        assert_eq!(improved.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_improved_thought_full_confidence() {
+        let improved = ImprovedThought {
+            thought_id: "t-1".to_string(),
+            content: "Perfect improvement".to_string(),
+            confidence: 1.0,
+        };
+
+        assert_eq!(improved.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_reflection_response_with_complex_metadata() {
+        let response = ReflectionResponse {
+            analysis: "Complex".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            confidence: 0.5,
+            quality_score: None,
+            improved_thought: None,
+            metadata: serde_json::json!({
+                "nested": {
+                    "field": "value",
+                    "array": [1, 2, 3]
+                },
+                "boolean": true,
+                "number": 42
+            }),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ReflectionResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response.metadata["nested"]["field"], "value");
+        assert_eq!(deserialized.metadata["boolean"], true);
+    }
+
+    // ============================================================================
+    // ReflectionMode Constructor Tests
+    // ============================================================================
+
+    fn create_test_config() -> Config {
+        use crate::config::{DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig};
+        use std::path::PathBuf;
+
+        Config {
+            langbase: LangbaseConfig {
+                api_key: "test-key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: crate::config::RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        }
+    }
+
+    #[test]
+    fn test_reflection_mode_new() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        assert_eq!(mode.pipe_name, config.pipes.reflection);
+    }
+
+    #[test]
+    fn test_reflection_mode_new_with_custom_pipe_name() {
+        let mut config = create_test_config();
+        config.pipes.reflection = "custom-reflection-pipe".to_string();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        assert_eq!(mode.pipe_name, "custom-reflection-pipe");
+    }
+
+    // ============================================================================
+    // build_messages() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_build_messages_simple_content() {
+        use crate::langbase::MessageRole;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let messages = mode.build_messages("Test content", &[], 0);
+
+        assert_eq!(messages.len(), 2);
+        assert!(matches!(messages[0].role, MessageRole::System));
+        assert!(messages[0].content.contains("meta-cognitive"));
+        assert!(matches!(messages[1].role, MessageRole::User));
+        assert!(messages[1].content.contains("Test content"));
+    }
+
+    #[test]
+    fn test_build_messages_with_iteration() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let messages = mode.build_messages("Test content", &[], 2);
+
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].content.contains("iteration 3"));
+        assert!(messages[0]
+            .content
+            .contains("previously identified weaknesses"));
+    }
+
+    #[test]
+    fn test_build_messages_with_empty_chain() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let chain: Vec<Thought> = vec![];
+        let messages = mode.build_messages("Content", &chain, 0);
+
+        assert_eq!(messages.len(), 2);
+        assert!(!messages
+            .iter()
+            .any(|m| m.content.contains("Reasoning chain")));
+    }
+
+    #[test]
+    fn test_build_messages_with_reasoning_chain() {
+        use crate::langbase::MessageRole;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First thought", "linear").with_confidence(0.7);
+        let thought2 = Thought::new("sess-1", "Second thought", "tree").with_confidence(0.8);
+        let chain = vec![thought1, thought2];
+
+        let messages = mode.build_messages("Final thought", &chain, 0);
+
+        assert_eq!(messages.len(), 3);
+        assert!(matches!(messages[0].role, MessageRole::System));
+        assert!(matches!(messages[1].role, MessageRole::User));
+        assert!(messages[1].content.contains("Reasoning chain"));
+        assert!(messages[1].content.contains("First thought"));
+        assert!(messages[1].content.contains("Second thought"));
+        assert!(messages[1].content.contains("0.70"));
+        assert!(messages[1].content.contains("0.80"));
+        assert!(matches!(messages[2].role, MessageRole::User));
+        assert!(messages[2].content.contains("Final thought"));
+    }
+
+    #[test]
+    fn test_build_messages_chain_formatting() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought = Thought::new("sess-1", "Content", "divergent").with_confidence(0.65);
+        let chain = vec![thought];
+
+        let messages = mode.build_messages("Test", &chain, 0);
+
+        let chain_message = &messages[1];
+        assert!(chain_message.content.contains("[divergent]"));
+        assert!(chain_message.content.contains("confidence: 0.65"));
+        assert!(chain_message.content.contains("Content"));
+    }
+
+    #[test]
+    fn test_build_messages_empty_content() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let messages = mode.build_messages("", &[], 0);
+
+        assert_eq!(messages.len(), 2);
+        assert!(messages[1].content.contains("Thought to reflect upon"));
+    }
+
+    #[test]
+    fn test_build_messages_unicode_content() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let unicode_content = "Test with unicode: 你好 🌍 مرحبا";
+        let messages = mode.build_messages(unicode_content, &[], 0);
+
+        assert!(messages[1].content.contains(unicode_content));
+    }
+
+    #[test]
+    fn test_build_messages_special_characters() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let special = "Content with\nnewlines\tand\ttabs and \"quotes\"";
+        let messages = mode.build_messages(special, &[], 0);
+
+        assert!(messages[1].content.contains(special));
+    }
+
+    #[test]
+    fn test_build_messages_large_chain() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let mut chain = Vec::new();
+        for i in 0..5 {
+            chain.push(Thought::new("sess-1", &format!("Thought {}", i), "linear"));
+        }
+
+        let messages = mode.build_messages("Final", &chain, 0);
+
+        assert_eq!(messages.len(), 3);
+        let chain_msg = &messages[1];
+        assert!(chain_msg.content.contains("Thought 0"));
+        assert!(chain_msg.content.contains("Thought 4"));
+    }
+
+    // ============================================================================
+    // parse_response() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_response_valid_json() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "This is the analysis",
+            "strengths": ["Strength 1", "Strength 2"],
+            "weaknesses": ["Weakness 1"],
+            "recommendations": ["Recommendation 1"],
+            "confidence": 0.85
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(response.analysis, "This is the analysis");
+        assert_eq!(response.strengths.len(), 2);
+        assert_eq!(response.weaknesses.len(), 1);
+        assert_eq!(response.recommendations.len(), 1);
+        assert_eq!(response.confidence, 0.85);
+    }
+
+    #[test]
+    fn test_parse_response_with_quality_score() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Analysis",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.7,
+            "quality_score": 0.9
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(response.quality_score, Some(0.9));
+    }
+
+    #[test]
+    fn test_parse_response_with_improved_thought() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Analysis",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.8,
+            "improved_thought": "This is the improved version"
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(
+            response.improved_thought,
+            Some("This is the improved version".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_response_with_metadata() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Analysis",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.6,
+            "metadata": {"key": "value", "number": 42}
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(response.metadata["key"], "value");
+        assert_eq!(response.metadata["number"], 42);
+    }
+
+    #[test]
+    fn test_parse_response_json_with_markdown() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"Here's my analysis:
+
+```json
+{
+    "analysis": "Extracted from markdown",
+    "strengths": ["S1"],
+    "weaknesses": ["W1"],
+    "recommendations": ["R1"],
+    "confidence": 0.75
+}
+```"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(response.analysis, "Extracted from markdown");
+        assert_eq!(response.confidence, 0.75);
+    }
+
+    #[test]
+    fn test_parse_response_invalid_json() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = "This is not JSON at all";
+        let result = mode.parse_response(completion);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_missing_required_fields() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{"analysis": "Missing other fields"}"#;
+        let result = mode.parse_response(completion);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_empty_arrays() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Test",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.5
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert!(response.strengths.is_empty());
+        assert!(response.weaknesses.is_empty());
+        assert!(response.recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_parse_response_unicode_in_analysis() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Unicode: 你好世界 🌍",
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": [],
+            "confidence": 0.5
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert!(response.analysis.contains("你好世界"));
+        assert!(response.analysis.contains("🌍"));
+    }
+
+    // ============================================================================
+    // calculate_coherence() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_calculate_coherence_empty_thoughts() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let thoughts: Vec<Thought> = vec![];
+        let coherence = mode.calculate_coherence(&thoughts);
+
+        // Empty array should have perfect coherence (no inconsistency)
+        assert_eq!(coherence, 1.0);
+    }
+
+    #[test]
+    fn test_calculate_coherence_single_thought() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let thought = Thought::new("sess-1", "Single thought", "linear");
+        let coherence = mode.calculate_coherence(&[thought]);
+
+        assert_eq!(coherence, 1.0);
+    }
+
+    #[test]
+    fn test_calculate_coherence_all_linked() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.8);
+        let thought2 = Thought::new("sess-1", "Second", "linear")
+            .with_confidence(0.8)
+            .with_parent(&thought1.id);
+        let thought3 = Thought::new("sess-1", "Third", "linear")
+            .with_confidence(0.8)
+            .with_parent(&thought2.id);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2, thought3]);
+
+        // All linked + stable confidence = high coherence
+        assert!(coherence > 0.9);
+    }
+
+    #[test]
+    fn test_calculate_coherence_no_links() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.8);
+        let thought2 = Thought::new("sess-1", "Second", "linear").with_confidence(0.8);
+        let thought3 = Thought::new("sess-1", "Third", "linear").with_confidence(0.8);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2, thought3]);
+
+        // No links = poor link ratio, but stable confidence helps
+        assert!(coherence < 0.7);
+    }
+
+    #[test]
+    fn test_calculate_coherence_unstable_confidence() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.9);
+        let thought2 = Thought::new("sess-1", "Second", "linear").with_confidence(0.1);
+        let thought3 = Thought::new("sess-1", "Third", "linear").with_confidence(0.9);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2, thought3]);
+
+        // Large confidence swings reduce coherence
+        assert!(coherence < 0.7);
+    }
+
+    #[test]
+    fn test_calculate_coherence_partial_links() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.7);
+        let thought2 = Thought::new("sess-1", "Second", "linear")
+            .with_confidence(0.75)
+            .with_parent(&thought1.id);
+        let thought3 = Thought::new("sess-1", "Third", "linear").with_confidence(0.7);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2, thought3]);
+
+        // 50% linked, stable confidence = medium coherence
+        assert!(coherence > 0.5 && coherence < 0.9);
+    }
+
+    #[test]
+    fn test_calculate_coherence_two_thoughts_linked() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.8);
+        let thought2 = Thought::new("sess-1", "Second", "linear")
+            .with_confidence(0.8)
+            .with_parent(&thought1.id);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2]);
+
+        // Perfect link ratio, stable confidence
+        assert!(coherence > 0.9);
+    }
+
+    #[test]
+    fn test_calculate_coherence_two_thoughts_unlinked() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.8);
+        let thought2 = Thought::new("sess-1", "Second", "linear").with_confidence(0.8);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2]);
+
+        // No links but stable confidence
+        assert!(coherence < 0.7);
+    }
+
+    #[test]
+    fn test_calculate_coherence_varying_confidence() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let thought1 = Thought::new("sess-1", "First", "linear").with_confidence(0.5);
+        let thought2 = Thought::new("sess-1", "Second", "linear")
+            .with_confidence(0.6)
+            .with_parent(&thought1.id);
+        let thought3 = Thought::new("sess-1", "Third", "linear")
+            .with_confidence(0.7)
+            .with_parent(&thought2.id);
+
+        let coherence = mode.calculate_coherence(&[thought1, thought2, thought3]);
+
+        // Good links, gradually improving confidence
+        assert!(coherence > 0.8);
+    }
+
+    // ============================================================================
+    // Additional Edge Case Tests
+    // ============================================================================
+
+    #[test]
+    fn test_reflection_params_for_thought_with_empty_id() {
+        let params = ReflectionParams::for_thought("");
+        assert_eq!(params.thought_id, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_reflection_params_for_content_with_whitespace() {
+        let params = ReflectionParams::for_content("   \n\t  ");
+        assert_eq!(params.content, Some("   \n\t  ".to_string()));
+    }
+
+    #[test]
+    fn test_reflection_response_zero_confidence() {
+        let response = ReflectionResponse {
+            analysis: "Low confidence".to_string(),
+            strengths: vec![],
+            weaknesses: vec!["Many issues".to_string()],
+            recommendations: vec![],
+            confidence: 0.0,
+            quality_score: Some(0.0),
+            improved_thought: None,
+            metadata: serde_json::Value::Null,
+        };
+
+        assert_eq!(response.confidence, 0.0);
+        assert_eq!(response.quality_score, Some(0.0));
+    }
+
+    #[test]
+    fn test_reflection_response_perfect_confidence() {
+        let response = ReflectionResponse {
+            analysis: "Perfect".to_string(),
+            strengths: vec!["Everything".to_string()],
+            weaknesses: vec![],
+            recommendations: vec![],
+            confidence: 1.0,
+            quality_score: Some(1.0),
+            improved_thought: None,
+            metadata: serde_json::Value::Null,
+        };
+
+        assert_eq!(response.confidence, 1.0);
+        assert_eq!(response.quality_score, Some(1.0));
+    }
+
+    #[test]
+    fn test_reflection_result_iterations_zero() {
+        let result = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-1".to_string(),
+            original_thought_id: None,
+            analysis: "Quick".to_string(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            quality_score: 0.95,
+            improved_thought: None,
+            iterations_performed: 0,
+            quality_improved: true,
+            branch_id: None,
+        };
+
+        assert_eq!(result.iterations_performed, 0);
+    }
+
+    #[test]
+    fn test_session_evaluation_high_confidence_low_coherence() {
+        let mut mode_dist = std::collections::HashMap::new();
+        mode_dist.insert("linear".to_string(), 5);
+
+        let eval = SessionEvaluation {
+            session_id: "s-1".to_string(),
+            total_thoughts: 5,
+            average_confidence: 0.9,
+            mode_distribution: mode_dist,
+            coherence_score: 0.3,
+            recommendation: "Reasoning chain may have logical gaps - consider reflection mode"
+                .to_string(),
+        };
+
+        assert!(eval.average_confidence > 0.6);
+        assert!(eval.coherence_score < 0.5);
+        assert!(eval.recommendation.contains("logical gaps"));
+    }
+
+    #[test]
+    fn test_session_evaluation_low_confidence_high_coherence() {
+        let mut mode_dist = std::collections::HashMap::new();
+        mode_dist.insert("linear".to_string(), 3);
+
+        let eval = SessionEvaluation {
+            session_id: "s-1".to_string(),
+            total_thoughts: 3,
+            average_confidence: 0.4,
+            mode_distribution: mode_dist,
+            coherence_score: 0.9,
+            recommendation: "Consider reviewing and refining low-confidence thoughts".to_string(),
+        };
+
+        assert!(eval.average_confidence < 0.6);
+        assert!(eval.coherence_score > 0.5);
+        assert!(eval.recommendation.contains("low-confidence"));
+    }
+
+    #[test]
+    fn test_reflection_params_with_all_options_none() {
+        let params = ReflectionParams {
+            thought_id: None,
+            content: None,
+            session_id: None,
+            branch_id: None,
+            max_iterations: 1,
+            quality_threshold: 0.5,
+            include_chain: false,
+        };
+
+        assert!(params.thought_id.is_none());
+        assert!(params.content.is_none());
+        assert!(params.session_id.is_none());
+        assert!(params.branch_id.is_none());
+    }
+
+    #[test]
+    fn test_improved_thought_empty_content() {
+        let improved = ImprovedThought {
+            thought_id: "t-1".to_string(),
+            content: "".to_string(),
+            confidence: 0.5,
+        };
+
+        assert_eq!(improved.content, "");
+    }
+
+    #[test]
+    fn test_reflection_response_large_arrays() {
+        let strengths: Vec<String> = (0..100).map(|i| format!("Strength {}", i)).collect();
+        let weaknesses: Vec<String> = (0..50).map(|i| format!("Weakness {}", i)).collect();
+        let recommendations: Vec<String> = (0..75).map(|i| format!("Rec {}", i)).collect();
+
+        let response = ReflectionResponse {
+            analysis: "Large arrays".to_string(),
+            strengths: strengths.clone(),
+            weaknesses: weaknesses.clone(),
+            recommendations: recommendations.clone(),
+            confidence: 0.5,
+            quality_score: None,
+            improved_thought: None,
+            metadata: serde_json::Value::Null,
+        };
+
+        assert_eq!(response.strengths.len(), 100);
+        assert_eq!(response.weaknesses.len(), 50);
+        assert_eq!(response.recommendations.len(), 75);
+    }
+
+    #[test]
+    fn test_reflection_params_extreme_quality_threshold() {
+        let params1 = ReflectionParams::for_thought("t-1").with_quality_threshold(-100.0);
+        assert_eq!(params1.quality_threshold, 0.0);
+
+        let params2 = ReflectionParams::for_thought("t-1").with_quality_threshold(100.0);
+        assert_eq!(params2.quality_threshold, 1.0);
+    }
+
+    #[test]
+    fn test_reflection_params_extreme_max_iterations() {
+        let params1 = ReflectionParams::for_thought("t-1").with_max_iterations(usize::MAX);
+        assert_eq!(params1.max_iterations, 5);
+
+        let params2 = ReflectionParams::for_thought("t-1").with_max_iterations(0);
+        assert_eq!(params2.max_iterations, 1);
+    }
+
+    #[test]
+    fn test_session_evaluation_many_modes() {
+        let mut mode_dist = std::collections::HashMap::new();
+        mode_dist.insert("linear".to_string(), 10);
+        mode_dist.insert("tree".to_string(), 8);
+        mode_dist.insert("divergent".to_string(), 5);
+        mode_dist.insert("reflection".to_string(), 3);
+        mode_dist.insert("backtracking".to_string(), 2);
+
+        let eval = SessionEvaluation {
+            session_id: "s-complex".to_string(),
+            total_thoughts: 28,
+            average_confidence: 0.72,
+            mode_distribution: mode_dist.clone(),
+            coherence_score: 0.68,
+            recommendation: "Reasoning quality is acceptable".to_string(),
+        };
+
+        assert_eq!(eval.mode_distribution.len(), 5);
+        assert_eq!(eval.total_thoughts, 28);
+        assert_eq!(eval.mode_distribution.get("linear"), Some(&10));
+    }
+
+    #[test]
+    fn test_reflection_result_with_very_long_analysis() {
+        let long_analysis = "a".repeat(10000);
+        let result = ReflectionResult {
+            session_id: "s-1".to_string(),
+            reflection_thought_id: "t-1".to_string(),
+            original_thought_id: None,
+            analysis: long_analysis.clone(),
+            strengths: vec![],
+            weaknesses: vec![],
+            recommendations: vec![],
+            quality_score: 0.5,
+            improved_thought: None,
+            iterations_performed: 1,
+            quality_improved: false,
+            branch_id: None,
+        };
+
+        assert_eq!(result.analysis.len(), 10000);
+    }
+
+    #[test]
+    fn test_parse_response_with_nested_json_arrays() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+
+        let completion = r#"{
+            "analysis": "Complex",
+            "strengths": ["S1", "S2", "S3"],
+            "weaknesses": ["W1", "W2"],
+            "recommendations": ["R1", "R2", "R3", "R4"],
+            "confidence": 0.65,
+            "metadata": {
+                "nested": {
+                    "deep": {
+                        "array": [1, 2, 3]
+                    }
+                }
+            }
+        }"#;
+
+        let response = mode.parse_response(completion).unwrap();
+        assert_eq!(response.strengths.len(), 3);
+        assert_eq!(response.weaknesses.len(), 2);
+        assert_eq!(response.recommendations.len(), 4);
+        assert_eq!(response.metadata["nested"]["deep"]["array"][0], 1);
+    }
+
+    #[test]
+    fn test_reflection_params_quality_threshold_precision() {
+        let params = ReflectionParams::for_thought("t-1").with_quality_threshold(0.123456789);
+        assert!((params.quality_threshold - 0.123456789).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_build_messages_iteration_zero() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let messages = mode.build_messages("Content", &[], 0);
+
+        assert!(!messages[0].content.contains("iteration"));
+    }
+
+    #[test]
+    fn test_build_messages_iteration_one() {
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let mode = ReflectionMode::new(storage, langbase, &config);
+        let messages = mode.build_messages("Content", &[], 1);
+
+        assert!(messages[0].content.contains("iteration 2"));
+    }
 }

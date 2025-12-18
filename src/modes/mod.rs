@@ -285,4 +285,101 @@ mod tests {
         let copied = mode; // Copy, not move
         assert_eq!(mode, copied);
     }
+
+    // ========================================================================
+    // extract_json_from_completion tests
+    // ========================================================================
+
+    #[test]
+    fn test_extract_json_raw_object() {
+        let result = extract_json_from_completion(r#"{"key": "value"}"#);
+        assert_eq!(result.unwrap(), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_extract_json_raw_array() {
+        let result = extract_json_from_completion(r#"[1, 2, 3]"#);
+        assert_eq!(result.unwrap(), r#"[1, 2, 3]"#);
+    }
+
+    #[test]
+    fn test_extract_json_with_whitespace() {
+        let result = extract_json_from_completion("  \n  {\"key\": \"value\"}  \n  ");
+        assert_eq!(result.unwrap(), r#"{"key": "value"}"#);
+    }
+
+    #[test]
+    fn test_extract_json_from_json_code_block() {
+        let input = "Here is the response:\n```json\n{\"result\": true}\n```\nDone.";
+        let result = extract_json_from_completion(input);
+        assert_eq!(result.unwrap(), r#"{"result": true}"#);
+    }
+
+    #[test]
+    fn test_extract_json_from_plain_code_block() {
+        let input = "Response:\n```\n{\"data\": 123}\n```";
+        let result = extract_json_from_completion(input);
+        assert_eq!(result.unwrap(), r#"{"data": 123}"#);
+    }
+
+    #[test]
+    fn test_extract_json_empty_json_block() {
+        let input = "```json\n\n```";
+        let result = extract_json_from_completion(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty or malformed"));
+    }
+
+    #[test]
+    fn test_extract_json_empty_plain_block() {
+        let input = "```\n   \n```";
+        let result = extract_json_from_completion(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty or malformed"));
+    }
+
+    #[test]
+    fn test_extract_json_no_json_found() {
+        let input = "This is just plain text without any JSON.";
+        let result = extract_json_from_completion(input);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No JSON found"));
+    }
+
+    #[test]
+    fn test_extract_json_truncates_long_error_message() {
+        let input = "a".repeat(200);
+        let result = extract_json_from_completion(&input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("First 100 chars"));
+        // Error message should contain truncated content
+        assert!(err.len() < 200);
+    }
+
+    // ========================================================================
+    // serialize_for_log tests
+    // ========================================================================
+
+    #[test]
+    fn test_serialize_for_log_success() {
+        let value = serde_json::json!({"test": "value", "number": 42});
+        let result = serialize_for_log(&value, "test_context");
+        assert_eq!(result["test"], "value");
+        assert_eq!(result["number"], 42);
+    }
+
+    #[test]
+    fn test_serialize_for_log_simple_types() {
+        assert_eq!(serialize_for_log(&"hello", "string"), "hello");
+        assert_eq!(serialize_for_log(&42i32, "int"), 42);
+        assert_eq!(serialize_for_log(&true, "bool"), true);
+    }
+
+    #[test]
+    fn test_serialize_for_log_vec() {
+        let vec = vec![1, 2, 3];
+        let result = serialize_for_log(&vec, "vec");
+        assert_eq!(result, serde_json::json!([1, 2, 3]));
+    }
 }

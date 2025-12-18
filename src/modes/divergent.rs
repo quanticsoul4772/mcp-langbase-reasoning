@@ -817,4 +817,1158 @@ mod tests {
         // branch_id should be omitted due to skip_serializing_if
         assert!(!json.contains("branch_id"));
     }
+
+    // ============================================================================
+    // DivergentMode build_messages() Tests
+    // ============================================================================
+
+    /// Helper to create a test mode instance
+    fn create_test_mode() -> DivergentMode {
+        use crate::config::{
+            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let config = Config {
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            langbase: LangbaseConfig {
+                api_key: "test_key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: crate::config::LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        DivergentMode::new(storage, langbase, &config)
+    }
+
+    #[test]
+    fn test_build_messages_basic() {
+        use crate::langbase::MessageRole;
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Test content", &[], 3, false, false);
+
+        // Should have system prompt + user message
+        assert_eq!(messages.len(), 2);
+        assert!(matches!(messages[0].role, MessageRole::System));
+        assert!(matches!(messages[1].role, MessageRole::User));
+        assert_eq!(messages[1].content, "Test content");
+    }
+
+    #[test]
+    fn test_build_messages_with_history() {
+        use crate::langbase::MessageRole;
+        let mode = create_test_mode();
+
+        // Create some fake thought history
+        let thoughts = vec![
+            Thought::new("session-1", "Previous thought 1", "divergent"),
+            Thought::new("session-1", "Previous thought 2", "divergent"),
+        ];
+
+        let messages = mode.build_messages("New content", &thoughts, 3, false, false);
+
+        // Should have system + history context + user content
+        assert_eq!(messages.len(), 3);
+        assert!(matches!(messages[0].role, MessageRole::System));
+        assert!(matches!(messages[1].role, MessageRole::User));
+        assert!(messages[1].content.contains("Recent context"));
+        assert!(messages[1].content.contains("Previous thought 1"));
+        assert!(messages[1].content.contains("Previous thought 2"));
+        assert!(matches!(messages[2].role, MessageRole::User));
+        assert_eq!(messages[2].content, "New content");
+    }
+
+    #[test]
+    fn test_build_messages_history_limited_to_5() {
+        let mode = create_test_mode();
+
+        // Create 10 thoughts
+        let thoughts: Vec<Thought> = (0..10)
+            .map(|i| Thought::new("session-1", &format!("Thought {}", i), "divergent"))
+            .collect();
+
+        let messages = mode.build_messages("New", &thoughts, 3, false, false);
+
+        // History message should only include first 5 thoughts
+        let history_msg = &messages[1];
+        assert!(history_msg.content.contains("Thought 0"));
+        assert!(history_msg.content.contains("Thought 4"));
+        assert!(!history_msg.content.contains("Thought 5")); // Should not include 6th+
+    }
+
+    #[test]
+    fn test_build_messages_with_challenge_assumptions() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Content", &[], 3, true, false);
+
+        let system_msg = &messages[0];
+        assert!(system_msg
+            .content
+            .contains("explicitly identify and challenge"));
+        assert!(system_msg.content.contains("assumptions_challenged"));
+    }
+
+    #[test]
+    fn test_build_messages_with_force_rebellion() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Content", &[], 3, false, true);
+
+        let system_msg = &messages[0];
+        assert!(system_msg.content.contains("REBELLION MODE"));
+        assert!(system_msg.content.contains("contrarian viewpoints"));
+        assert!(system_msg.content.contains("unconventional"));
+    }
+
+    #[test]
+    fn test_build_messages_with_both_flags() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Content", &[], 3, true, true);
+
+        let system_msg = &messages[0];
+        // Should contain both enhancements
+        assert!(system_msg.content.contains("assumptions_challenged"));
+        assert!(system_msg.content.contains("REBELLION MODE"));
+    }
+
+    #[test]
+    fn test_build_messages_num_perspectives_in_prompt() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Content", &[], 5, false, false);
+
+        let system_msg = &messages[0];
+        assert!(system_msg.content.contains("Generate 5 diverse"));
+    }
+
+    #[test]
+    fn test_build_messages_with_different_num_perspectives() {
+        let mode = create_test_mode();
+
+        let messages_2 = mode.build_messages("Content", &[], 2, false, false);
+        let messages_4 = mode.build_messages("Content", &[], 4, false, false);
+
+        assert!(messages_2[0].content.contains("Generate 2 diverse"));
+        assert!(messages_4[0].content.contains("Generate 4 diverse"));
+    }
+
+    #[test]
+    fn test_build_messages_empty_history() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Content", &[], 3, false, false);
+
+        // Should only have system + user (no history message)
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn test_build_messages_system_prompt_structure() {
+        let mode = create_test_mode();
+
+        let messages = mode.build_messages("Test", &[], 3, false, false);
+
+        let system_msg = &messages[0];
+        // Should contain base prompt
+        assert!(system_msg.content.contains("diverse"));
+        assert!(system_msg.content.contains("perspectives"));
+    }
+
+    // ============================================================================
+    // Edge Cases and Integration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_perspective_zero_scores() {
+        let perspective = Perspective {
+            thought: "Zero scores".to_string(),
+            novelty: 0.0,
+            viability: 0.0,
+            assumptions_challenged: None,
+        };
+
+        let json = serde_json::to_string(&perspective).unwrap();
+        assert!(json.contains("\"novelty\":0.0"));
+        assert!(json.contains("\"viability\":0.0"));
+    }
+
+    #[test]
+    fn test_perspective_max_scores() {
+        let perspective = Perspective {
+            thought: "Max scores".to_string(),
+            novelty: 1.0,
+            viability: 1.0,
+            assumptions_challenged: None,
+        };
+
+        assert_eq!(perspective.novelty, 1.0);
+        assert_eq!(perspective.viability, 1.0);
+    }
+
+    #[test]
+    fn test_divergent_response_empty_perspectives() {
+        let response = DivergentResponse {
+            perspectives: vec![],
+            synthesis: "No perspectives".to_string(),
+            metadata: serde_json::json!({}),
+        };
+
+        assert_eq!(response.perspectives.len(), 0);
+        assert_eq!(response.synthesis, "No perspectives");
+    }
+
+    #[test]
+    fn test_divergent_response_multiple_perspectives() {
+        let response = DivergentResponse {
+            perspectives: vec![
+                Perspective {
+                    thought: "P1".to_string(),
+                    novelty: 0.8,
+                    viability: 0.7,
+                    assumptions_challenged: None,
+                },
+                Perspective {
+                    thought: "P2".to_string(),
+                    novelty: 0.6,
+                    viability: 0.9,
+                    assumptions_challenged: None,
+                },
+                Perspective {
+                    thought: "P3".to_string(),
+                    novelty: 0.9,
+                    viability: 0.5,
+                    assumptions_challenged: None,
+                },
+            ],
+            synthesis: "Three perspectives".to_string(),
+            metadata: serde_json::json!({}),
+        };
+
+        assert_eq!(response.perspectives.len(), 3);
+        assert_eq!(response.perspectives[0].novelty, 0.8);
+        assert_eq!(response.perspectives[1].viability, 0.9);
+        assert_eq!(response.perspectives[2].thought, "P3");
+    }
+
+    #[test]
+    fn test_perspective_with_empty_assumptions_vec() {
+        let perspective = Perspective {
+            thought: "Test".to_string(),
+            novelty: 0.5,
+            viability: 0.5,
+            assumptions_challenged: Some(vec![]),
+        };
+
+        let json = serde_json::to_string(&perspective).unwrap();
+        let parsed: Perspective = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.assumptions_challenged.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_perspective_with_multiple_assumptions() {
+        let assumptions = vec![
+            "Assumption 1".to_string(),
+            "Assumption 2".to_string(),
+            "Assumption 3".to_string(),
+        ];
+        let perspective = Perspective {
+            thought: "Multi-assumption".to_string(),
+            novelty: 0.75,
+            viability: 0.65,
+            assumptions_challenged: Some(assumptions.clone()),
+        };
+
+        assert_eq!(perspective.assumptions_challenged.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_divergent_params_zero_confidence() {
+        let params = DivergentParams::new("Test").with_confidence(0.0);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_divergent_params_max_confidence() {
+        let params = DivergentParams::new("Test").with_confidence(1.0);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_divergent_params_min_perspectives() {
+        let params = DivergentParams::new("Test").with_num_perspectives(2);
+        assert_eq!(params.num_perspectives, 2);
+    }
+
+    #[test]
+    fn test_divergent_params_max_perspectives() {
+        let params = DivergentParams::new("Test").with_num_perspectives(5);
+        assert_eq!(params.num_perspectives, 5);
+    }
+
+    #[test]
+    fn test_divergent_result_with_branch() {
+        let result = DivergentResult {
+            session_id: "s-1".to_string(),
+            thought_id: "t-1".to_string(),
+            perspectives: vec![],
+            synthesis: "With branch".to_string(),
+            synthesis_thought_id: "t-s".to_string(),
+            total_novelty_score: 0.5,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: Some("branch-123".to_string()),
+        };
+
+        assert_eq!(result.branch_id, Some("branch-123".to_string()));
+    }
+
+    #[test]
+    fn test_perspective_info_with_empty_assumptions() {
+        let info = PerspectiveInfo {
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            novelty: 0.5,
+            viability: 0.5,
+            assumptions_challenged: Some(vec![]),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("assumptions_challenged"));
+    }
+
+    #[test]
+    fn test_divergent_response_with_metadata() {
+        let metadata = serde_json::json!({
+            "model": "gpt-4",
+            "temperature": 0.8,
+            "custom_field": "value"
+        });
+
+        let response = DivergentResponse {
+            perspectives: vec![],
+            synthesis: "Test".to_string(),
+            metadata: metadata.clone(),
+        };
+
+        assert_eq!(response.metadata["model"], "gpt-4");
+        assert_eq!(response.metadata["temperature"], 0.8);
+    }
+
+    #[test]
+    fn test_divergent_params_content_with_special_chars() {
+        let content = "Test with special chars: !@#$%^&*()_+{}|:<>?";
+        let params = DivergentParams::new(content);
+        assert_eq!(params.content, content);
+    }
+
+    #[test]
+    fn test_divergent_params_content_with_newlines() {
+        let content = "Line 1\nLine 2\nLine 3";
+        let params = DivergentParams::new(content);
+        assert_eq!(params.content, content);
+    }
+
+    #[test]
+    fn test_divergent_params_content_unicode() {
+        let content = "Unicode: 你好世界 🌍 émojis";
+        let params = DivergentParams::new(content);
+        assert_eq!(params.content, content);
+    }
+
+    #[test]
+    fn test_perspective_round_trip_serialization() {
+        let original = Perspective {
+            thought: "Round trip test".to_string(),
+            novelty: 0.777,
+            viability: 0.888,
+            assumptions_challenged: Some(vec!["A1".to_string(), "A2".to_string()]),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Perspective = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.thought, deserialized.thought);
+        assert_eq!(original.novelty, deserialized.novelty);
+        assert_eq!(original.viability, deserialized.viability);
+        assert_eq!(
+            original.assumptions_challenged,
+            deserialized.assumptions_challenged
+        );
+    }
+
+    #[test]
+    fn test_divergent_result_round_trip() {
+        let original = DivergentResult {
+            session_id: "s-123".to_string(),
+            thought_id: "t-456".to_string(),
+            perspectives: vec![PerspectiveInfo {
+                thought_id: "p-1".to_string(),
+                content: "Perspective".to_string(),
+                novelty: 0.9,
+                viability: 0.8,
+                assumptions_challenged: Some(vec!["Challenge".to_string()]),
+            }],
+            synthesis: "Synth".to_string(),
+            synthesis_thought_id: "t-synth".to_string(),
+            total_novelty_score: 0.85,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: Some("branch".to_string()),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: DivergentResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.session_id, deserialized.session_id);
+        assert_eq!(original.thought_id, deserialized.thought_id);
+        assert_eq!(original.synthesis, deserialized.synthesis);
+        assert_eq!(original.perspectives.len(), deserialized.perspectives.len());
+        assert_eq!(original.branch_id, deserialized.branch_id);
+    }
+
+    // ============================================================================
+    // DivergentMode::new() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_mode_new() {
+        use crate::config::{
+            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let config = Config {
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            langbase: LangbaseConfig {
+                api_key: "test_key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: crate::config::LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let mode = DivergentMode::new(storage, langbase, &config);
+
+        assert_eq!(mode.pipe_name, config.pipes.divergent);
+    }
+
+    #[test]
+    fn test_divergent_mode_new_with_custom_pipe() {
+        use crate::config::{
+            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let mut pipes = PipeConfig::default();
+        pipes.divergent = "custom-divergent-pipe".to_string();
+
+        let config = Config {
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            langbase: LangbaseConfig {
+                api_key: "api_key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: crate::config::LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes,
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let mode = DivergentMode::new(storage, langbase, &config);
+
+        assert_eq!(mode.pipe_name, "custom-divergent-pipe");
+    }
+
+    // ============================================================================
+    // parse_response() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_response_valid_json() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {
+                    "thought": "First perspective",
+                    "novelty": 0.8,
+                    "viability": 0.7
+                }
+            ],
+            "synthesis": "Combined insight"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives.len(), 1);
+        assert_eq!(response.synthesis, "Combined insight");
+    }
+
+    #[test]
+    fn test_parse_response_with_markdown_json_block() {
+        let mode = create_test_mode();
+
+        let markdown = r#"
+Here's the response:
+```json
+{
+    "perspectives": [
+        {"thought": "P1", "novelty": 0.9, "viability": 0.8}
+    ],
+    "synthesis": "Result"
+}
+```
+"#;
+
+        let result = mode.parse_response(markdown);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives.len(), 1);
+        assert_eq!(response.synthesis, "Result");
+    }
+
+    #[test]
+    fn test_parse_response_with_code_block() {
+        let mode = create_test_mode();
+
+        let code_block = r#"
+```
+{
+    "perspectives": [
+        {"thought": "P1", "novelty": 0.5, "viability": 0.6}
+    ],
+    "synthesis": "Synth"
+}
+```
+"#;
+
+        let result = mode.parse_response(code_block);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives.len(), 1);
+        assert_eq!(response.synthesis, "Synth");
+    }
+
+    #[test]
+    fn test_parse_response_multiple_perspectives() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {"thought": "P1", "novelty": 0.8, "viability": 0.7},
+                {"thought": "P2", "novelty": 0.6, "viability": 0.9},
+                {"thought": "P3", "novelty": 0.9, "viability": 0.5}
+            ],
+            "synthesis": "Three perspectives combined"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives.len(), 3);
+        assert_eq!(response.perspectives[0].thought, "P1");
+        assert_eq!(response.perspectives[1].thought, "P2");
+        assert_eq!(response.perspectives[2].thought, "P3");
+    }
+
+    #[test]
+    fn test_parse_response_with_assumptions_challenged() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {
+                    "thought": "Challenge assumptions",
+                    "novelty": 0.7,
+                    "viability": 0.8,
+                    "assumptions_challenged": ["Assumption 1", "Assumption 2"]
+                }
+            ],
+            "synthesis": "Synthesis text"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        let assumptions = response.perspectives[0]
+            .assumptions_challenged
+            .as_ref()
+            .unwrap();
+        assert_eq!(assumptions.len(), 2);
+        assert_eq!(assumptions[0], "Assumption 1");
+        assert_eq!(assumptions[1], "Assumption 2");
+    }
+
+    #[test]
+    fn test_parse_response_with_metadata() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {"thought": "P1", "novelty": 0.8, "viability": 0.7}
+            ],
+            "synthesis": "Synth",
+            "metadata": {
+                "model": "gpt-4",
+                "temperature": 0.9
+            }
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.metadata["model"], "gpt-4");
+        assert_eq!(response.metadata["temperature"], 0.9);
+    }
+
+    #[test]
+    fn test_parse_response_invalid_json() {
+        let mode = create_test_mode();
+
+        let invalid = "This is not JSON";
+        let result = mode.parse_response(invalid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_missing_required_fields() {
+        let mode = create_test_mode();
+
+        let incomplete = r#"{
+            "perspectives": []
+        }"#;
+
+        let result = mode.parse_response(incomplete);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_empty_perspectives() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [],
+            "synthesis": "No perspectives"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_response_unicode_content() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {
+                    "thought": "Unicode: 你好世界 🌍 émojis",
+                    "novelty": 0.85,
+                    "viability": 0.75
+                }
+            ],
+            "synthesis": "国际化 synthesis"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.perspectives[0].thought.contains("你好世界"));
+        assert!(response.perspectives[0].thought.contains("🌍"));
+        assert!(response.synthesis.contains("国际化"));
+    }
+
+    #[test]
+    fn test_parse_response_escaped_characters() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {
+                    "thought": "Special chars: \"quotes\" \n newlines \t tabs",
+                    "novelty": 0.7,
+                    "viability": 0.8
+                }
+            ],
+            "synthesis": "Escaped: \\ backslash"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert!(response.perspectives[0].thought.contains("quotes"));
+        assert!(response.synthesis.contains("backslash"));
+    }
+
+    #[test]
+    fn test_parse_response_extreme_scores() {
+        let mode = create_test_mode();
+
+        let json = r#"{
+            "perspectives": [
+                {"thought": "Min", "novelty": 0.0, "viability": 0.0},
+                {"thought": "Max", "novelty": 1.0, "viability": 1.0}
+            ],
+            "synthesis": "Extreme scores"
+        }"#;
+
+        let result = mode.parse_response(json);
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.perspectives[0].novelty, 0.0);
+        assert_eq!(response.perspectives[0].viability, 0.0);
+        assert_eq!(response.perspectives[1].novelty, 1.0);
+        assert_eq!(response.perspectives[1].viability, 1.0);
+    }
+
+    // ============================================================================
+    // Additional build_messages() Edge Cases
+    // ============================================================================
+
+    #[test]
+    fn test_build_messages_unicode_content() {
+        let mode = create_test_mode();
+
+        let content = "Unicode test: 你好 🚀 café";
+        let messages = mode.build_messages(content, &[], 3, false, false);
+
+        assert_eq!(messages[1].content, content);
+    }
+
+    #[test]
+    fn test_build_messages_very_long_content() {
+        let mode = create_test_mode();
+
+        let long_content = "A".repeat(10000);
+        let messages = mode.build_messages(&long_content, &[], 3, false, false);
+
+        assert_eq!(messages[1].content, long_content);
+    }
+
+    #[test]
+    fn test_build_messages_special_characters() {
+        let mode = create_test_mode();
+
+        let special = "Special: !@#$%^&*()_+{}|:<>?[]\\;',./`~";
+        let messages = mode.build_messages(special, &[], 3, false, false);
+
+        assert_eq!(messages[1].content, special);
+    }
+
+    #[test]
+    fn test_build_messages_multiline_content() {
+        let mode = create_test_mode();
+
+        let multiline = "Line 1\nLine 2\nLine 3\nLine 4";
+        let messages = mode.build_messages(multiline, &[], 3, false, false);
+
+        assert_eq!(messages[1].content, multiline);
+    }
+
+    #[test]
+    fn test_build_messages_with_tabs_and_spaces() {
+        let mode = create_test_mode();
+
+        let content = "Indented:\n\tTab line\n    Space line";
+        let messages = mode.build_messages(content, &[], 3, false, false);
+
+        assert_eq!(messages[1].content, content);
+    }
+
+    // ============================================================================
+    // Boolean Flag Combinations
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_params_all_flags_false() {
+        let params = DivergentParams::new("Test");
+        assert!(!params.challenge_assumptions);
+        assert!(!params.force_rebellion);
+    }
+
+    #[test]
+    fn test_divergent_params_all_flags_true() {
+        let params = DivergentParams::new("Test")
+            .with_assumption_challenging()
+            .with_rebellion();
+
+        assert!(params.challenge_assumptions);
+        assert!(params.force_rebellion);
+    }
+
+    #[test]
+    fn test_divergent_params_serialize_false_booleans() {
+        let params = DivergentParams::new("Test");
+        let json = serde_json::to_string(&params).unwrap();
+
+        // Default false booleans should still appear in JSON
+        assert!(json.contains("\"challenge_assumptions\":false"));
+        assert!(json.contains("\"force_rebellion\":false"));
+    }
+
+    #[test]
+    fn test_divergent_params_serialize_true_booleans() {
+        let params = DivergentParams::new("Test")
+            .with_assumption_challenging()
+            .with_rebellion();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"challenge_assumptions\":true"));
+        assert!(json.contains("\"force_rebellion\":true"));
+    }
+
+    #[test]
+    fn test_divergent_params_deserialize_false_booleans() {
+        let json = r#"{
+            "content": "Test",
+            "challenge_assumptions": false,
+            "force_rebellion": false
+        }"#;
+
+        let params: DivergentParams = serde_json::from_str(json).unwrap();
+        assert!(!params.challenge_assumptions);
+        assert!(!params.force_rebellion);
+    }
+
+    #[test]
+    fn test_divergent_params_deserialize_true_booleans() {
+        let json = r#"{
+            "content": "Test",
+            "challenge_assumptions": true,
+            "force_rebellion": true
+        }"#;
+
+        let params: DivergentParams = serde_json::from_str(json).unwrap();
+        assert!(params.challenge_assumptions);
+        assert!(params.force_rebellion);
+    }
+
+    // ============================================================================
+    // Fractional Score Tests
+    // ============================================================================
+
+    #[test]
+    fn test_perspective_fractional_scores() {
+        let perspective = Perspective {
+            thought: "Fractional".to_string(),
+            novelty: 0.123456789,
+            viability: 0.987654321,
+            assumptions_challenged: None,
+        };
+
+        let json = serde_json::to_string(&perspective).unwrap();
+        let parsed: Perspective = serde_json::from_str(&json).unwrap();
+
+        // Should preserve precision to reasonable degree
+        assert!((parsed.novelty - 0.123456789).abs() < 0.0001);
+        assert!((parsed.viability - 0.987654321).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_divergent_result_fractional_novelty_score() {
+        let result = DivergentResult {
+            session_id: "s-1".to_string(),
+            thought_id: "t-1".to_string(),
+            perspectives: vec![],
+            synthesis: "Test".to_string(),
+            synthesis_thought_id: "t-s".to_string(),
+            total_novelty_score: 0.6666666666666666,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: DivergentResult = serde_json::from_str(&json).unwrap();
+
+        assert!((parsed.total_novelty_score - 0.6666666666666666).abs() < 0.0001);
+    }
+
+    // ============================================================================
+    // Empty and Whitespace Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_params_empty_content() {
+        let params = DivergentParams::new("");
+        assert_eq!(params.content, "");
+    }
+
+    #[test]
+    fn test_divergent_params_whitespace_content() {
+        let params = DivergentParams::new("   \t\n  ");
+        assert_eq!(params.content, "   \t\n  ");
+    }
+
+    #[test]
+    fn test_perspective_empty_thought() {
+        let perspective = Perspective {
+            thought: "".to_string(),
+            novelty: 0.5,
+            viability: 0.5,
+            assumptions_challenged: None,
+        };
+
+        assert_eq!(perspective.thought, "");
+    }
+
+    #[test]
+    fn test_divergent_response_empty_synthesis() {
+        let response = DivergentResponse {
+            perspectives: vec![],
+            synthesis: "".to_string(),
+            metadata: serde_json::json!({}),
+        };
+
+        assert_eq!(response.synthesis, "");
+    }
+
+    // ============================================================================
+    // Large Array Tests
+    // ============================================================================
+
+    #[test]
+    fn test_perspective_many_assumptions_challenged() {
+        let many_assumptions: Vec<String> = (0..100).map(|i| format!("Assumption {}", i)).collect();
+
+        let perspective = Perspective {
+            thought: "Many assumptions".to_string(),
+            novelty: 0.8,
+            viability: 0.7,
+            assumptions_challenged: Some(many_assumptions.clone()),
+        };
+
+        let json = serde_json::to_string(&perspective).unwrap();
+        let parsed: Perspective = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.assumptions_challenged.unwrap().len(), 100);
+    }
+
+    #[test]
+    fn test_divergent_response_five_perspectives() {
+        let perspectives: Vec<Perspective> = (0..5)
+            .map(|i| Perspective {
+                thought: format!("Perspective {}", i),
+                novelty: 0.5 + (i as f64 * 0.1),
+                viability: 0.6 + (i as f64 * 0.05),
+                assumptions_challenged: None,
+            })
+            .collect();
+
+        let response = DivergentResponse {
+            perspectives,
+            synthesis: "Five perspectives".to_string(),
+            metadata: serde_json::json!({}),
+        };
+
+        assert_eq!(response.perspectives.len(), 5);
+        for i in 0..5 {
+            assert_eq!(
+                response.perspectives[i].thought,
+                format!("Perspective {}", i)
+            );
+        }
+    }
+
+    // ============================================================================
+    // Metadata Variations
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_response_null_metadata() {
+        let json = r#"{
+            "perspectives": [],
+            "synthesis": "Test",
+            "metadata": null
+        }"#;
+
+        let response: DivergentResponse = serde_json::from_str(json).unwrap();
+        assert!(response.metadata.is_null());
+    }
+
+    #[test]
+    fn test_divergent_response_complex_metadata() {
+        let complex_metadata = serde_json::json!({
+            "nested": {
+                "deep": {
+                    "value": 42
+                }
+            },
+            "array": [1, 2, 3],
+            "string": "test"
+        });
+
+        let response = DivergentResponse {
+            perspectives: vec![],
+            synthesis: "Test".to_string(),
+            metadata: complex_metadata.clone(),
+        };
+
+        assert_eq!(response.metadata["nested"]["deep"]["value"], 42);
+        assert_eq!(response.metadata["array"][0], 1);
+    }
+
+    // ============================================================================
+    // Builder Pattern Overwrite Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_params_overwrite_session() {
+        let params = DivergentParams::new("Test")
+            .with_session("first")
+            .with_session("second");
+
+        assert_eq!(params.session_id, Some("second".to_string()));
+    }
+
+    #[test]
+    fn test_divergent_params_overwrite_branch() {
+        let params = DivergentParams::new("Test")
+            .with_branch("branch-1")
+            .with_branch("branch-2");
+
+        assert_eq!(params.branch_id, Some("branch-2".to_string()));
+    }
+
+    #[test]
+    fn test_divergent_params_overwrite_num_perspectives() {
+        let params = DivergentParams::new("Test")
+            .with_num_perspectives(2)
+            .with_num_perspectives(4);
+
+        assert_eq!(params.num_perspectives, 4);
+    }
+
+    #[test]
+    fn test_divergent_params_overwrite_confidence() {
+        let params = DivergentParams::new("Test")
+            .with_confidence(0.5)
+            .with_confidence(0.9);
+
+        assert_eq!(params.confidence, 0.9);
+    }
+
+    // ============================================================================
+    // Index Boundary Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_result_perspective_indices() {
+        let result = DivergentResult {
+            session_id: "s-1".to_string(),
+            thought_id: "t-1".to_string(),
+            perspectives: vec![
+                PerspectiveInfo {
+                    thought_id: "p-0".to_string(),
+                    content: "P0".to_string(),
+                    novelty: 0.5,
+                    viability: 0.8,
+                    assumptions_challenged: None,
+                },
+                PerspectiveInfo {
+                    thought_id: "p-1".to_string(),
+                    content: "P1".to_string(),
+                    novelty: 0.9,
+                    viability: 0.6,
+                    assumptions_challenged: None,
+                },
+            ],
+            synthesis: "Test".to_string(),
+            synthesis_thought_id: "t-s".to_string(),
+            total_novelty_score: 0.7,
+            most_viable_perspective: 0,
+            most_novel_perspective: 1,
+            branch_id: None,
+        };
+
+        assert_eq!(result.most_viable_perspective, 0);
+        assert_eq!(result.most_novel_perspective, 1);
+        assert_eq!(result.perspectives[0].viability, 0.8);
+        assert_eq!(result.perspectives[1].novelty, 0.9);
+    }
+
+    // ============================================================================
+    // Skip Serializing Tests
+    // ============================================================================
+
+    #[test]
+    fn test_divergent_params_skip_serializing_none_values() {
+        let params = DivergentParams::new("Test");
+        let json = serde_json::to_string(&params).unwrap();
+
+        // session_id and branch_id should be omitted when None
+        assert!(!json.contains("\"session_id\""));
+        assert!(!json.contains("\"branch_id\""));
+    }
+
+    #[test]
+    fn test_perspective_info_skip_serializing_none_assumptions() {
+        let info = PerspectiveInfo {
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            novelty: 0.5,
+            viability: 0.5,
+            assumptions_challenged: None,
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(!json.contains("assumptions_challenged"));
+    }
+
+    #[test]
+    fn test_divergent_result_skip_serializing_none_branch() {
+        let result = DivergentResult {
+            session_id: "s-1".to_string(),
+            thought_id: "t-1".to_string(),
+            perspectives: vec![],
+            synthesis: "Test".to_string(),
+            synthesis_thought_id: "t-s".to_string(),
+            total_novelty_score: 0.5,
+            most_viable_perspective: 0,
+            most_novel_perspective: 0,
+            branch_id: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(!json.contains("\"branch_id\""));
+    }
 }

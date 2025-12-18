@@ -1322,4 +1322,1101 @@ mod tests {
         let entropy_half = entropy(0.5);
         assert!((entropy_half - 1.0).abs() < 0.0001); // Should be approximately 1 bit
     }
+
+    // ========================================================================
+    // EvidenceInput Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_input_serialize() {
+        let ei = EvidenceInput {
+            content: "Data shows X".to_string(),
+            source: Some("Journal".to_string()),
+            source_type: Some(SourceType::Statistical),
+            date: Some("2023-01-15".to_string()),
+        };
+        let json = serde_json::to_string(&ei).unwrap();
+        assert!(json.contains("Data shows X"));
+        assert!(json.contains("Journal"));
+        assert!(json.contains("statistical"));
+    }
+
+    #[test]
+    fn test_evidence_input_deserialize() {
+        let json = r#"{"content":"Test content","source":"Source","source_type":"primary","date":"2023-01-01"}"#;
+        let ei: EvidenceInput = serde_json::from_str(json).unwrap();
+        assert_eq!(ei.content, "Test content");
+        assert_eq!(ei.source, Some("Source".to_string()));
+        assert_eq!(ei.source_type, Some(SourceType::Primary));
+    }
+
+    #[test]
+    fn test_evidence_input_minimal() {
+        let ei = EvidenceInput {
+            content: "Minimal".to_string(),
+            source: None,
+            source_type: None,
+            date: None,
+        };
+        let json = serde_json::to_string(&ei).unwrap();
+        assert!(json.contains("Minimal"));
+        // Optional fields should be skipped when None
+        assert!(!json.contains("source"));
+    }
+
+    // ========================================================================
+    // EvidenceParams Serialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_params_serialize() {
+        let params = EvidenceParams::new("Claim")
+            .with_evidence("E1")
+            .with_session("s1")
+            .with_context("ctx");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("Claim"));
+        assert!(json.contains("E1"));
+        assert!(json.contains("s1"));
+        assert!(json.contains("ctx"));
+    }
+
+    #[test]
+    fn test_evidence_params_deserialize() {
+        let json = r#"{"claim":"Test","evidence":[{"content":"E1"}]}"#;
+        let params: EvidenceParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.claim, "Test");
+        assert_eq!(params.evidence.len(), 1);
+        assert_eq!(params.evidence[0].content, "E1");
+    }
+
+    #[test]
+    fn test_evidence_params_round_trip() {
+        let original = EvidenceParams::new("Round trip test")
+            .with_evidence("Evidence 1")
+            .with_evidence("Evidence 2")
+            .with_session("session-123");
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: EvidenceParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.claim, deserialized.claim);
+        assert_eq!(original.evidence.len(), deserialized.evidence.len());
+        assert_eq!(original.session_id, deserialized.session_id);
+    }
+
+    // ========================================================================
+    // BayesianEvidence Tests
+    // ========================================================================
+
+    #[test]
+    fn test_bayesian_evidence_serialize() {
+        let be = BayesianEvidence {
+            description: "Test evidence".to_string(),
+            likelihood_if_true: Some(0.8),
+            likelihood_if_false: Some(0.2),
+        };
+        let json = serde_json::to_string(&be).unwrap();
+        assert!(json.contains("Test evidence"));
+        assert!(json.contains("0.8"));
+        assert!(json.contains("0.2"));
+    }
+
+    #[test]
+    fn test_bayesian_evidence_deserialize() {
+        let json = r#"{"description":"E","likelihood_if_true":0.9,"likelihood_if_false":0.1}"#;
+        let be: BayesianEvidence = serde_json::from_str(json).unwrap();
+        assert_eq!(be.description, "E");
+        assert_eq!(be.likelihood_if_true, Some(0.9));
+        assert_eq!(be.likelihood_if_false, Some(0.1));
+    }
+
+    #[test]
+    fn test_bayesian_evidence_optional_likelihoods() {
+        let be = BayesianEvidence {
+            description: "Incomplete".to_string(),
+            likelihood_if_true: None,
+            likelihood_if_false: None,
+        };
+        let json = serde_json::to_string(&be).unwrap();
+        assert!(json.contains("Incomplete"));
+    }
+
+    #[test]
+    fn test_bayesian_evidence_round_trip() {
+        let original = BayesianEvidence {
+            description: "Round trip evidence".to_string(),
+            likelihood_if_true: Some(0.75),
+            likelihood_if_false: Some(0.25),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: BayesianEvidence = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.description, deserialized.description);
+        assert_eq!(original.likelihood_if_true, deserialized.likelihood_if_true);
+        assert_eq!(
+            original.likelihood_if_false,
+            deserialized.likelihood_if_false
+        );
+    }
+
+    // ========================================================================
+    // ProbabilisticParams Serialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_probabilistic_params_serialize() {
+        let params = ProbabilisticParams::new("H", 0.6)
+            .with_evidence("E1", 0.8, 0.2)
+            .with_session("s2");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"H\""));
+        assert!(json.contains("0.6"));
+        assert!(json.contains("E1"));
+    }
+
+    #[test]
+    fn test_probabilistic_params_deserialize() {
+        let json = r#"{"hypothesis":"Test H","prior":0.5,"evidence":[]}"#;
+        let params: ProbabilisticParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.hypothesis, "Test H");
+        assert_eq!(params.prior, 0.5);
+    }
+
+    #[test]
+    fn test_probabilistic_params_round_trip() {
+        let original = ProbabilisticParams::new("Round trip hypothesis", 0.4)
+            .with_evidence("E1", 0.9, 0.1)
+            .with_evidence("E2", 0.7, 0.3);
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ProbabilisticParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.hypothesis, deserialized.hypothesis);
+        assert_eq!(original.prior, deserialized.prior);
+        assert_eq!(original.evidence.len(), deserialized.evidence.len());
+    }
+
+    // ========================================================================
+    // Response Type Tests
+    // ========================================================================
+
+    #[test]
+    fn test_probability_interval_serialize() {
+        let pi = ProbabilityInterval {
+            lower: 0.3,
+            upper: 0.7,
+            level: 0.95,
+        };
+        let json = serde_json::to_string(&pi).unwrap();
+        assert!(json.contains("0.3"));
+        assert!(json.contains("0.7"));
+        assert!(json.contains("0.95"));
+    }
+
+    #[test]
+    fn test_chain_weakness_serialize() {
+        let cw = ChainWeakness {
+            from: "Node A".to_string(),
+            to: "Node B".to_string(),
+            weakness: "Weak assumption".to_string(),
+            impact: 0.6,
+        };
+        let json = serde_json::to_string(&cw).unwrap();
+        assert!(json.contains("Node A"));
+        assert!(json.contains("Weak assumption"));
+    }
+
+    #[test]
+    fn test_evidence_contradiction_serialize() {
+        let ec = EvidenceContradiction {
+            evidence_a: "E1".to_string(),
+            evidence_b: "E2".to_string(),
+            nature: "Direct conflict".to_string(),
+            resolution: "Consider E1 more credible".to_string(),
+        };
+        let json = serde_json::to_string(&ec).unwrap();
+        assert!(json.contains("E1"));
+        assert!(json.contains("Direct conflict"));
+    }
+
+    #[test]
+    fn test_gap_serialize() {
+        let gap = Gap {
+            gap: "Missing baseline data".to_string(),
+            importance: 0.8,
+            suggested_evidence: "Collect historical data".to_string(),
+        };
+        let json = serde_json::to_string(&gap).unwrap();
+        assert!(json.contains("Missing baseline"));
+        assert!(json.contains("0.8"));
+    }
+
+    // ========================================================================
+    // Default and Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_credibility_factors_default() {
+        let cf = CredibilityFactors::default();
+        assert_eq!(cf.source_reliability, 0.0);
+        assert_eq!(cf.methodology, 0.0);
+        assert_eq!(cf.recency, 0.0);
+        assert_eq!(cf.corroboration, 0.0);
+    }
+
+    #[test]
+    fn test_source_type_equality() {
+        assert_eq!(SourceType::Primary, SourceType::Primary);
+        assert_ne!(SourceType::Primary, SourceType::Secondary);
+        assert_ne!(SourceType::Expert, SourceType::Anecdotal);
+    }
+
+    #[test]
+    fn test_all_source_types_display() {
+        let types = vec![
+            SourceType::Primary,
+            SourceType::Secondary,
+            SourceType::Anecdotal,
+            SourceType::Expert,
+            SourceType::Statistical,
+        ];
+        for t in types {
+            let display = format!("{}", t);
+            assert!(!display.is_empty());
+        }
+    }
+
+    // ========================================================================
+    // EvidenceResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_result_serialize() {
+        let result = EvidenceResult {
+            assessment_id: "assess-1".to_string(),
+            session_id: "sess-1".to_string(),
+            claim: "Test claim".to_string(),
+            overall_support: SupportLevel {
+                level: "strong".to_string(),
+                confidence: 0.9,
+                explanation: "Well supported".to_string(),
+            },
+            evidence_analyses: vec![],
+            chain_analysis: None,
+            contradictions: vec![],
+            gaps: vec![],
+            recommendations: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("assess-1"));
+        assert!(json.contains("Test claim"));
+        assert!(json.contains("strong"));
+    }
+
+    #[test]
+    fn test_evidence_result_with_analyses() {
+        let result = EvidenceResult {
+            assessment_id: "assess-2".to_string(),
+            session_id: "sess-2".to_string(),
+            claim: "Claim".to_string(),
+            overall_support: SupportLevel {
+                level: "moderate".to_string(),
+                confidence: 0.7,
+                explanation: "Some support".to_string(),
+            },
+            evidence_analyses: vec![EvidenceAnalysis {
+                evidence_id: "e1".to_string(),
+                content_summary: "Summary".to_string(),
+                relevance: 0.8,
+                credibility: 0.9,
+                weight: 0.72,
+                supports_claim: true,
+                notes: "Notes".to_string(),
+            }],
+            chain_analysis: None,
+            contradictions: vec![],
+            gaps: vec![],
+            recommendations: vec!["Get more evidence".to_string()],
+        };
+
+        assert_eq!(result.evidence_analyses.len(), 1);
+        assert_eq!(result.recommendations.len(), 1);
+        assert_eq!(result.evidence_analyses[0].weight, 0.72);
+    }
+
+    #[test]
+    fn test_evidence_result_deserialize() {
+        let json = r#"{
+            "assessment_id": "a1",
+            "session_id": "s1",
+            "claim": "Claim",
+            "overall_support": {
+                "level": "weak",
+                "confidence": 0.4,
+                "explanation": "Limited support"
+            },
+            "evidence_analyses": [],
+            "contradictions": [],
+            "gaps": [],
+            "recommendations": []
+        }"#;
+        let result: EvidenceResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.assessment_id, "a1");
+        assert_eq!(result.overall_support.level, "weak");
+        assert_eq!(result.overall_support.confidence, 0.4);
+    }
+
+    #[test]
+    fn test_evidence_result_round_trip() {
+        let original = EvidenceResult {
+            assessment_id: "round-trip".to_string(),
+            session_id: "sess".to_string(),
+            claim: "Test".to_string(),
+            overall_support: SupportLevel {
+                level: "strong".to_string(),
+                confidence: 0.95,
+                explanation: "Clear support".to_string(),
+            },
+            evidence_analyses: vec![],
+            chain_analysis: None,
+            contradictions: vec![],
+            gaps: vec![],
+            recommendations: vec![],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: EvidenceResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.assessment_id, deserialized.assessment_id);
+        assert_eq!(original.claim, deserialized.claim);
+        assert_eq!(
+            original.overall_support.confidence,
+            deserialized.overall_support.confidence
+        );
+    }
+
+    // ========================================================================
+    // ProbabilisticResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_probabilistic_result_serialize() {
+        let result = ProbabilisticResult {
+            update_id: "update-1".to_string(),
+            session_id: "sess-1".to_string(),
+            hypothesis: "H".to_string(),
+            prior: 0.5,
+            posterior: 0.7,
+            confidence_interval: None,
+            update_steps: vec![],
+            uncertainty: UncertaintyMetrics {
+                entropy_before: 1.0,
+                entropy_after: 0.88,
+                information_gained: 0.12,
+            },
+            interpretation: ProbabilityInterpretation {
+                verbal: "likely".to_string(),
+                recommendation: "Proceed".to_string(),
+                caveats: vec![],
+            },
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("update-1"));
+        assert!(json.contains("0.5"));
+        assert!(json.contains("0.7"));
+        assert!(json.contains("likely"));
+    }
+
+    #[test]
+    fn test_probabilistic_result_with_interval() {
+        let result = ProbabilisticResult {
+            update_id: "update-2".to_string(),
+            session_id: "sess-2".to_string(),
+            hypothesis: "Test H".to_string(),
+            prior: 0.3,
+            posterior: 0.6,
+            confidence_interval: Some(ProbabilityInterval {
+                lower: 0.5,
+                upper: 0.7,
+                level: 0.95,
+            }),
+            update_steps: vec![BayesianUpdateStep {
+                evidence: "E".to_string(),
+                prior: 0.3,
+                posterior: 0.6,
+                likelihood_ratio: 3.0,
+            }],
+            uncertainty: UncertaintyMetrics {
+                entropy_before: 0.88,
+                entropy_after: 0.97,
+                information_gained: -0.09,
+            },
+            interpretation: ProbabilityInterpretation {
+                verbal: "possible".to_string(),
+                recommendation: "Gather more evidence".to_string(),
+                caveats: vec!["Limited data".to_string()],
+            },
+        };
+
+        assert!(result.confidence_interval.is_some());
+        let ci = result.confidence_interval.unwrap();
+        assert_eq!(ci.lower, 0.5);
+        assert_eq!(ci.upper, 0.7);
+        assert_eq!(ci.level, 0.95);
+    }
+
+    #[test]
+    fn test_probabilistic_result_deserialize() {
+        let json = r#"{
+            "update_id": "u1",
+            "session_id": "s1",
+            "hypothesis": "H",
+            "prior": 0.5,
+            "posterior": 0.8,
+            "update_steps": [],
+            "uncertainty": {
+                "entropy_before": 1.0,
+                "entropy_after": 0.72,
+                "information_gained": 0.28
+            },
+            "interpretation": {
+                "verbal": "highly_likely",
+                "recommendation": "Act",
+                "caveats": []
+            }
+        }"#;
+        let result: ProbabilisticResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.update_id, "u1");
+        assert_eq!(result.prior, 0.5);
+        assert_eq!(result.posterior, 0.8);
+        assert_eq!(result.interpretation.verbal, "highly_likely");
+    }
+
+    #[test]
+    fn test_probabilistic_result_round_trip() {
+        let original = ProbabilisticResult {
+            update_id: "round".to_string(),
+            session_id: "s".to_string(),
+            hypothesis: "Test hypothesis".to_string(),
+            prior: 0.4,
+            posterior: 0.75,
+            confidence_interval: Some(ProbabilityInterval {
+                lower: 0.65,
+                upper: 0.85,
+                level: 0.95,
+            }),
+            update_steps: vec![],
+            uncertainty: UncertaintyMetrics {
+                entropy_before: 0.97,
+                entropy_after: 0.81,
+                information_gained: 0.16,
+            },
+            interpretation: ProbabilityInterpretation {
+                verbal: "likely".to_string(),
+                recommendation: "Test".to_string(),
+                caveats: vec![],
+            },
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ProbabilisticResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.hypothesis, deserialized.hypothesis);
+        assert_eq!(original.prior, deserialized.prior);
+        assert_eq!(original.posterior, deserialized.posterior);
+    }
+
+    // ========================================================================
+    // InferentialChain Tests
+    // ========================================================================
+
+    #[test]
+    fn test_inferential_chain_serialize() {
+        let chain = InferentialChain {
+            primary_chain: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+            weak_links: vec![ChainWeakness {
+                from: "A".to_string(),
+                to: "B".to_string(),
+                weakness: "Assumption".to_string(),
+                impact: 0.5,
+            }],
+            redundant_evidence: vec!["E1".to_string(), "E2".to_string()],
+        };
+        let json = serde_json::to_string(&chain).unwrap();
+        assert!(json.contains("\"A\""));
+        assert!(json.contains("Assumption"));
+        assert!(json.contains("E1"));
+    }
+
+    #[test]
+    fn test_inferential_chain_deserialize() {
+        let json = r#"{
+            "primary_chain": ["X", "Y", "Z"],
+            "weak_links": [],
+            "redundant_evidence": []
+        }"#;
+        let chain: InferentialChain = serde_json::from_str(json).unwrap();
+        assert_eq!(chain.primary_chain.len(), 3);
+        assert_eq!(chain.primary_chain[0], "X");
+    }
+
+    #[test]
+    fn test_inferential_chain_round_trip() {
+        let original = InferentialChain {
+            primary_chain: vec!["Step1".to_string(), "Step2".to_string()],
+            weak_links: vec![],
+            redundant_evidence: vec!["Evidence".to_string()],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: InferentialChain = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.primary_chain, deserialized.primary_chain);
+        assert_eq!(original.redundant_evidence, deserialized.redundant_evidence);
+    }
+
+    // ========================================================================
+    // Edge Cases and Boundary Values
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_params_empty_claim() {
+        let params = EvidenceParams::new("");
+        assert_eq!(params.claim, "");
+    }
+
+    #[test]
+    fn test_probabilistic_params_boundary_priors() {
+        let params_zero = ProbabilisticParams::new("H", 0.0);
+        assert_eq!(params_zero.prior, 0.0);
+
+        let params_one = ProbabilisticParams::new("H", 1.0);
+        assert_eq!(params_one.prior, 1.0);
+    }
+
+    #[test]
+    fn test_support_level_round_trip() {
+        let original = SupportLevel {
+            level: "contradictory".to_string(),
+            confidence: 0.65,
+            explanation: "Mixed evidence".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: SupportLevel = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.level, deserialized.level);
+        assert_eq!(original.confidence, deserialized.confidence);
+        assert_eq!(original.explanation, deserialized.explanation);
+    }
+
+    #[test]
+    fn test_evidence_analysis_round_trip() {
+        let original = EvidenceAnalysis {
+            evidence_id: "id-123".to_string(),
+            content_summary: "Summary text".to_string(),
+            relevance: 0.95,
+            credibility: 0.88,
+            weight: 0.8360,
+            supports_claim: false,
+            notes: "Detailed notes".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: EvidenceAnalysis = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.evidence_id, deserialized.evidence_id);
+        assert_eq!(original.relevance, deserialized.relevance);
+        assert_eq!(original.supports_claim, deserialized.supports_claim);
+    }
+
+    #[test]
+    fn test_bayesian_update_step_round_trip() {
+        let original = BayesianUpdateStep {
+            evidence: "Strong evidence".to_string(),
+            prior: 0.25,
+            posterior: 0.67,
+            likelihood_ratio: 5.33,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: BayesianUpdateStep = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.evidence, deserialized.evidence);
+        assert_eq!(original.prior, deserialized.prior);
+        assert_eq!(original.posterior, deserialized.posterior);
+        assert_eq!(original.likelihood_ratio, deserialized.likelihood_ratio);
+    }
+
+    #[test]
+    fn test_uncertainty_metrics_round_trip() {
+        let original = UncertaintyMetrics {
+            entropy_before: 0.95,
+            entropy_after: 0.72,
+            information_gained: 0.23,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: UncertaintyMetrics = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.entropy_before, deserialized.entropy_before);
+        assert_eq!(original.entropy_after, deserialized.entropy_after);
+        assert_eq!(original.information_gained, deserialized.information_gained);
+    }
+
+    #[test]
+    fn test_probability_interpretation_round_trip() {
+        let original = ProbabilityInterpretation {
+            verbal: "almost_certain".to_string(),
+            recommendation: "Execute plan".to_string(),
+            caveats: vec!["Caveat 1".to_string(), "Caveat 2".to_string()],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ProbabilityInterpretation = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.verbal, deserialized.verbal);
+        assert_eq!(original.recommendation, deserialized.recommendation);
+        assert_eq!(original.caveats.len(), deserialized.caveats.len());
+    }
+
+    #[test]
+    fn test_probability_interval_round_trip() {
+        let original = ProbabilityInterval {
+            lower: 0.45,
+            upper: 0.65,
+            level: 0.90,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ProbabilityInterval = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.lower, deserialized.lower);
+        assert_eq!(original.upper, deserialized.upper);
+        assert_eq!(original.level, deserialized.level);
+    }
+
+    #[test]
+    fn test_chain_weakness_round_trip() {
+        let original = ChainWeakness {
+            from: "Premise A".to_string(),
+            to: "Conclusion B".to_string(),
+            weakness: "Logical leap".to_string(),
+            impact: 0.75,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: ChainWeakness = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.from, deserialized.from);
+        assert_eq!(original.to, deserialized.to);
+        assert_eq!(original.weakness, deserialized.weakness);
+        assert_eq!(original.impact, deserialized.impact);
+    }
+
+    #[test]
+    fn test_evidence_contradiction_round_trip() {
+        let original = EvidenceContradiction {
+            evidence_a: "Source 1".to_string(),
+            evidence_b: "Source 2".to_string(),
+            nature: "Conflicting dates".to_string(),
+            resolution: "Use more recent".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: EvidenceContradiction = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.evidence_a, deserialized.evidence_a);
+        assert_eq!(original.evidence_b, deserialized.evidence_b);
+        assert_eq!(original.nature, deserialized.nature);
+        assert_eq!(original.resolution, deserialized.resolution);
+    }
+
+    #[test]
+    fn test_gap_round_trip() {
+        let original = Gap {
+            gap: "Missing control group data".to_string(),
+            importance: 0.92,
+            suggested_evidence: "Conduct controlled study".to_string(),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Gap = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.gap, deserialized.gap);
+        assert_eq!(original.importance, deserialized.importance);
+        assert_eq!(original.suggested_evidence, deserialized.suggested_evidence);
+    }
+
+    // ========================================================================
+    // Builder Chain Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_params_builder_chain() {
+        let params = EvidenceParams::new("Complex claim")
+            .with_session("s1")
+            .with_context("Context info")
+            .with_evidence("E1")
+            .with_sourced_evidence("E2", "Source", SourceType::Expert)
+            .with_evidence("E3");
+
+        assert_eq!(params.claim, "Complex claim");
+        assert_eq!(params.session_id, Some("s1".to_string()));
+        assert_eq!(params.context, Some("Context info".to_string()));
+        assert_eq!(params.evidence.len(), 3);
+        assert_eq!(params.evidence[1].source_type, Some(SourceType::Expert));
+    }
+
+    #[test]
+    fn test_probabilistic_params_builder_chain() {
+        let params = ProbabilisticParams::new("H", 0.5)
+            .with_session("sess")
+            .with_evidence("E1", 0.9, 0.1)
+            .with_evidence("E2", 0.8, 0.2)
+            .with_evidence("E3", 0.7, 0.3);
+
+        assert_eq!(params.hypothesis, "H");
+        assert_eq!(params.prior, 0.5);
+        assert_eq!(params.session_id, Some("sess".to_string()));
+        assert_eq!(params.evidence.len(), 3);
+        assert_eq!(params.evidence[0].likelihood_if_true, Some(0.9));
+        assert_eq!(params.evidence[2].likelihood_if_false, Some(0.3));
+    }
+
+    // ========================================================================
+    // Clone and Debug Trait Tests
+    // ========================================================================
+
+    #[test]
+    fn test_source_type_clone() {
+        let st1 = SourceType::Primary;
+        let st2 = st1.clone();
+        assert_eq!(st1, st2);
+    }
+
+    #[test]
+    fn test_evidence_params_clone() {
+        let params1 = EvidenceParams::new("Claim").with_evidence("E1");
+        let params2 = params1.clone();
+        assert_eq!(params1.claim, params2.claim);
+        assert_eq!(params1.evidence.len(), params2.evidence.len());
+    }
+
+    #[test]
+    fn test_probabilistic_params_clone() {
+        let params1 = ProbabilisticParams::new("H", 0.6).with_evidence("E", 0.8, 0.2);
+        let params2 = params1.clone();
+        assert_eq!(params1.hypothesis, params2.hypothesis);
+        assert_eq!(params1.prior, params2.prior);
+        assert_eq!(params1.evidence.len(), params2.evidence.len());
+    }
+
+    #[test]
+    fn test_evidence_result_debug() {
+        let result = EvidenceResult {
+            assessment_id: "a1".to_string(),
+            session_id: "s1".to_string(),
+            claim: "Claim".to_string(),
+            overall_support: SupportLevel {
+                level: "strong".to_string(),
+                confidence: 0.9,
+                explanation: "Good".to_string(),
+            },
+            evidence_analyses: vec![],
+            chain_analysis: None,
+            contradictions: vec![],
+            gaps: vec![],
+            recommendations: vec![],
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("a1"));
+        assert!(debug_str.contains("Claim"));
+    }
+
+    // ========================================================================
+    // Multiple Evidence Items Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_params_multiple_evidence_types() {
+        let params = EvidenceParams::new("Test")
+            .with_evidence("Simple evidence")
+            .with_sourced_evidence("Expert opinion", "Dr. Smith", SourceType::Expert)
+            .with_sourced_evidence("Data", "Study", SourceType::Statistical);
+
+        assert_eq!(params.evidence.len(), 3);
+        assert!(params.evidence[0].source.is_none());
+        assert_eq!(params.evidence[1].source, Some("Dr. Smith".to_string()));
+        assert_eq!(
+            params.evidence[2].source_type,
+            Some(SourceType::Statistical)
+        );
+    }
+
+    #[test]
+    fn test_probabilistic_params_multiple_evidence() {
+        let params = ProbabilisticParams::new("Hypothesis", 0.3)
+            .with_evidence("Strong evidence", 0.95, 0.05)
+            .with_evidence("Moderate evidence", 0.7, 0.3)
+            .with_evidence("Weak evidence", 0.6, 0.4);
+
+        assert_eq!(params.evidence.len(), 3);
+        assert_eq!(params.evidence[0].likelihood_if_true, Some(0.95));
+        assert_eq!(params.evidence[1].likelihood_if_true, Some(0.7));
+        assert_eq!(params.evidence[2].likelihood_if_false, Some(0.4));
+    }
+
+    // ========================================================================
+    // Empty and None Value Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_params_all_none() {
+        let params = EvidenceParams {
+            claim: "Claim".to_string(),
+            evidence: vec![],
+            session_id: None,
+            context: None,
+        };
+        assert!(params.session_id.is_none());
+        assert!(params.context.is_none());
+        assert!(params.evidence.is_empty());
+    }
+
+    #[test]
+    fn test_bayesian_evidence_all_none() {
+        let be = BayesianEvidence {
+            description: "Test".to_string(),
+            likelihood_if_true: None,
+            likelihood_if_false: None,
+        };
+        assert!(be.likelihood_if_true.is_none());
+        assert!(be.likelihood_if_false.is_none());
+    }
+
+    #[test]
+    fn test_evidence_result_empty_collections() {
+        let result = EvidenceResult {
+            assessment_id: "a".to_string(),
+            session_id: "s".to_string(),
+            claim: "c".to_string(),
+            overall_support: SupportLevel {
+                level: "insufficient".to_string(),
+                confidence: 0.1,
+                explanation: "No evidence".to_string(),
+            },
+            evidence_analyses: vec![],
+            chain_analysis: None,
+            contradictions: vec![],
+            gaps: vec![],
+            recommendations: vec![],
+        };
+        assert!(result.evidence_analyses.is_empty());
+        assert!(result.contradictions.is_empty());
+        assert!(result.gaps.is_empty());
+        assert!(result.recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_probabilistic_result_no_confidence_interval() {
+        let result = ProbabilisticResult {
+            update_id: "u".to_string(),
+            session_id: "s".to_string(),
+            hypothesis: "h".to_string(),
+            prior: 0.5,
+            posterior: 0.6,
+            confidence_interval: None,
+            update_steps: vec![],
+            uncertainty: UncertaintyMetrics {
+                entropy_before: 1.0,
+                entropy_after: 0.97,
+                information_gained: 0.03,
+            },
+            interpretation: ProbabilityInterpretation {
+                verbal: "possible".to_string(),
+                recommendation: "wait".to_string(),
+                caveats: vec![],
+            },
+        };
+        assert!(result.confidence_interval.is_none());
+        assert!(result.update_steps.is_empty());
+    }
+
+    // ========================================================================
+    // Entropy Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_entropy_boundary_values() {
+        fn entropy(p: f64) -> f64 {
+            if p <= 0.0 || p >= 1.0 {
+                0.0
+            } else {
+                -(p * p.log2() + (1.0 - p) * (1.0 - p).log2())
+            }
+        }
+
+        // Test exact boundaries
+        assert_eq!(entropy(0.0), 0.0);
+        assert_eq!(entropy(1.0), 0.0);
+
+        // Test near boundaries
+        let near_zero = entropy(0.001);
+        assert!(near_zero > 0.0 && near_zero < 0.1);
+
+        let near_one = entropy(0.999);
+        assert!(near_one > 0.0 && near_one < 0.1);
+
+        // Test various probabilities
+        let e25 = entropy(0.25);
+        let e50 = entropy(0.5);
+        let e75 = entropy(0.75);
+
+        // Entropy at 0.5 should be maximum (1.0)
+        assert!((e50 - 1.0).abs() < 0.0001);
+        // Entropy should be symmetric around 0.5
+        assert!((e25 - e75).abs() < 0.0001);
+    }
+
+    // ========================================================================
+    // Source Type Serialization Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_source_type_all_values_serialize_deserialize() {
+        let types = vec![
+            SourceType::Primary,
+            SourceType::Secondary,
+            SourceType::Anecdotal,
+            SourceType::Expert,
+            SourceType::Statistical,
+        ];
+
+        for source_type in types {
+            let json = serde_json::to_string(&source_type).unwrap();
+            let deserialized: SourceType = serde_json::from_str(&json).unwrap();
+            assert_eq!(source_type, deserialized);
+        }
+    }
+
+    // ========================================================================
+    // Complex Nested Structure Tests
+    // ========================================================================
+
+    #[test]
+    fn test_evidence_result_complex_structure() {
+        let result = EvidenceResult {
+            assessment_id: "complex-1".to_string(),
+            session_id: "sess-complex".to_string(),
+            claim: "Complex claim".to_string(),
+            overall_support: SupportLevel {
+                level: "moderate".to_string(),
+                confidence: 0.75,
+                explanation: "Mixed evidence".to_string(),
+            },
+            evidence_analyses: vec![
+                EvidenceAnalysis {
+                    evidence_id: "e1".to_string(),
+                    content_summary: "First".to_string(),
+                    relevance: 0.9,
+                    credibility: 0.8,
+                    weight: 0.72,
+                    supports_claim: true,
+                    notes: "Strong".to_string(),
+                },
+                EvidenceAnalysis {
+                    evidence_id: "e2".to_string(),
+                    content_summary: "Second".to_string(),
+                    relevance: 0.7,
+                    credibility: 0.6,
+                    weight: 0.42,
+                    supports_claim: false,
+                    notes: "Weak".to_string(),
+                },
+            ],
+            chain_analysis: Some(InferentialChain {
+                primary_chain: vec!["A".to_string(), "B".to_string(), "C".to_string()],
+                weak_links: vec![ChainWeakness {
+                    from: "B".to_string(),
+                    to: "C".to_string(),
+                    weakness: "Assumption".to_string(),
+                    impact: 0.4,
+                }],
+                redundant_evidence: vec!["e3".to_string()],
+            }),
+            contradictions: vec![EvidenceContradiction {
+                evidence_a: "e1".to_string(),
+                evidence_b: "e2".to_string(),
+                nature: "Conflict".to_string(),
+                resolution: "Prefer e1".to_string(),
+            }],
+            gaps: vec![Gap {
+                gap: "Missing baseline".to_string(),
+                importance: 0.8,
+                suggested_evidence: "Get baseline".to_string(),
+            }],
+            recommendations: vec!["Rec 1".to_string(), "Rec 2".to_string()],
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: EvidenceResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.evidence_analyses.len(), 2);
+        assert_eq!(deserialized.evidence_analyses.len(), 2);
+        assert!(result.chain_analysis.is_some());
+        assert!(deserialized.chain_analysis.is_some());
+        assert_eq!(result.contradictions.len(), 1);
+        assert_eq!(result.gaps.len(), 1);
+        assert_eq!(result.recommendations.len(), 2);
+    }
+
+    #[test]
+    fn test_probabilistic_result_complex_structure() {
+        let result = ProbabilisticResult {
+            update_id: "complex-update".to_string(),
+            session_id: "sess".to_string(),
+            hypothesis: "Complex hypothesis".to_string(),
+            prior: 0.3,
+            posterior: 0.8,
+            confidence_interval: Some(ProbabilityInterval {
+                lower: 0.7,
+                upper: 0.9,
+                level: 0.95,
+            }),
+            update_steps: vec![
+                BayesianUpdateStep {
+                    evidence: "E1".to_string(),
+                    prior: 0.3,
+                    posterior: 0.5,
+                    likelihood_ratio: 2.33,
+                },
+                BayesianUpdateStep {
+                    evidence: "E2".to_string(),
+                    prior: 0.5,
+                    posterior: 0.8,
+                    likelihood_ratio: 6.0,
+                },
+            ],
+            uncertainty: UncertaintyMetrics {
+                entropy_before: 0.88,
+                entropy_after: 0.72,
+                information_gained: 0.16,
+            },
+            interpretation: ProbabilityInterpretation {
+                verbal: "highly_likely".to_string(),
+                recommendation: "Act on hypothesis".to_string(),
+                caveats: vec!["Caveat 1".to_string(), "Caveat 2".to_string()],
+            },
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: ProbabilisticResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.update_steps.len(), 2);
+        assert_eq!(deserialized.update_steps.len(), 2);
+        assert!(result.confidence_interval.is_some());
+        assert_eq!(result.interpretation.caveats.len(), 2);
+    }
 }

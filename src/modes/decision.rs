@@ -1218,4 +1218,1159 @@ mod tests {
         assert!(json.contains("John"));
         assert!(json.contains("key_player"));
     }
+
+    // ========================================================================
+    // Additional DecisionParams Coverage
+    // ========================================================================
+
+    #[test]
+    fn test_decision_params_full_builder() {
+        let params = DecisionParams::new("Q", vec!["A".to_string(), "B".to_string()])
+            .with_session("s-1")
+            .with_criterion("cost", 0.3)
+            .with_criterion("quality", 0.4)
+            .with_criterion("speed", 0.3)
+            .with_constraint("Under budget")
+            .with_constraint("Meet deadline")
+            .with_method(DecisionMethod::Pairwise);
+
+        assert_eq!(params.session_id, Some("s-1".to_string()));
+        assert_eq!(params.criteria.len(), 3);
+        assert_eq!(params.constraints.len(), 2);
+        assert_eq!(params.method, DecisionMethod::Pairwise);
+    }
+
+    #[test]
+    fn test_decision_params_deserialize_all_fields() {
+        let json = r#"{
+            "question": "Full test",
+            "options": ["A", "B", "C"],
+            "criteria": [
+                {"name": "cost", "weight": 0.5, "description": "Total cost"},
+                {"name": "quality", "weight": 0.5}
+            ],
+            "constraints": ["Budget < 1000", "Time < 30 days"],
+            "session_id": "sess-xyz",
+            "method": "pairwise"
+        }"#;
+        let params: DecisionParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.question, "Full test");
+        assert_eq!(params.options.len(), 3);
+        assert_eq!(params.criteria.len(), 2);
+        assert_eq!(
+            params.criteria[0].description,
+            Some("Total cost".to_string())
+        );
+        assert!(params.criteria[1].description.is_none());
+        assert_eq!(params.constraints.len(), 2);
+        assert_eq!(params.session_id, Some("sess-xyz".to_string()));
+        assert_eq!(params.method, DecisionMethod::Pairwise);
+    }
+
+    #[test]
+    fn test_decision_params_deserialize_empty_arrays() {
+        let json = r#"{"question": "Q", "options": ["A", "B"], "criteria": [], "constraints": []}"#;
+        let params: DecisionParams = serde_json::from_str(json).unwrap();
+
+        assert!(params.criteria.is_empty());
+        assert!(params.constraints.is_empty());
+    }
+
+    #[test]
+    fn test_decision_params_deserialize_no_session() {
+        let json = r#"{"question": "Q", "options": ["A", "B"]}"#;
+        let params: DecisionParams = serde_json::from_str(json).unwrap();
+        assert!(params.session_id.is_none());
+    }
+
+    // ========================================================================
+    // Criterion Tests
+    // ========================================================================
+
+    #[test]
+    fn test_criterion_serialize() {
+        let criterion = Criterion {
+            name: "cost".to_string(),
+            weight: 0.6,
+            description: Some("Total project cost".to_string()),
+        };
+        let json = serde_json::to_string(&criterion).unwrap();
+        assert!(json.contains("cost"));
+        assert!(json.contains("0.6"));
+        assert!(json.contains("Total project cost"));
+    }
+
+    #[test]
+    fn test_criterion_deserialize() {
+        let json = r#"{"name": "quality", "weight": 0.8, "description": "Code quality"}"#;
+        let criterion: Criterion = serde_json::from_str(json).unwrap();
+        assert_eq!(criterion.name, "quality");
+        assert_eq!(criterion.weight, 0.8);
+        assert_eq!(criterion.description, Some("Code quality".to_string()));
+    }
+
+    #[test]
+    fn test_criterion_round_trip() {
+        let original = Criterion {
+            name: "speed".to_string(),
+            weight: 0.75,
+            description: Some("Execution speed".to_string()),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Criterion = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.name, deserialized.name);
+        assert_eq!(original.weight, deserialized.weight);
+        assert_eq!(original.description, deserialized.description);
+    }
+
+    #[test]
+    fn test_criterion_without_description() {
+        let criterion = Criterion {
+            name: "size".to_string(),
+            weight: 0.4,
+            description: None,
+        };
+        let json = serde_json::to_string(&criterion).unwrap();
+        // Should skip description field when None
+        assert!(!json.contains("description"));
+
+        let deserialized: Criterion = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.description.is_none());
+    }
+
+    // ========================================================================
+    // DecisionMethod Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decision_method_default() {
+        let method = DecisionMethod::default();
+        assert_eq!(method, DecisionMethod::WeightedSum);
+    }
+
+    #[test]
+    fn test_decision_method_serialize_all() {
+        assert_eq!(
+            serde_json::to_string(&DecisionMethod::WeightedSum).unwrap(),
+            "\"weighted_sum\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DecisionMethod::Pairwise).unwrap(),
+            "\"pairwise\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DecisionMethod::Topsis).unwrap(),
+            "\"topsis\""
+        );
+    }
+
+    #[test]
+    fn test_decision_method_deserialize_all() {
+        let ws: DecisionMethod = serde_json::from_str("\"weighted_sum\"").unwrap();
+        assert_eq!(ws, DecisionMethod::WeightedSum);
+
+        let pw: DecisionMethod = serde_json::from_str("\"pairwise\"").unwrap();
+        assert_eq!(pw, DecisionMethod::Pairwise);
+
+        let tp: DecisionMethod = serde_json::from_str("\"topsis\"").unwrap();
+        assert_eq!(tp, DecisionMethod::Topsis);
+    }
+
+    // ========================================================================
+    // PerspectiveParams Tests
+    // ========================================================================
+
+    #[test]
+    fn test_perspective_params_with_session() {
+        let params = PerspectiveParams::new("Topic").with_session("sess-456");
+        assert_eq!(params.session_id, Some("sess-456".to_string()));
+    }
+
+    #[test]
+    fn test_perspective_params_full_builder() {
+        let params = PerspectiveParams::new("Policy")
+            .with_session("s-1")
+            .with_stakeholder("Alice")
+            .with_stakeholder("Bob")
+            .with_context("Important context")
+            .without_power_matrix();
+
+        assert_eq!(params.session_id, Some("s-1".to_string()));
+        assert_eq!(params.stakeholders.len(), 2);
+        assert_eq!(params.context, Some("Important context".to_string()));
+        assert!(!params.include_power_matrix);
+    }
+
+    #[test]
+    fn test_perspective_params_deserialize_minimal() {
+        let json = r#"{"topic": "Simple"}"#;
+        let params: PerspectiveParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.topic, "Simple");
+        assert!(params.stakeholders.is_empty());
+        assert!(params.context.is_none());
+        assert!(params.session_id.is_none());
+        assert!(params.include_power_matrix); // default_true
+    }
+
+    #[test]
+    fn test_perspective_params_deserialize_full() {
+        let json = r#"{
+            "topic": "Migration",
+            "stakeholders": [
+                {"name": "Dev", "role": "Engineering", "interests": ["Performance"]},
+                {"name": "PM"}
+            ],
+            "context": "Cloud migration",
+            "session_id": "s-99",
+            "include_power_matrix": false
+        }"#;
+        let params: PerspectiveParams = serde_json::from_str(json).unwrap();
+
+        assert_eq!(params.topic, "Migration");
+        assert_eq!(params.stakeholders.len(), 2);
+        assert_eq!(params.stakeholders[0].role, Some("Engineering".to_string()));
+        assert_eq!(params.stakeholders[0].interests.len(), 1);
+        assert!(params.stakeholders[1].role.is_none());
+        assert_eq!(params.context, Some("Cloud migration".to_string()));
+        assert_eq!(params.session_id, Some("s-99".to_string()));
+        assert!(!params.include_power_matrix);
+    }
+
+    // ========================================================================
+    // StakeholderInput Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stakeholder_input_serialize_minimal() {
+        let stakeholder = StakeholderInput {
+            name: "Alice".to_string(),
+            role: None,
+            interests: Vec::new(),
+        };
+        let json = serde_json::to_string(&stakeholder).unwrap();
+        assert!(json.contains("Alice"));
+        assert!(!json.contains("role"));
+    }
+
+    #[test]
+    fn test_stakeholder_input_serialize_full() {
+        let stakeholder = StakeholderInput {
+            name: "Bob".to_string(),
+            role: Some("CTO".to_string()),
+            interests: vec!["Security".to_string(), "Performance".to_string()],
+        };
+        let json = serde_json::to_string(&stakeholder).unwrap();
+        assert!(json.contains("Bob"));
+        assert!(json.contains("CTO"));
+        assert!(json.contains("Security"));
+        assert!(json.contains("Performance"));
+    }
+
+    #[test]
+    fn test_stakeholder_input_deserialize() {
+        let json = r#"{"name": "Carol", "role": "PM", "interests": ["Timeline"]}"#;
+        let stakeholder: StakeholderInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(stakeholder.name, "Carol");
+        assert_eq!(stakeholder.role, Some("PM".to_string()));
+        assert_eq!(stakeholder.interests.len(), 1);
+        assert_eq!(stakeholder.interests[0], "Timeline");
+    }
+
+    // ========================================================================
+    // Helper Functions
+    // ========================================================================
+
+    #[test]
+    fn test_default_true() {
+        assert!(default_true());
+    }
+
+    // ========================================================================
+    // Response Deserialization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_criterion_score_deserialize() {
+        let json = r#"{"score": 0.85, "reasoning": "High quality output"}"#;
+        let score: CriterionScore = serde_json::from_str(json).unwrap();
+        assert_eq!(score.score, 0.85);
+        assert_eq!(score.reasoning, "High quality output");
+    }
+
+    #[test]
+    fn test_option_score_deserialize() {
+        let json = r#"{
+            "option": "Option A",
+            "total_score": 0.78,
+            "criteria_scores": {
+                "cost": {"score": 0.9, "reasoning": "Low cost"}
+            },
+            "rank": 1
+        }"#;
+        let score: OptionScore = serde_json::from_str(json).unwrap();
+        assert_eq!(score.option, "Option A");
+        assert_eq!(score.total_score, 0.78);
+        assert_eq!(score.rank, 1);
+        assert!(score.criteria_scores.contains_key("cost"));
+    }
+
+    #[test]
+    fn test_recommendation_deserialize() {
+        let json = r#"{
+            "option": "Best choice",
+            "score": 0.92,
+            "confidence": 0.88,
+            "rationale": "Optimal across all criteria"
+        }"#;
+        let rec: Recommendation = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.option, "Best choice");
+        assert_eq!(rec.score, 0.92);
+        assert_eq!(rec.confidence, 0.88);
+    }
+
+    #[test]
+    fn test_sensitivity_analysis_deserialize() {
+        let json = r#"{
+            "robust": false,
+            "critical_criteria": ["cost", "quality"],
+            "threshold_changes": {"cost": 0.1, "quality": 0.15}
+        }"#;
+        let sa: SensitivityAnalysis = serde_json::from_str(json).unwrap();
+        assert!(!sa.robust);
+        assert_eq!(sa.critical_criteria.len(), 2);
+        assert_eq!(sa.threshold_changes.get("cost"), Some(&0.1));
+    }
+
+    // ========================================================================
+    // TradeOff Tests
+    // ========================================================================
+
+    #[test]
+    fn test_trade_off_deserialize() {
+        let json = r#"{
+            "between": ["Option A", "Option B"],
+            "trade_off": "A is faster but B is cheaper"
+        }"#;
+        let to: TradeOff = serde_json::from_str(json).unwrap();
+        assert_eq!(to.between.0, "Option A");
+        assert_eq!(to.between.1, "Option B");
+        assert!(to.trade_off.contains("faster"));
+    }
+
+    #[test]
+    fn test_trade_off_round_trip() {
+        let original = TradeOff {
+            between: ("X".to_string(), "Y".to_string()),
+            trade_off: "Different tradeoff".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: TradeOff = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.between.0, deserialized.between.0);
+        assert_eq!(original.between.1, deserialized.between.1);
+        assert_eq!(original.trade_off, deserialized.trade_off);
+    }
+
+    // ========================================================================
+    // Conflict Tests
+    // ========================================================================
+
+    #[test]
+    fn test_conflict_deserialize() {
+        let json = r#"{
+            "stakeholders": ["Alice", "Bob"],
+            "issue": "Resource allocation",
+            "severity": 0.65,
+            "resolution_approach": "Negotiate priorities"
+        }"#;
+        let conflict: Conflict = serde_json::from_str(json).unwrap();
+        assert_eq!(conflict.stakeholders.0, "Alice");
+        assert_eq!(conflict.stakeholders.1, "Bob");
+        assert_eq!(conflict.severity, 0.65);
+    }
+
+    #[test]
+    fn test_conflict_round_trip() {
+        let original = Conflict {
+            stakeholders: ("Dev".to_string(), "PM".to_string()),
+            issue: "Timeline disagreement".to_string(),
+            severity: 0.8,
+            resolution_approach: "Escalate to CTO".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Conflict = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.stakeholders, deserialized.stakeholders);
+        assert_eq!(original.issue, deserialized.issue);
+        assert_eq!(original.severity, deserialized.severity);
+        assert_eq!(
+            original.resolution_approach,
+            deserialized.resolution_approach
+        );
+    }
+
+    // ========================================================================
+    // Alignment Tests
+    // ========================================================================
+
+    #[test]
+    fn test_alignment_deserialize() {
+        let json = r#"{
+            "stakeholders": ["Alice", "Carol"],
+            "shared_interest": "Product quality"
+        }"#;
+        let alignment: Alignment = serde_json::from_str(json).unwrap();
+        assert_eq!(alignment.stakeholders.0, "Alice");
+        assert_eq!(alignment.stakeholders.1, "Carol");
+        assert_eq!(alignment.shared_interest, "Product quality");
+    }
+
+    #[test]
+    fn test_alignment_round_trip() {
+        let original = Alignment {
+            stakeholders: ("Team A".to_string(), "Team B".to_string()),
+            shared_interest: "Security".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Alignment = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.stakeholders, deserialized.stakeholders);
+        assert_eq!(original.shared_interest, deserialized.shared_interest);
+    }
+
+    // ========================================================================
+    // Synthesis Tests
+    // ========================================================================
+
+    #[test]
+    fn test_synthesis_deserialize() {
+        let json = r#"{
+            "consensus_areas": ["Quality", "Security"],
+            "contentious_areas": ["Timeline", "Budget"],
+            "recommendation": "Prioritize quality first"
+        }"#;
+        let synthesis: Synthesis = serde_json::from_str(json).unwrap();
+        assert_eq!(synthesis.consensus_areas.len(), 2);
+        assert_eq!(synthesis.contentious_areas.len(), 2);
+        assert!(synthesis.recommendation.contains("quality"));
+    }
+
+    #[test]
+    fn test_synthesis_round_trip() {
+        let original = Synthesis {
+            consensus_areas: vec!["A".to_string(), "B".to_string()],
+            contentious_areas: vec!["C".to_string()],
+            recommendation: "Proceed with caution".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: Synthesis = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.consensus_areas, deserialized.consensus_areas);
+        assert_eq!(original.contentious_areas, deserialized.contentious_areas);
+        assert_eq!(original.recommendation, deserialized.recommendation);
+    }
+
+    // ========================================================================
+    // PowerMatrix Tests
+    // ========================================================================
+
+    #[test]
+    fn test_power_matrix_deserialize() {
+        let json = r#"{
+            "key_players": ["CEO", "CTO"],
+            "keep_satisfied": ["Board"],
+            "keep_informed": ["Team"],
+            "minimal_effort": ["Vendor"]
+        }"#;
+        let pm: PowerMatrix = serde_json::from_str(json).unwrap();
+        assert_eq!(pm.key_players.len(), 2);
+        assert_eq!(pm.keep_satisfied.len(), 1);
+        assert_eq!(pm.keep_informed.len(), 1);
+        assert_eq!(pm.minimal_effort.len(), 1);
+    }
+
+    #[test]
+    fn test_power_matrix_round_trip() {
+        let original = PowerMatrix {
+            key_players: vec!["A".to_string()],
+            keep_satisfied: vec!["B".to_string(), "C".to_string()],
+            keep_informed: vec![],
+            minimal_effort: vec!["D".to_string()],
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: PowerMatrix = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.key_players, deserialized.key_players);
+        assert_eq!(original.keep_satisfied, deserialized.keep_satisfied);
+        assert_eq!(original.keep_informed, deserialized.keep_informed);
+        assert_eq!(original.minimal_effort, deserialized.minimal_effort);
+    }
+
+    #[test]
+    fn test_power_matrix_empty_quadrants() {
+        let pm = PowerMatrix {
+            key_players: vec![],
+            keep_satisfied: vec![],
+            keep_informed: vec![],
+            minimal_effort: vec![],
+        };
+        let json = serde_json::to_string(&pm).unwrap();
+        let deserialized: PowerMatrix = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.key_players.is_empty());
+        assert!(deserialized.keep_satisfied.is_empty());
+    }
+
+    // ========================================================================
+    // StakeholderAnalysis Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stakeholder_analysis_deserialize() {
+        let json = r#"{
+            "name": "John",
+            "role": "Manager",
+            "perspective": "Focus on ROI",
+            "interests": ["Cost reduction"],
+            "concerns": ["Risk"],
+            "power_level": 0.7,
+            "interest_level": 0.8,
+            "quadrant": "key_player",
+            "engagement_strategy": "Weekly updates"
+        }"#;
+        let sa: StakeholderAnalysis = serde_json::from_str(json).unwrap();
+        assert_eq!(sa.name, "John");
+        assert_eq!(sa.role, "Manager");
+        assert_eq!(sa.power_level, 0.7);
+        assert_eq!(sa.quadrant, Quadrant::KeyPlayer);
+    }
+
+    #[test]
+    fn test_stakeholder_analysis_round_trip() {
+        let original = StakeholderAnalysis {
+            name: "Sarah".to_string(),
+            role: "Dev Lead".to_string(),
+            perspective: "Tech debt concerns".to_string(),
+            interests: vec!["Quality".to_string()],
+            concerns: vec!["Timeline".to_string(), "Resources".to_string()],
+            power_level: 0.6,
+            interest_level: 0.9,
+            quadrant: Quadrant::KeepInformed,
+            engagement_strategy: "Monthly review".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: StakeholderAnalysis = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.name, deserialized.name);
+        assert_eq!(original.quadrant, deserialized.quadrant);
+        assert_eq!(original.power_level, deserialized.power_level);
+    }
+
+    // ========================================================================
+    // DecisionResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decision_result_serialize() {
+        let result = DecisionResult {
+            decision_id: "dec-1".to_string(),
+            session_id: "sess-1".to_string(),
+            question: "Which option?".to_string(),
+            recommendation: Recommendation {
+                option: "A".to_string(),
+                score: 0.9,
+                confidence: 0.85,
+                rationale: "Best choice".to_string(),
+            },
+            scores: vec![],
+            sensitivity_analysis: SensitivityAnalysis {
+                robust: true,
+                critical_criteria: vec![],
+                threshold_changes: HashMap::new(),
+            },
+            trade_offs: vec![],
+            constraints_satisfied: HashMap::new(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("dec-1"));
+        assert!(json.contains("Which option?"));
+    }
+
+    #[test]
+    fn test_decision_result_deserialize() {
+        let json = r#"{
+            "decision_id": "d-123",
+            "session_id": "s-456",
+            "question": "Test?",
+            "recommendation": {
+                "option": "B",
+                "score": 0.8,
+                "confidence": 0.7,
+                "rationale": "Good"
+            },
+            "scores": [],
+            "sensitivity_analysis": {
+                "robust": false,
+                "critical_criteria": [],
+                "threshold_changes": {}
+            },
+            "trade_offs": [],
+            "constraints_satisfied": {}
+        }"#;
+        let result: DecisionResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.decision_id, "d-123");
+        assert_eq!(result.session_id, "s-456");
+        assert_eq!(result.recommendation.option, "B");
+    }
+
+    // ========================================================================
+    // PerspectiveResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_perspective_result_serialize() {
+        let result = PerspectiveResult {
+            analysis_id: "ana-1".to_string(),
+            session_id: "sess-1".to_string(),
+            topic: "Topic".to_string(),
+            stakeholders: vec![],
+            power_matrix: None,
+            conflicts: vec![],
+            alignments: vec![],
+            synthesis: Synthesis {
+                consensus_areas: vec![],
+                contentious_areas: vec![],
+                recommendation: "Proceed".to_string(),
+            },
+            confidence: 0.75,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("ana-1"));
+        assert!(json.contains("Topic"));
+        assert!(json.contains("0.75"));
+    }
+
+    #[test]
+    fn test_perspective_result_deserialize() {
+        let json = r#"{
+            "analysis_id": "a-789",
+            "session_id": "s-101",
+            "topic": "Migration",
+            "stakeholders": [],
+            "conflicts": [],
+            "alignments": [],
+            "synthesis": {
+                "consensus_areas": [],
+                "contentious_areas": [],
+                "recommendation": "Wait"
+            },
+            "confidence": 0.6
+        }"#;
+        let result: PerspectiveResult = serde_json::from_str(json).unwrap();
+        assert_eq!(result.analysis_id, "a-789");
+        assert_eq!(result.topic, "Migration");
+        assert_eq!(result.confidence, 0.6);
+        assert!(result.power_matrix.is_none());
+    }
+
+    #[test]
+    fn test_perspective_result_with_power_matrix() {
+        let result = PerspectiveResult {
+            analysis_id: "a-1".to_string(),
+            session_id: "s-1".to_string(),
+            topic: "T".to_string(),
+            stakeholders: vec![],
+            power_matrix: Some(PowerMatrix {
+                key_players: vec!["CEO".to_string()],
+                keep_satisfied: vec![],
+                keep_informed: vec![],
+                minimal_effort: vec![],
+            }),
+            conflicts: vec![],
+            alignments: vec![],
+            synthesis: Synthesis {
+                consensus_areas: vec![],
+                contentious_areas: vec![],
+                recommendation: "R".to_string(),
+            },
+            confidence: 0.8,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: PerspectiveResult = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.power_matrix.is_some());
+        assert_eq!(deserialized.power_matrix.unwrap().key_players.len(), 1);
+    }
+
+    // ========================================================================
+    // Edge Cases and Unicode
+    // ========================================================================
+
+    #[test]
+    fn test_decision_params_unicode() {
+        let params = DecisionParams::new(
+            "选择哪个选项？",
+            vec!["选项 A".to_string(), "选项 B".to_string()],
+        )
+        .with_criterion("成本", 0.5);
+
+        let json = serde_json::to_string(&params).unwrap();
+        let deserialized: DecisionParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.question, "选择哪个选项？");
+        assert_eq!(deserialized.options[0], "选项 A");
+        assert_eq!(deserialized.criteria[0].name, "成本");
+    }
+
+    #[test]
+    fn test_perspective_params_unicode() {
+        let params = PerspectiveParams::new("政策变更")
+            .with_stakeholder("张三")
+            .with_context("重要背景");
+
+        let json = serde_json::to_string(&params).unwrap();
+        let deserialized: PerspectiveParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.topic, "政策变更");
+        assert_eq!(deserialized.stakeholders[0].name, "张三");
+        assert_eq!(deserialized.context, Some("重要背景".to_string()));
+    }
+
+    #[test]
+    fn test_criterion_extreme_weights() {
+        let zero_weight = Criterion {
+            name: "zero".to_string(),
+            weight: 0.0,
+            description: None,
+        };
+        let full_weight = Criterion {
+            name: "full".to_string(),
+            weight: 1.0,
+            description: None,
+        };
+
+        let json_zero = serde_json::to_string(&zero_weight).unwrap();
+        let json_full = serde_json::to_string(&full_weight).unwrap();
+
+        let deserialized_zero: Criterion = serde_json::from_str(&json_zero).unwrap();
+        let deserialized_full: Criterion = serde_json::from_str(&json_full).unwrap();
+
+        assert_eq!(deserialized_zero.weight, 0.0);
+        assert_eq!(deserialized_full.weight, 1.0);
+    }
+
+    #[test]
+    fn test_decision_params_empty_options_deserialization() {
+        let json = r#"{"question": "Q", "options": []}"#;
+        let params: DecisionParams = serde_json::from_str(json).unwrap();
+        assert!(params.options.is_empty());
+    }
+
+    #[test]
+    fn test_stakeholder_analysis_extreme_power_interest() {
+        let sa = StakeholderAnalysis {
+            name: "Test".to_string(),
+            role: "R".to_string(),
+            perspective: "P".to_string(),
+            interests: vec![],
+            concerns: vec![],
+            power_level: 0.0,
+            interest_level: 1.0,
+            quadrant: Quadrant::KeepInformed,
+            engagement_strategy: "S".to_string(),
+        };
+
+        let json = serde_json::to_string(&sa).unwrap();
+        let deserialized: StakeholderAnalysis = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.power_level, 0.0);
+        assert_eq!(deserialized.interest_level, 1.0);
+    }
+
+    #[test]
+    fn test_decision_result_empty_collections() {
+        let result = DecisionResult {
+            decision_id: "d-1".to_string(),
+            session_id: "s-1".to_string(),
+            question: "Q".to_string(),
+            recommendation: Recommendation {
+                option: "A".to_string(),
+                score: 0.5,
+                confidence: 0.5,
+                rationale: "R".to_string(),
+            },
+            scores: vec![],
+            sensitivity_analysis: SensitivityAnalysis {
+                robust: true,
+                critical_criteria: vec![],
+                threshold_changes: HashMap::new(),
+            },
+            trade_offs: vec![],
+            constraints_satisfied: HashMap::new(),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: DecisionResult = serde_json::from_str(&json).unwrap();
+
+        assert!(deserialized.scores.is_empty());
+        assert!(deserialized.trade_offs.is_empty());
+        assert!(deserialized.constraints_satisfied.is_empty());
+    }
+
+    #[test]
+    fn test_perspective_result_empty_collections() {
+        let result = PerspectiveResult {
+            analysis_id: "a-1".to_string(),
+            session_id: "s-1".to_string(),
+            topic: "T".to_string(),
+            stakeholders: vec![],
+            power_matrix: None,
+            conflicts: vec![],
+            alignments: vec![],
+            synthesis: Synthesis {
+                consensus_areas: vec![],
+                contentious_areas: vec![],
+                recommendation: "R".to_string(),
+            },
+            confidence: 0.5,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: PerspectiveResult = serde_json::from_str(&json).unwrap();
+
+        assert!(deserialized.stakeholders.is_empty());
+        assert!(deserialized.conflicts.is_empty());
+        assert!(deserialized.alignments.is_empty());
+    }
+
+    // ========================================================================
+    // CriterionScore Tests
+    // ========================================================================
+
+    #[test]
+    fn test_criterion_score_serialize() {
+        let score = CriterionScore {
+            score: 0.95,
+            reasoning: "Excellent performance".to_string(),
+        };
+        let json = serde_json::to_string(&score).unwrap();
+        assert!(json.contains("0.95"));
+        assert!(json.contains("Excellent performance"));
+    }
+
+    #[test]
+    fn test_criterion_score_round_trip() {
+        let original = CriterionScore {
+            score: 0.33,
+            reasoning: "Below average".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: CriterionScore = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.score, deserialized.score);
+        assert_eq!(original.reasoning, deserialized.reasoning);
+    }
+
+    // ========================================================================
+    // OptionScore Tests
+    // ========================================================================
+
+    #[test]
+    fn test_option_score_serialize() {
+        let mut criteria_scores = HashMap::new();
+        criteria_scores.insert(
+            "cost".to_string(),
+            CriterionScore {
+                score: 0.8,
+                reasoning: "Good".to_string(),
+            },
+        );
+
+        let score = OptionScore {
+            option: "Option X".to_string(),
+            total_score: 0.82,
+            criteria_scores,
+            rank: 2,
+        };
+
+        let json = serde_json::to_string(&score).unwrap();
+        assert!(json.contains("Option X"));
+        assert!(json.contains("0.82"));
+    }
+
+    #[test]
+    fn test_option_score_round_trip() {
+        let mut criteria_scores = HashMap::new();
+        criteria_scores.insert(
+            "quality".to_string(),
+            CriterionScore {
+                score: 0.9,
+                reasoning: "High quality".to_string(),
+            },
+        );
+
+        let original = OptionScore {
+            option: "Best".to_string(),
+            total_score: 0.88,
+            criteria_scores,
+            rank: 1,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OptionScore = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.option, deserialized.option);
+        assert_eq!(original.total_score, deserialized.total_score);
+        assert_eq!(original.rank, deserialized.rank);
+        assert_eq!(
+            original.criteria_scores.len(),
+            deserialized.criteria_scores.len()
+        );
+    }
+
+    // ========================================================================
+    // Response Type Tests (for parsing)
+    // ========================================================================
+
+    #[test]
+    fn test_trade_off_response_deserialize() {
+        let json = r#"{
+            "between": ["A", "B"],
+            "trade_off": "Speed vs cost"
+        }"#;
+        let tor: TradeOffResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(tor.between.len(), 2);
+        assert_eq!(tor.trade_off, "Speed vs cost");
+    }
+
+    #[test]
+    fn test_conflict_response_deserialize() {
+        let json = r#"{
+            "stakeholders": ["Alice", "Bob"],
+            "issue": "Priority conflict",
+            "severity": 0.8,
+            "resolution_approach": "Mediation"
+        }"#;
+        let cr: ConflictResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(cr.stakeholders.len(), 2);
+        assert_eq!(cr.severity, 0.8);
+    }
+
+    #[test]
+    fn test_alignment_response_deserialize() {
+        let json = r#"{
+            "stakeholders": ["Carol", "Dave"],
+            "shared_interest": "Innovation"
+        }"#;
+        let ar: AlignmentResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(ar.stakeholders.len(), 2);
+        assert_eq!(ar.shared_interest, "Innovation");
+    }
+
+    // ========================================================================
+    // Quadrant Comprehensive Tests
+    // ========================================================================
+
+    #[test]
+    fn test_quadrant_equality() {
+        assert_eq!(Quadrant::KeyPlayer, Quadrant::KeyPlayer);
+        assert_ne!(Quadrant::KeyPlayer, Quadrant::KeepSatisfied);
+    }
+
+    #[test]
+    fn test_quadrant_clone() {
+        let q1 = Quadrant::KeyPlayer;
+        let q2 = q1.clone();
+        assert_eq!(q1, q2);
+    }
+
+    #[test]
+    fn test_quadrant_all_variants_display() {
+        let variants = vec![
+            (Quadrant::KeyPlayer, "key_player"),
+            (Quadrant::KeepSatisfied, "keep_satisfied"),
+            (Quadrant::KeepInformed, "keep_informed"),
+            (Quadrant::MinimalEffort, "minimal_effort"),
+        ];
+
+        for (variant, expected) in variants {
+            assert_eq!(format!("{}", variant), expected);
+        }
+    }
+
+    #[test]
+    fn test_quadrant_all_variants_serialize() {
+        let variants = vec![
+            Quadrant::KeyPlayer,
+            Quadrant::KeepSatisfied,
+            Quadrant::KeepInformed,
+            Quadrant::MinimalEffort,
+        ];
+
+        for variant in variants {
+            let json = serde_json::to_string(&variant).unwrap();
+            let deserialized: Quadrant = serde_json::from_str(&json).unwrap();
+            assert_eq!(variant, deserialized);
+        }
+    }
+
+    // ========================================================================
+    // DecisionMethod Comprehensive Tests
+    // ========================================================================
+
+    #[test]
+    fn test_decision_method_equality() {
+        assert_eq!(DecisionMethod::WeightedSum, DecisionMethod::WeightedSum);
+        assert_ne!(DecisionMethod::WeightedSum, DecisionMethod::Pairwise);
+    }
+
+    #[test]
+    fn test_decision_method_clone() {
+        let m1 = DecisionMethod::Topsis;
+        let m2 = m1.clone();
+        assert_eq!(m1, m2);
+    }
+
+    #[test]
+    fn test_decision_method_copy() {
+        let m1 = DecisionMethod::Pairwise;
+        let m2 = m1; // Copy trait
+        assert_eq!(m1, m2);
+    }
+
+    // ========================================================================
+    // Complex Nested Structures
+    // ========================================================================
+
+    #[test]
+    fn test_decision_result_with_full_data() {
+        let mut criteria_scores = HashMap::new();
+        criteria_scores.insert(
+            "cost".to_string(),
+            CriterionScore {
+                score: 0.9,
+                reasoning: "Low cost".to_string(),
+            },
+        );
+
+        let mut threshold_changes = HashMap::new();
+        threshold_changes.insert("cost".to_string(), 0.15);
+
+        let mut constraints = HashMap::new();
+        constraints.insert("Option A".to_string(), true);
+
+        let result = DecisionResult {
+            decision_id: "d-complex".to_string(),
+            session_id: "s-complex".to_string(),
+            question: "Complex decision?".to_string(),
+            recommendation: Recommendation {
+                option: "Option A".to_string(),
+                score: 0.92,
+                confidence: 0.88,
+                rationale: "Best overall".to_string(),
+            },
+            scores: vec![OptionScore {
+                option: "Option A".to_string(),
+                total_score: 0.92,
+                criteria_scores: criteria_scores.clone(),
+                rank: 1,
+            }],
+            sensitivity_analysis: SensitivityAnalysis {
+                robust: true,
+                critical_criteria: vec!["cost".to_string()],
+                threshold_changes,
+            },
+            trade_offs: vec![TradeOff {
+                between: ("Option A".to_string(), "Option B".to_string()),
+                trade_off: "A is better".to_string(),
+            }],
+            constraints_satisfied: constraints,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: DecisionResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.decision_id, deserialized.decision_id);
+        assert_eq!(result.scores.len(), deserialized.scores.len());
+        assert_eq!(result.trade_offs.len(), deserialized.trade_offs.len());
+    }
+
+    #[test]
+    fn test_perspective_result_with_full_data() {
+        let result = PerspectiveResult {
+            analysis_id: "a-complex".to_string(),
+            session_id: "s-complex".to_string(),
+            topic: "Complex topic".to_string(),
+            stakeholders: vec![StakeholderAnalysis {
+                name: "Alice".to_string(),
+                role: "CEO".to_string(),
+                perspective: "Strategic".to_string(),
+                interests: vec!["Growth".to_string()],
+                concerns: vec!["Risk".to_string()],
+                power_level: 1.0,
+                interest_level: 0.9,
+                quadrant: Quadrant::KeyPlayer,
+                engagement_strategy: "Direct".to_string(),
+            }],
+            power_matrix: Some(PowerMatrix {
+                key_players: vec!["Alice".to_string()],
+                keep_satisfied: vec![],
+                keep_informed: vec![],
+                minimal_effort: vec![],
+            }),
+            conflicts: vec![Conflict {
+                stakeholders: ("Alice".to_string(), "Bob".to_string()),
+                issue: "Priority".to_string(),
+                severity: 0.6,
+                resolution_approach: "Negotiate".to_string(),
+            }],
+            alignments: vec![Alignment {
+                stakeholders: ("Alice".to_string(), "Carol".to_string()),
+                shared_interest: "Quality".to_string(),
+            }],
+            synthesis: Synthesis {
+                consensus_areas: vec!["Quality".to_string()],
+                contentious_areas: vec!["Timeline".to_string()],
+                recommendation: "Proceed".to_string(),
+            },
+            confidence: 0.85,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: PerspectiveResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(result.analysis_id, deserialized.analysis_id);
+        assert_eq!(result.stakeholders.len(), deserialized.stakeholders.len());
+        assert_eq!(result.conflicts.len(), deserialized.conflicts.len());
+        assert_eq!(result.alignments.len(), deserialized.alignments.len());
+    }
+
+    // ========================================================================
+    // StakeholderInput Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_stakeholder_input_empty_interests() {
+        let stakeholder = StakeholderInput {
+            name: "Test".to_string(),
+            role: Some("Role".to_string()),
+            interests: vec![],
+        };
+
+        let json = serde_json::to_string(&stakeholder).unwrap();
+        let deserialized: StakeholderInput = serde_json::from_str(&json).unwrap();
+
+        assert!(deserialized.interests.is_empty());
+    }
+
+    #[test]
+    fn test_stakeholder_input_round_trip() {
+        let original = StakeholderInput {
+            name: "Full Test".to_string(),
+            role: Some("Engineer".to_string()),
+            interests: vec!["Tech".to_string(), "Innovation".to_string()],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: StakeholderInput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.name, deserialized.name);
+        assert_eq!(original.role, deserialized.role);
+        assert_eq!(original.interests, deserialized.interests);
+    }
 }

@@ -507,4 +507,493 @@ mod tests {
         assert!(matches!(msg.role, MessageRole::Assistant));
         assert_eq!(msg.content, "Assistant response");
     }
+
+    // URL Building Tests
+    #[test]
+    fn test_client_base_url_multiple_trailing_slashes() {
+        let config = LangbaseConfig {
+            api_key: "test_key".to_string(),
+            base_url: "https://api.langbase.com///".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        assert_eq!(client.base_url(), "https://api.langbase.com");
+    }
+
+    #[test]
+    fn test_client_base_url_with_path() {
+        let config = LangbaseConfig {
+            api_key: "test_key".to_string(),
+            base_url: "https://api.langbase.com/v2/".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        assert_eq!(client.base_url(), "https://api.langbase.com/v2");
+    }
+
+    #[test]
+    fn test_client_base_url_no_protocol() {
+        let config = LangbaseConfig {
+            api_key: "test_key".to_string(),
+            base_url: "api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        assert_eq!(client.base_url(), "api.langbase.com");
+    }
+
+    #[test]
+    fn test_client_base_url_localhost() {
+        let config = LangbaseConfig {
+            api_key: "test_key".to_string(),
+            base_url: "http://localhost:8080/".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        assert_eq!(client.base_url(), "http://localhost:8080");
+    }
+
+    #[test]
+    fn test_client_base_url_with_port() {
+        let config = LangbaseConfig {
+            api_key: "test_key".to_string(),
+            base_url: "https://api.langbase.com:443/".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        assert_eq!(client.base_url(), "https://api.langbase.com:443");
+    }
+
+    // PipeRequest Construction Tests
+    #[test]
+    fn test_pipe_request_empty_messages() {
+        let messages = vec![];
+        let request = PipeRequest::new("test-pipe", messages);
+        assert_eq!(request.name, "test-pipe");
+        assert_eq!(request.messages.len(), 0);
+        assert!(request.thread_id.is_none());
+        assert!(request.variables.is_none());
+    }
+
+    #[test]
+    fn test_pipe_request_single_message() {
+        let messages = vec![Message::user("Single message")];
+        let request = PipeRequest::new("pipe-1", messages);
+        assert_eq!(request.messages.len(), 1);
+        assert_eq!(request.messages[0].content, "Single message");
+    }
+
+    #[test]
+    fn test_pipe_request_multiple_messages_all_roles() {
+        let messages = vec![
+            Message::system("System prompt"),
+            Message::user("User query 1"),
+            Message::assistant("Assistant response 1"),
+            Message::user("User query 2"),
+        ];
+        let request = PipeRequest::new("pipe-1", messages);
+        assert_eq!(request.messages.len(), 4);
+    }
+
+    #[test]
+    fn test_pipe_request_with_empty_thread_id() {
+        let messages = vec![Message::user("Test")];
+        let request = PipeRequest::new("pipe-1", messages).with_thread_id("");
+        assert_eq!(request.thread_id, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_pipe_request_with_special_chars_in_thread_id() {
+        let messages = vec![Message::user("Test")];
+        let request =
+            PipeRequest::new("pipe-1", messages).with_thread_id("thread-123-abc_!@#$%^&*()");
+        assert_eq!(
+            request.thread_id,
+            Some("thread-123-abc_!@#$%^&*()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_pipe_request_with_empty_variables() {
+        let messages = vec![Message::user("Test")];
+        let vars = std::collections::HashMap::new();
+        let request = PipeRequest::new("pipe-1", messages).with_variables(vars);
+        assert!(request.variables.is_some());
+        assert_eq!(request.variables.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_pipe_request_with_many_variables() {
+        let messages = vec![Message::user("Test")];
+        let mut vars = std::collections::HashMap::new();
+        for i in 0..100 {
+            vars.insert(format!("key{}", i), format!("value{}", i));
+        }
+        let request = PipeRequest::new("pipe-1", messages).with_variables(vars);
+        assert_eq!(request.variables.unwrap().len(), 100);
+    }
+
+    #[test]
+    fn test_pipe_request_chaining_all_options() {
+        let messages = vec![Message::user("Test")];
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("key".to_string(), "value".to_string());
+        let request = PipeRequest::new("pipe-1", messages)
+            .with_thread_id("thread-123")
+            .with_variables(vars);
+        assert!(request.thread_id.is_some());
+        assert!(request.variables.is_some());
+    }
+
+    // CreatePipeRequest Builder Tests
+    #[test]
+    fn test_create_pipe_request_empty_name() {
+        let request = CreatePipeRequest::new("");
+        assert_eq!(request.name, "");
+    }
+
+    #[test]
+    fn test_create_pipe_request_name_with_special_chars() {
+        let request = CreatePipeRequest::new("my-pipe_v1.0-test");
+        assert_eq!(request.name, "my-pipe_v1.0-test");
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_empty_description() {
+        let request = CreatePipeRequest::new("pipe-1").with_description("");
+        assert_eq!(request.description, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_long_description() {
+        let long_desc = "a".repeat(1000);
+        let request = CreatePipeRequest::new("pipe-1").with_description(&long_desc);
+        assert_eq!(request.description, Some(long_desc));
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_various_models() {
+        let models = vec![
+            "openai:gpt-4o-mini",
+            "openai:gpt-4o",
+            "anthropic:claude-3-opus",
+            "custom-model",
+        ];
+        for model in models {
+            let request = CreatePipeRequest::new("pipe-1").with_model(model);
+            assert_eq!(request.model, Some(model.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_create_pipe_request_upsert_false() {
+        let request = CreatePipeRequest::new("pipe-1").with_upsert(false);
+        assert_eq!(request.upsert, Some(false));
+    }
+
+    #[test]
+    fn test_create_pipe_request_json_output_false() {
+        let request = CreatePipeRequest::new("pipe-1").with_json_output(false);
+        assert_eq!(request.json, Some(false));
+    }
+
+    #[test]
+    fn test_create_pipe_request_temperature_bounds() {
+        let temps = vec![0.0, 0.5, 1.0, 1.5, 2.0];
+        for temp in temps {
+            let request = CreatePipeRequest::new("pipe-1").with_temperature(temp);
+            assert_eq!(request.temperature, Some(temp));
+        }
+    }
+
+    #[test]
+    fn test_create_pipe_request_max_tokens_various() {
+        let token_counts = vec![1, 100, 1000, 4096, 8192];
+        for tokens in token_counts {
+            let request = CreatePipeRequest::new("pipe-1").with_max_tokens(tokens);
+            assert_eq!(request.max_tokens, Some(tokens));
+        }
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_empty_messages() {
+        let request = CreatePipeRequest::new("pipe-1").with_messages(vec![]);
+        assert!(request.messages.is_some());
+        assert_eq!(request.messages.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_multiple_system_messages() {
+        let messages = vec![
+            Message::system("System 1"),
+            Message::system("System 2"),
+            Message::system("System 3"),
+        ];
+        let request = CreatePipeRequest::new("pipe-1").with_messages(messages);
+        assert_eq!(request.messages.unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_create_pipe_request_full_builder_chain() {
+        let messages = vec![Message::system("Test")];
+        let request = CreatePipeRequest::new("full-pipe")
+            .with_description("Full test")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.8)
+            .with_max_tokens(3000)
+            .with_messages(messages);
+
+        assert_eq!(request.name, "full-pipe");
+        assert_eq!(request.description, Some("Full test".to_string()));
+        assert_eq!(request.model, Some("openai:gpt-4o-mini".to_string()));
+        assert_eq!(request.upsert, Some(true));
+        assert_eq!(request.json, Some(true));
+        assert_eq!(request.temperature, Some(0.8));
+        assert_eq!(request.max_tokens, Some(3000));
+        assert!(request.messages.is_some());
+    }
+
+    // Message Builder Tests
+    #[test]
+    fn test_message_system_empty_content() {
+        let msg = Message::system("");
+        assert_eq!(msg.content, "");
+    }
+
+    #[test]
+    fn test_message_user_empty_content() {
+        let msg = Message::user("");
+        assert_eq!(msg.content, "");
+    }
+
+    #[test]
+    fn test_message_assistant_empty_content() {
+        let msg = Message::assistant("");
+        assert_eq!(msg.content, "");
+    }
+
+    #[test]
+    fn test_message_system_long_content() {
+        let long_content = "x".repeat(10000);
+        let msg = Message::system(&long_content);
+        assert_eq!(msg.content, long_content);
+    }
+
+    #[test]
+    fn test_message_user_with_special_chars() {
+        let content = "Test\n\r\t!@#$%^&*(){}[]<>?/|\\\"'`~";
+        let msg = Message::user(content);
+        assert_eq!(msg.content, content);
+    }
+
+    #[test]
+    fn test_message_assistant_with_unicode() {
+        let content = "Hello 世界 🌍 émoji ñ ü";
+        let msg = Message::assistant(content);
+        assert_eq!(msg.content, content);
+    }
+
+    #[test]
+    fn test_message_user_with_json() {
+        let json_content = r#"{"key": "value", "nested": {"data": 123}}"#;
+        let msg = Message::user(json_content);
+        assert_eq!(msg.content, json_content);
+    }
+
+    // RequestConfig Tests
+    #[test]
+    fn test_request_config_default_values() {
+        let config = RequestConfig::default();
+        assert!(config.timeout_ms > 0);
+        assert!(config.max_retries >= 0);
+        assert!(config.retry_delay_ms > 0);
+    }
+
+    #[test]
+    fn test_request_config_zero_retries() {
+        let config = RequestConfig {
+            timeout_ms: 30000,
+            max_retries: 0,
+            retry_delay_ms: 1000,
+        };
+        let langbase_config = LangbaseConfig {
+            api_key: "test".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&langbase_config, config);
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_request_config_high_timeout() {
+        let config = RequestConfig {
+            timeout_ms: 300000,
+            max_retries: 3,
+            retry_delay_ms: 1000,
+        };
+        let langbase_config = LangbaseConfig {
+            api_key: "test".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&langbase_config, config);
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_request_config_many_retries() {
+        let config = RequestConfig {
+            timeout_ms: 30000,
+            max_retries: 10,
+            retry_delay_ms: 500,
+        };
+        let langbase_config = LangbaseConfig {
+            api_key: "test".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&langbase_config, config);
+        assert!(client.is_ok());
+    }
+
+    // Client Configuration Tests
+    #[test]
+    fn test_client_with_empty_api_key() {
+        let config = LangbaseConfig {
+            api_key: "".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default());
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_client_with_long_api_key() {
+        let long_key = "k".repeat(500);
+        let config = LangbaseConfig {
+            api_key: long_key.clone(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default());
+        assert!(client.is_ok());
+    }
+
+    #[test]
+    fn test_client_base_url_immutability() {
+        let config = LangbaseConfig {
+            api_key: "test".to_string(),
+            base_url: "https://api.langbase.com/".to_string(),
+        };
+        let client = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        let url1 = client.base_url();
+        let url2 = client.base_url();
+        assert_eq!(url1, url2);
+        assert_eq!(url1, "https://api.langbase.com");
+    }
+
+    #[test]
+    fn test_client_clone() {
+        let config = LangbaseConfig {
+            api_key: "test".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+        let client1 = LangbaseClient::new(&config, RequestConfig::default()).unwrap();
+        let client2 = client1.clone();
+        assert_eq!(client1.base_url(), client2.base_url());
+    }
+
+    // Pipe Name Tests
+    #[test]
+    fn test_pipe_request_with_hyphenated_name() {
+        let messages = vec![Message::user("Test")];
+        let request = PipeRequest::new("my-custom-pipe-v1", messages);
+        assert_eq!(request.name, "my-custom-pipe-v1");
+    }
+
+    #[test]
+    fn test_pipe_request_with_underscored_name() {
+        let messages = vec![Message::user("Test")];
+        let request = PipeRequest::new("my_custom_pipe_v1", messages);
+        assert_eq!(request.name, "my_custom_pipe_v1");
+    }
+
+    #[test]
+    fn test_pipe_request_with_numeric_name() {
+        let messages = vec![Message::user("Test")];
+        let request = PipeRequest::new("pipe123", messages);
+        assert_eq!(request.name, "pipe123");
+    }
+
+    #[test]
+    fn test_create_pipe_request_with_version_suffix() {
+        let request = CreatePipeRequest::new("reasoning-v2.1.0");
+        assert_eq!(request.name, "reasoning-v2.1.0");
+    }
+
+    // Edge Cases
+    #[test]
+    fn test_pipe_request_with_very_long_name() {
+        let long_name = "pipe-".to_string() + &"a".repeat(200);
+        let messages = vec![Message::user("Test")];
+        let request = PipeRequest::new(&long_name, messages);
+        assert_eq!(request.name, long_name);
+    }
+
+    #[test]
+    fn test_message_content_with_null_bytes() {
+        let content = "Hello\0World";
+        let msg = Message::user(content);
+        assert_eq!(msg.content, content);
+    }
+
+    #[test]
+    fn test_create_pipe_request_temperature_negative() {
+        let request = CreatePipeRequest::new("pipe-1").with_temperature(-0.5);
+        assert_eq!(request.temperature, Some(-0.5));
+    }
+
+    #[test]
+    fn test_create_pipe_request_max_tokens_zero() {
+        let request = CreatePipeRequest::new("pipe-1").with_max_tokens(0);
+        assert_eq!(request.max_tokens, Some(0));
+    }
+
+    #[test]
+    fn test_variables_with_special_key_names() {
+        let messages = vec![Message::user("Test")];
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("key-with-dashes".to_string(), "value1".to_string());
+        vars.insert("key_with_underscores".to_string(), "value2".to_string());
+        vars.insert("keyWithCamelCase".to_string(), "value3".to_string());
+        vars.insert("key.with.dots".to_string(), "value4".to_string());
+
+        let request = PipeRequest::new("pipe-1", messages).with_variables(vars.clone());
+        let req_vars = request.variables.unwrap();
+        assert_eq!(req_vars.len(), 4);
+        assert_eq!(req_vars.get("key-with-dashes"), Some(&"value1".to_string()));
+    }
+
+    #[test]
+    fn test_variables_with_empty_values() {
+        let messages = vec![Message::user("Test")];
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("key1".to_string(), "".to_string());
+        vars.insert("key2".to_string(), "value".to_string());
+
+        let request = PipeRequest::new("pipe-1", messages).with_variables(vars);
+        let req_vars = request.variables.unwrap();
+        assert_eq!(req_vars.get("key1"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_variables_with_json_values() {
+        let messages = vec![Message::user("Test")];
+        let mut vars = std::collections::HashMap::new();
+        vars.insert(
+            "json_data".to_string(),
+            r#"{"nested": "value"}"#.to_string(),
+        );
+
+        let request = PipeRequest::new("pipe-1", messages).with_variables(vars);
+        let req_vars = request.variables.unwrap();
+        assert_eq!(
+            req_vars.get("json_data"),
+            Some(&r#"{"nested": "value"}"#.to_string())
+        );
+    }
 }

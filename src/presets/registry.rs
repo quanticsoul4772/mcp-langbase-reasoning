@@ -229,4 +229,23 @@ mod tests {
         assert!(research_presets.len() >= 1);
         assert!(research_presets.iter().all(|p| p.category == "research"));
     }
+
+    #[test]
+    fn test_registry_default() {
+        let registry = PresetRegistry::default();
+        assert!(registry.count() >= 5);
+    }
+
+    #[test]
+    fn test_registry_get_nonexistent() {
+        let registry = PresetRegistry::new();
+        assert!(registry.get("nonexistent-preset-id").is_none());
+    }
+
+    #[test]
+    fn test_registry_list_nonexistent_category() {
+        let registry = PresetRegistry::new();
+        let presets = registry.list(Some("nonexistent-category"));
+        assert!(presets.is_empty());
+    }
 }

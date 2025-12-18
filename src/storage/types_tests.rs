@@ -838,3 +838,812 @@ fn test_detection_type_from_str_invalid() {
 fn test_detection_type_default() {
     assert_eq!(DetectionType::default(), DetectionType::Bias);
 }
+
+// ============================================================================
+// Decision tests
+// ============================================================================
+
+#[test]
+fn test_decision_new() {
+    let options = vec!["Option A".to_string(), "Option B".to_string()];
+    let recommendation = json!({"option": "Option A", "score": 0.9});
+    let scores =
+        json!([{"option": "Option A", "score": 0.9}, {"option": "Option B", "score": 0.7}]);
+    let decision = Decision::new(
+        "sess-1",
+        "Choose best option",
+        options.clone(),
+        "weighted_sum",
+        recommendation.clone(),
+        scores.clone(),
+    );
+
+    assert!(!decision.id.is_empty());
+    assert_eq!(decision.session_id, "sess-1");
+    assert_eq!(decision.question, "Choose best option");
+    assert_eq!(decision.options, options);
+    assert!(decision.criteria.is_none());
+    assert_eq!(decision.method, "weighted_sum");
+    assert_eq!(decision.recommendation, recommendation);
+    assert_eq!(decision.scores, scores);
+    assert!(decision.sensitivity_analysis.is_none());
+    assert!(decision.trade_offs.is_none());
+    assert!(decision.constraints_satisfied.is_none());
+    assert!(decision.metadata.is_none());
+}
+
+#[test]
+fn test_decision_with_criteria() {
+    let criteria = vec![
+        StoredCriterion {
+            name: "Cost".to_string(),
+            weight: 0.4,
+            description: Some("Financial impact".to_string()),
+        },
+        StoredCriterion {
+            name: "Quality".to_string(),
+            weight: 0.6,
+            description: None,
+        },
+    ];
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_criteria(criteria.clone());
+
+    assert!(decision.criteria.is_some());
+    assert_eq!(decision.criteria.unwrap().len(), 2);
+}
+
+#[test]
+fn test_decision_with_sensitivity() {
+    let sensitivity = json!({"weight_changes": [0.1, 0.2, 0.3]});
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_sensitivity(sensitivity.clone());
+
+    assert_eq!(decision.sensitivity_analysis, Some(sensitivity));
+}
+
+#[test]
+fn test_decision_with_trade_offs() {
+    let trade_offs = json!({"cost_vs_quality": "inverse relationship"});
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_trade_offs(trade_offs.clone());
+
+    assert_eq!(decision.trade_offs, Some(trade_offs));
+}
+
+#[test]
+fn test_decision_with_constraints() {
+    let constraints = json!({"budget": true, "timeline": false});
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_constraints(constraints.clone());
+
+    assert_eq!(decision.constraints_satisfied, Some(constraints));
+}
+
+#[test]
+fn test_decision_with_metadata() {
+    let metadata = json!({"source": "analysis", "version": "1.0"});
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_metadata(metadata.clone());
+
+    assert_eq!(decision.metadata, Some(metadata));
+}
+
+#[test]
+fn test_decision_builder_chain() {
+    let decision = Decision::new("sess-1", "Q", vec![], "weighted_sum", json!({}), json!({}))
+        .with_criteria(vec![])
+        .with_sensitivity(json!({}))
+        .with_trade_offs(json!({}))
+        .with_constraints(json!({}))
+        .with_metadata(json!({}));
+
+    assert!(decision.criteria.is_some());
+    assert!(decision.sensitivity_analysis.is_some());
+    assert!(decision.trade_offs.is_some());
+    assert!(decision.constraints_satisfied.is_some());
+    assert!(decision.metadata.is_some());
+}
+
+#[test]
+fn test_stored_criterion() {
+    let criterion = StoredCriterion {
+        name: "Performance".to_string(),
+        weight: 0.75,
+        description: Some("Speed and efficiency".to_string()),
+    };
+
+    assert_eq!(criterion.name, "Performance");
+    assert!((criterion.weight - 0.75).abs() < 0.001);
+    assert_eq!(
+        criterion.description,
+        Some("Speed and efficiency".to_string())
+    );
+}
+
+// ============================================================================
+// PerspectiveAnalysis tests
+// ============================================================================
+
+#[test]
+fn test_perspective_analysis_new() {
+    let stakeholders = json!([{"name": "User", "interest": "high"}]);
+    let synthesis = json!({"overview": "Balanced view"});
+    let analysis = PerspectiveAnalysis::new(
+        "sess-1",
+        "Project decision",
+        stakeholders.clone(),
+        synthesis.clone(),
+        0.85,
+    );
+
+    assert!(!analysis.id.is_empty());
+    assert_eq!(analysis.session_id, "sess-1");
+    assert_eq!(analysis.topic, "Project decision");
+    assert_eq!(analysis.stakeholders, stakeholders);
+    assert!(analysis.power_matrix.is_none());
+    assert!(analysis.conflicts.is_none());
+    assert!(analysis.alignments.is_none());
+    assert_eq!(analysis.synthesis, synthesis);
+    assert!((analysis.confidence - 0.85).abs() < 0.001);
+    assert!(analysis.metadata.is_none());
+}
+
+#[test]
+fn test_perspective_analysis_confidence_clamp() {
+    let high = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 1.5);
+    assert!((high.confidence - 1.0).abs() < 0.001);
+
+    let low = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), -0.5);
+    assert!((low.confidence - 0.0).abs() < 0.001);
+}
+
+#[test]
+fn test_perspective_analysis_with_power_matrix() {
+    let matrix = json!({"high_power_high_interest": ["Stakeholder A"]});
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8)
+        .with_power_matrix(matrix.clone());
+
+    assert_eq!(analysis.power_matrix, Some(matrix));
+}
+
+#[test]
+fn test_perspective_analysis_with_conflicts() {
+    let conflicts = json!([{"parties": ["A", "B"], "issue": "Resource allocation"}]);
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8)
+        .with_conflicts(conflicts.clone());
+
+    assert_eq!(analysis.conflicts, Some(conflicts));
+}
+
+#[test]
+fn test_perspective_analysis_with_alignments() {
+    let alignments = json!([{"parties": ["C", "D"], "goal": "Innovation"}]);
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8)
+        .with_alignments(alignments.clone());
+
+    assert_eq!(analysis.alignments, Some(alignments));
+}
+
+#[test]
+fn test_perspective_analysis_with_metadata() {
+    let metadata = json!({"analyst": "System", "date": "2024-01-01"});
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8)
+        .with_metadata(metadata.clone());
+
+    assert_eq!(analysis.metadata, Some(metadata));
+}
+
+#[test]
+fn test_perspective_analysis_builder_chain() {
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8)
+        .with_power_matrix(json!({}))
+        .with_conflicts(json!([]))
+        .with_alignments(json!([]))
+        .with_metadata(json!({}));
+
+    assert!(analysis.power_matrix.is_some());
+    assert!(analysis.conflicts.is_some());
+    assert!(analysis.alignments.is_some());
+    assert!(analysis.metadata.is_some());
+}
+
+// ============================================================================
+// EvidenceAssessment tests
+// ============================================================================
+
+#[test]
+fn test_evidence_assessment_new() {
+    let evidence = json!([{"source": "Study A", "quality": "high"}]);
+    let support = json!({"level": "strong", "score": 0.9});
+    let analysis = json!([{"evidence": "Study A", "relevance": "high"}]);
+    let assessment = EvidenceAssessment::new(
+        "sess-1",
+        "Claim X",
+        evidence.clone(),
+        support.clone(),
+        analysis.clone(),
+    );
+
+    assert!(!assessment.id.is_empty());
+    assert_eq!(assessment.session_id, "sess-1");
+    assert_eq!(assessment.claim, "Claim X");
+    assert_eq!(assessment.evidence, evidence);
+    assert_eq!(assessment.overall_support, support);
+    assert_eq!(assessment.evidence_analysis, analysis);
+    assert!(assessment.chain_analysis.is_none());
+    assert!(assessment.contradictions.is_none());
+    assert!(assessment.gaps.is_none());
+    assert!(assessment.recommendations.is_none());
+    assert!(assessment.metadata.is_none());
+}
+
+#[test]
+fn test_evidence_assessment_with_chain_analysis() {
+    let chain = json!({"reasoning_steps": ["A -> B", "B -> C"]});
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_chain_analysis(chain.clone());
+
+    assert_eq!(assessment.chain_analysis, Some(chain));
+}
+
+#[test]
+fn test_evidence_assessment_with_contradictions() {
+    let contradictions = json!([{"evidence_a": "X", "evidence_b": "Y"}]);
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_contradictions(contradictions.clone());
+
+    assert_eq!(assessment.contradictions, Some(contradictions));
+}
+
+#[test]
+fn test_evidence_assessment_with_gaps() {
+    let gaps = json!([{"missing": "Control group data"}]);
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_gaps(gaps.clone());
+
+    assert_eq!(assessment.gaps, Some(gaps));
+}
+
+#[test]
+fn test_evidence_assessment_with_recommendations() {
+    let recommendations = json!([{"action": "Gather more data"}]);
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_recommendations(recommendations.clone());
+
+    assert_eq!(assessment.recommendations, Some(recommendations));
+}
+
+#[test]
+fn test_evidence_assessment_with_metadata() {
+    let metadata = json!({"reviewer": "Expert", "confidence": 0.9});
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_metadata(metadata.clone());
+
+    assert_eq!(assessment.metadata, Some(metadata));
+}
+
+#[test]
+fn test_evidence_assessment_builder_chain() {
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]))
+        .with_chain_analysis(json!({}))
+        .with_contradictions(json!([]))
+        .with_gaps(json!([]))
+        .with_recommendations(json!([]))
+        .with_metadata(json!({}));
+
+    assert!(assessment.chain_analysis.is_some());
+    assert!(assessment.contradictions.is_some());
+    assert!(assessment.gaps.is_some());
+    assert!(assessment.recommendations.is_some());
+    assert!(assessment.metadata.is_some());
+}
+
+// ============================================================================
+// ProbabilityUpdate tests
+// ============================================================================
+
+#[test]
+fn test_probability_update_new() {
+    let steps = json!([{"step": 1, "prior": 0.5, "likelihood": 0.8}]);
+    let interpretation = json!({"conclusion": "Evidence supports hypothesis"});
+    let update = ProbabilityUpdate::new(
+        "sess-1",
+        "Hypothesis A",
+        0.5,
+        0.75,
+        steps.clone(),
+        interpretation.clone(),
+    );
+
+    assert!(!update.id.is_empty());
+    assert_eq!(update.session_id, "sess-1");
+    assert_eq!(update.hypothesis, "Hypothesis A");
+    assert!((update.prior - 0.5).abs() < 0.001);
+    assert!((update.posterior - 0.75).abs() < 0.001);
+    assert!(update.confidence_lower.is_none());
+    assert!(update.confidence_upper.is_none());
+    assert!(update.confidence_level.is_none());
+    assert_eq!(update.update_steps, steps);
+    assert!(update.uncertainty_analysis.is_none());
+    assert!(update.sensitivity.is_none());
+    assert_eq!(update.interpretation, interpretation);
+    assert!(update.metadata.is_none());
+}
+
+#[test]
+fn test_probability_update_clamp_probabilities() {
+    let high_prior = ProbabilityUpdate::new("sess-1", "H", 1.5, 0.8, json!([]), json!({}));
+    assert!((high_prior.prior - 1.0).abs() < 0.001);
+
+    let low_prior = ProbabilityUpdate::new("sess-1", "H", -0.5, 0.8, json!([]), json!({}));
+    assert!((low_prior.prior - 0.0).abs() < 0.001);
+
+    let high_posterior = ProbabilityUpdate::new("sess-1", "H", 0.5, 1.5, json!([]), json!({}));
+    assert!((high_posterior.posterior - 1.0).abs() < 0.001);
+
+    let low_posterior = ProbabilityUpdate::new("sess-1", "H", 0.5, -0.5, json!([]), json!({}));
+    assert!((low_posterior.posterior - 0.0).abs() < 0.001);
+}
+
+#[test]
+fn test_probability_update_with_confidence_interval() {
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_confidence_interval(Some(0.65), Some(0.85), Some(0.95));
+
+    assert_eq!(update.confidence_lower, Some(0.65));
+    assert_eq!(update.confidence_upper, Some(0.85));
+    assert_eq!(update.confidence_level, Some(0.95));
+}
+
+#[test]
+fn test_probability_update_with_confidence_interval_clamp() {
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_confidence_interval(Some(-0.1), Some(1.5), Some(1.2));
+
+    assert_eq!(update.confidence_lower, Some(0.0));
+    assert_eq!(update.confidence_upper, Some(1.0));
+    assert_eq!(update.confidence_level, Some(1.0));
+}
+
+#[test]
+fn test_probability_update_with_uncertainty() {
+    let uncertainty = json!({"sources": ["measurement", "model"]});
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_uncertainty(uncertainty.clone());
+
+    assert_eq!(update.uncertainty_analysis, Some(uncertainty));
+}
+
+#[test]
+fn test_probability_update_with_sensitivity() {
+    let sensitivity = json!({"prior_sensitivity": 0.1});
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_sensitivity(sensitivity.clone());
+
+    assert_eq!(update.sensitivity, Some(sensitivity));
+}
+
+#[test]
+fn test_probability_update_with_metadata() {
+    let metadata = json!({"method": "bayesian", "iterations": 1000});
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_metadata(metadata.clone());
+
+    assert_eq!(update.metadata, Some(metadata));
+}
+
+#[test]
+fn test_probability_update_builder_chain() {
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}))
+        .with_confidence_interval(Some(0.6), Some(0.9), Some(0.95))
+        .with_uncertainty(json!({}))
+        .with_sensitivity(json!({}))
+        .with_metadata(json!({}));
+
+    assert!(update.confidence_lower.is_some());
+    assert!(update.confidence_upper.is_some());
+    assert!(update.confidence_level.is_some());
+    assert!(update.uncertainty_analysis.is_some());
+    assert!(update.sensitivity.is_some());
+    assert!(update.metadata.is_some());
+}
+
+// ============================================================================
+// CrossRefType default test
+// ============================================================================
+
+#[test]
+fn test_cross_ref_type_default() {
+    assert_eq!(CrossRefType::default(), CrossRefType::Supports);
+}
+
+// ============================================================================
+// Serialization round-trip tests
+// ============================================================================
+
+#[test]
+fn test_session_serialization_roundtrip() {
+    let session = Session::new("linear").with_active_branch("branch-123");
+
+    let json = serde_json::to_string(&session).unwrap();
+    let deserialized: Session = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(session.id, deserialized.id);
+    assert_eq!(session.mode, deserialized.mode);
+    assert_eq!(session.active_branch_id, deserialized.active_branch_id);
+}
+
+#[test]
+fn test_thought_serialization_roundtrip() {
+    let thought = Thought::new("sess-1", "Test content", "linear")
+        .with_confidence(0.95)
+        .with_parent("parent-1")
+        .with_branch("branch-1")
+        .with_metadata(json!({"key": "value"}));
+
+    let json = serde_json::to_string(&thought).unwrap();
+    let deserialized: Thought = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(thought.id, deserialized.id);
+    assert_eq!(thought.content, deserialized.content);
+    assert_eq!(thought.confidence, deserialized.confidence);
+    assert_eq!(thought.parent_id, deserialized.parent_id);
+    assert_eq!(thought.branch_id, deserialized.branch_id);
+}
+
+#[test]
+fn test_branch_serialization_roundtrip() {
+    let branch = Branch::new("sess-1")
+        .with_name("Test Branch")
+        .with_state(BranchState::Completed);
+
+    let json = serde_json::to_string(&branch).unwrap();
+    let deserialized: Branch = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(branch.id, deserialized.id);
+    assert_eq!(branch.name, deserialized.name);
+    assert_eq!(branch.state, deserialized.state);
+}
+
+#[test]
+fn test_graph_node_serialization_roundtrip() {
+    let node = GraphNode::new("sess-1", "Test")
+        .with_type(NodeType::Hypothesis)
+        .with_score(0.9)
+        .as_terminal();
+
+    let json = serde_json::to_string(&node).unwrap();
+    let deserialized: GraphNode = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(node.id, deserialized.id);
+    assert_eq!(node.node_type, deserialized.node_type);
+    assert_eq!(node.score, deserialized.score);
+    assert_eq!(node.is_terminal, deserialized.is_terminal);
+}
+
+#[test]
+fn test_graph_edge_serialization_roundtrip() {
+    let edge = GraphEdge::new("sess-1", "node-1", "node-2")
+        .with_type(EdgeType::Refines)
+        .with_weight(0.8);
+
+    let json = serde_json::to_string(&edge).unwrap();
+    let deserialized: GraphEdge = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(edge.id, deserialized.id);
+    assert_eq!(edge.edge_type, deserialized.edge_type);
+    assert_eq!(edge.weight, deserialized.weight);
+}
+
+#[test]
+fn test_detection_serialization_roundtrip() {
+    let detection = Detection::new(
+        DetectionType::Bias,
+        "confirmation_bias",
+        3,
+        0.85,
+        "Explanation",
+    )
+    .with_session("sess-1")
+    .with_remediation("Fix it");
+
+    let json = serde_json::to_string(&detection).unwrap();
+    let deserialized: Detection = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(detection.id, deserialized.id);
+    assert_eq!(detection.detection_type, deserialized.detection_type);
+    assert_eq!(detection.severity, deserialized.severity);
+    assert_eq!(detection.remediation, deserialized.remediation);
+}
+
+// ============================================================================
+// Enum serialization tests
+// ============================================================================
+
+#[test]
+fn test_branch_state_serialization() {
+    let states = vec![
+        BranchState::Active,
+        BranchState::Completed,
+        BranchState::Abandoned,
+    ];
+    for state in states {
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: BranchState = serde_json::from_str(&json).unwrap();
+        assert_eq!(state, deserialized);
+    }
+}
+
+#[test]
+fn test_cross_ref_type_serialization() {
+    let types = vec![
+        CrossRefType::Supports,
+        CrossRefType::Contradicts,
+        CrossRefType::Extends,
+        CrossRefType::Alternative,
+        CrossRefType::Depends,
+    ];
+    for ref_type in types {
+        let json = serde_json::to_string(&ref_type).unwrap();
+        let deserialized: CrossRefType = serde_json::from_str(&json).unwrap();
+        assert_eq!(ref_type, deserialized);
+    }
+}
+
+#[test]
+fn test_node_type_serialization() {
+    let types = vec![
+        NodeType::Thought,
+        NodeType::Hypothesis,
+        NodeType::Conclusion,
+        NodeType::Aggregation,
+        NodeType::Root,
+        NodeType::Refinement,
+        NodeType::Terminal,
+    ];
+    for node_type in types {
+        let json = serde_json::to_string(&node_type).unwrap();
+        let deserialized: NodeType = serde_json::from_str(&json).unwrap();
+        assert_eq!(node_type, deserialized);
+    }
+}
+
+#[test]
+fn test_edge_type_serialization() {
+    let types = vec![
+        EdgeType::Generates,
+        EdgeType::Refines,
+        EdgeType::Aggregates,
+        EdgeType::Supports,
+        EdgeType::Contradicts,
+    ];
+    for edge_type in types {
+        let json = serde_json::to_string(&edge_type).unwrap();
+        let deserialized: EdgeType = serde_json::from_str(&json).unwrap();
+        assert_eq!(edge_type, deserialized);
+    }
+}
+
+#[test]
+fn test_snapshot_type_serialization() {
+    let types = vec![
+        SnapshotType::Full,
+        SnapshotType::Incremental,
+        SnapshotType::Branch,
+    ];
+    for snapshot_type in types {
+        let json = serde_json::to_string(&snapshot_type).unwrap();
+        let deserialized: SnapshotType = serde_json::from_str(&json).unwrap();
+        assert_eq!(snapshot_type, deserialized);
+    }
+}
+
+#[test]
+fn test_detection_type_serialization() {
+    let types = vec![DetectionType::Bias, DetectionType::Fallacy];
+    for detection_type in types {
+        let json = serde_json::to_string(&detection_type).unwrap();
+        let deserialized: DetectionType = serde_json::from_str(&json).unwrap();
+        assert_eq!(detection_type, deserialized);
+    }
+}
+
+// ============================================================================
+// Clone tests
+// ============================================================================
+
+#[test]
+fn test_session_clone() {
+    let session = Session::new("linear").with_active_branch("branch-1");
+    let cloned = session.clone();
+    assert_eq!(session.id, cloned.id);
+    assert_eq!(session.mode, cloned.mode);
+    assert_eq!(session.active_branch_id, cloned.active_branch_id);
+}
+
+#[test]
+fn test_thought_clone() {
+    let thought = Thought::new("sess-1", "Content", "linear").with_confidence(0.9);
+    let cloned = thought.clone();
+    assert_eq!(thought.id, cloned.id);
+    assert_eq!(thought.content, cloned.content);
+    assert_eq!(thought.confidence, cloned.confidence);
+}
+
+#[test]
+fn test_branch_clone() {
+    let branch = Branch::new("sess-1")
+        .with_name("Branch")
+        .with_state(BranchState::Completed);
+    let cloned = branch.clone();
+    assert_eq!(branch.id, cloned.id);
+    assert_eq!(branch.name, cloned.name);
+    assert_eq!(branch.state, cloned.state);
+}
+
+#[test]
+fn test_cross_ref_clone() {
+    let cross_ref = CrossRef::new("b1", "b2", CrossRefType::Supports).with_strength(0.8);
+    let cloned = cross_ref.clone();
+    assert_eq!(cross_ref.id, cloned.id);
+    assert_eq!(cross_ref.ref_type, cloned.ref_type);
+    assert_eq!(cross_ref.strength, cloned.strength);
+}
+
+#[test]
+fn test_checkpoint_clone() {
+    let checkpoint = Checkpoint::new("sess-1", "CP", json!({})).with_description("Desc");
+    let cloned = checkpoint.clone();
+    assert_eq!(checkpoint.id, cloned.id);
+    assert_eq!(checkpoint.name, cloned.name);
+    assert_eq!(checkpoint.description, cloned.description);
+}
+
+#[test]
+fn test_graph_node_clone() {
+    let node = GraphNode::new("sess-1", "Node")
+        .with_type(NodeType::Hypothesis)
+        .as_terminal();
+    let cloned = node.clone();
+    assert_eq!(node.id, cloned.id);
+    assert_eq!(node.node_type, cloned.node_type);
+    assert_eq!(node.is_terminal, cloned.is_terminal);
+}
+
+#[test]
+fn test_graph_edge_clone() {
+    let edge = GraphEdge::new("sess-1", "n1", "n2").with_type(EdgeType::Refines);
+    let cloned = edge.clone();
+    assert_eq!(edge.id, cloned.id);
+    assert_eq!(edge.edge_type, cloned.edge_type);
+}
+
+#[test]
+fn test_state_snapshot_clone() {
+    let snapshot = StateSnapshot::new("sess-1", json!({})).with_type(SnapshotType::Incremental);
+    let cloned = snapshot.clone();
+    assert_eq!(snapshot.id, cloned.id);
+    assert_eq!(snapshot.snapshot_type, cloned.snapshot_type);
+}
+
+#[test]
+fn test_detection_clone() {
+    let detection = Detection::new(DetectionType::Bias, "issue", 3, 0.8, "Explanation");
+    let cloned = detection.clone();
+    assert_eq!(detection.id, cloned.id);
+    assert_eq!(detection.detection_type, cloned.detection_type);
+    assert_eq!(detection.severity, cloned.severity);
+}
+
+#[test]
+fn test_invocation_clone() {
+    let invocation = Invocation::new("tool", json!({})).with_session("sess-1");
+    let cloned = invocation.clone();
+    assert_eq!(invocation.id, cloned.id);
+    assert_eq!(invocation.session_id, cloned.session_id);
+}
+
+#[test]
+fn test_decision_clone() {
+    let decision = Decision::new("sess-1", "Q", vec![], "method", json!({}), json!({}));
+    let cloned = decision.clone();
+    assert_eq!(decision.id, cloned.id);
+    assert_eq!(decision.question, cloned.question);
+}
+
+#[test]
+fn test_perspective_analysis_clone() {
+    let analysis = PerspectiveAnalysis::new("sess-1", "Topic", json!([]), json!({}), 0.8);
+    let cloned = analysis.clone();
+    assert_eq!(analysis.id, cloned.id);
+    assert_eq!(analysis.topic, cloned.topic);
+}
+
+#[test]
+fn test_evidence_assessment_clone() {
+    let assessment = EvidenceAssessment::new("sess-1", "Claim", json!([]), json!({}), json!([]));
+    let cloned = assessment.clone();
+    assert_eq!(assessment.id, cloned.id);
+    assert_eq!(assessment.claim, cloned.claim);
+}
+
+#[test]
+fn test_probability_update_clone() {
+    let update = ProbabilityUpdate::new("sess-1", "H", 0.5, 0.75, json!([]), json!({}));
+    let cloned = update.clone();
+    assert_eq!(update.id, cloned.id);
+    assert_eq!(update.hypothesis, cloned.hypothesis);
+    assert_eq!(update.prior, cloned.prior);
+}
+
+// ============================================================================
+// Edge cases
+// ============================================================================
+
+#[test]
+fn test_empty_string_handling() {
+    let session = Session::new("");
+    assert_eq!(session.mode, "");
+
+    let thought = Thought::new("", "", "");
+    assert_eq!(thought.session_id, "");
+    assert_eq!(thought.content, "");
+}
+
+#[test]
+fn test_session_without_metadata() {
+    let session = Session::new("linear");
+    let json = serde_json::to_value(&session).unwrap();
+    assert!(json.get("metadata").is_none() || json["metadata"].is_null());
+}
+
+#[test]
+fn test_thought_without_optional_fields() {
+    let thought = Thought::new("sess-1", "Content", "linear");
+    let json = serde_json::to_value(&thought).unwrap();
+    assert!(json.get("parent_id").is_none() || json["parent_id"].is_null());
+    assert!(json.get("branch_id").is_none() || json["branch_id"].is_null());
+}
+
+#[test]
+fn test_branch_state_copy() {
+    let state = BranchState::Active;
+    let copied = state;
+    assert_eq!(state, copied);
+}
+
+#[test]
+fn test_cross_ref_type_copy() {
+    let ref_type = CrossRefType::Supports;
+    let copied = ref_type;
+    assert_eq!(ref_type, copied);
+}
+
+#[test]
+fn test_node_type_copy() {
+    let node_type = NodeType::Thought;
+    let copied = node_type;
+    assert_eq!(node_type, copied);
+}
+
+#[test]
+fn test_edge_type_copy() {
+    let edge_type = EdgeType::Generates;
+    let copied = edge_type;
+    assert_eq!(edge_type, copied);
+}
+
+#[test]
+fn test_snapshot_type_copy() {
+    let snapshot_type = SnapshotType::Full;
+    let copied = snapshot_type;
+    assert_eq!(snapshot_type, copied);
+}
+
+#[test]
+fn test_detection_type_copy() {
+    let detection_type = DetectionType::Bias;
+    let copied = detection_type;
+    assert_eq!(detection_type, copied);
+}

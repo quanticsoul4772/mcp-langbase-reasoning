@@ -1513,3 +1513,1076 @@ pub trait Storage: Send + Sync {
     /// Delete a probability update by ID.
     async fn delete_probability_update(&self, id: &str) -> StorageResult<()>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    // ========================================================================
+    // BranchState tests
+    // ========================================================================
+
+    #[test]
+    fn test_branch_state_display() {
+        assert_eq!(BranchState::Active.to_string(), "active");
+        assert_eq!(BranchState::Completed.to_string(), "completed");
+        assert_eq!(BranchState::Abandoned.to_string(), "abandoned");
+    }
+
+    #[test]
+    fn test_branch_state_from_str() {
+        assert_eq!(
+            BranchState::from_str("active").unwrap(),
+            BranchState::Active
+        );
+        assert_eq!(
+            BranchState::from_str("completed").unwrap(),
+            BranchState::Completed
+        );
+        assert_eq!(
+            BranchState::from_str("abandoned").unwrap(),
+            BranchState::Abandoned
+        );
+    }
+
+    #[test]
+    fn test_branch_state_from_str_case_insensitive() {
+        assert_eq!(
+            BranchState::from_str("ACTIVE").unwrap(),
+            BranchState::Active
+        );
+        assert_eq!(
+            BranchState::from_str("Completed").unwrap(),
+            BranchState::Completed
+        );
+        assert_eq!(
+            BranchState::from_str("ABANDONED").unwrap(),
+            BranchState::Abandoned
+        );
+    }
+
+    #[test]
+    fn test_branch_state_from_str_invalid() {
+        assert!(BranchState::from_str("invalid").is_err());
+        assert!(BranchState::from_str("").is_err());
+        assert_eq!(
+            BranchState::from_str("unknown").unwrap_err(),
+            "Unknown branch state: unknown"
+        );
+    }
+
+    #[test]
+    fn test_branch_state_default() {
+        assert_eq!(BranchState::default(), BranchState::Active);
+    }
+
+    #[test]
+    fn test_branch_state_round_trip() {
+        for state in [
+            BranchState::Active,
+            BranchState::Completed,
+            BranchState::Abandoned,
+        ] {
+            let str_val = state.to_string();
+            let parsed = BranchState::from_str(&str_val).unwrap();
+            assert_eq!(parsed, state);
+        }
+    }
+
+    // ========================================================================
+    // CrossRefType tests
+    // ========================================================================
+
+    #[test]
+    fn test_cross_ref_type_display() {
+        assert_eq!(CrossRefType::Supports.to_string(), "supports");
+        assert_eq!(CrossRefType::Contradicts.to_string(), "contradicts");
+        assert_eq!(CrossRefType::Extends.to_string(), "extends");
+        assert_eq!(CrossRefType::Alternative.to_string(), "alternative");
+        assert_eq!(CrossRefType::Depends.to_string(), "depends");
+    }
+
+    #[test]
+    fn test_cross_ref_type_from_str() {
+        assert_eq!(
+            CrossRefType::from_str("supports").unwrap(),
+            CrossRefType::Supports
+        );
+        assert_eq!(
+            CrossRefType::from_str("contradicts").unwrap(),
+            CrossRefType::Contradicts
+        );
+        assert_eq!(
+            CrossRefType::from_str("extends").unwrap(),
+            CrossRefType::Extends
+        );
+        assert_eq!(
+            CrossRefType::from_str("alternative").unwrap(),
+            CrossRefType::Alternative
+        );
+        assert_eq!(
+            CrossRefType::from_str("depends").unwrap(),
+            CrossRefType::Depends
+        );
+    }
+
+    #[test]
+    fn test_cross_ref_type_from_str_case_insensitive() {
+        assert_eq!(
+            CrossRefType::from_str("SUPPORTS").unwrap(),
+            CrossRefType::Supports
+        );
+        assert_eq!(
+            CrossRefType::from_str("Contradicts").unwrap(),
+            CrossRefType::Contradicts
+        );
+        assert_eq!(
+            CrossRefType::from_str("EXTENDS").unwrap(),
+            CrossRefType::Extends
+        );
+    }
+
+    #[test]
+    fn test_cross_ref_type_from_str_invalid() {
+        assert!(CrossRefType::from_str("invalid").is_err());
+        assert!(CrossRefType::from_str("").is_err());
+        assert_eq!(
+            CrossRefType::from_str("unknown").unwrap_err(),
+            "Unknown cross-ref type: unknown"
+        );
+    }
+
+    #[test]
+    fn test_cross_ref_type_default() {
+        assert_eq!(CrossRefType::default(), CrossRefType::Supports);
+    }
+
+    #[test]
+    fn test_cross_ref_type_round_trip() {
+        for ref_type in [
+            CrossRefType::Supports,
+            CrossRefType::Contradicts,
+            CrossRefType::Extends,
+            CrossRefType::Alternative,
+            CrossRefType::Depends,
+        ] {
+            let str_val = ref_type.to_string();
+            let parsed = CrossRefType::from_str(&str_val).unwrap();
+            assert_eq!(parsed, ref_type);
+        }
+    }
+
+    // ========================================================================
+    // NodeType tests
+    // ========================================================================
+
+    #[test]
+    fn test_node_type_display() {
+        assert_eq!(NodeType::Thought.to_string(), "thought");
+        assert_eq!(NodeType::Hypothesis.to_string(), "hypothesis");
+        assert_eq!(NodeType::Conclusion.to_string(), "conclusion");
+        assert_eq!(NodeType::Aggregation.to_string(), "aggregation");
+        assert_eq!(NodeType::Root.to_string(), "root");
+        assert_eq!(NodeType::Refinement.to_string(), "refinement");
+        assert_eq!(NodeType::Terminal.to_string(), "terminal");
+    }
+
+    #[test]
+    fn test_node_type_from_str() {
+        assert_eq!(NodeType::from_str("thought").unwrap(), NodeType::Thought);
+        assert_eq!(
+            NodeType::from_str("hypothesis").unwrap(),
+            NodeType::Hypothesis
+        );
+        assert_eq!(
+            NodeType::from_str("conclusion").unwrap(),
+            NodeType::Conclusion
+        );
+        assert_eq!(
+            NodeType::from_str("aggregation").unwrap(),
+            NodeType::Aggregation
+        );
+        assert_eq!(NodeType::from_str("root").unwrap(), NodeType::Root);
+        assert_eq!(
+            NodeType::from_str("refinement").unwrap(),
+            NodeType::Refinement
+        );
+        assert_eq!(NodeType::from_str("terminal").unwrap(), NodeType::Terminal);
+    }
+
+    #[test]
+    fn test_node_type_from_str_case_insensitive() {
+        assert_eq!(NodeType::from_str("THOUGHT").unwrap(), NodeType::Thought);
+        assert_eq!(
+            NodeType::from_str("Hypothesis").unwrap(),
+            NodeType::Hypothesis
+        );
+        assert_eq!(
+            NodeType::from_str("CONCLUSION").unwrap(),
+            NodeType::Conclusion
+        );
+    }
+
+    #[test]
+    fn test_node_type_from_str_invalid() {
+        assert!(NodeType::from_str("invalid").is_err());
+        assert!(NodeType::from_str("").is_err());
+        assert_eq!(
+            NodeType::from_str("unknown").unwrap_err(),
+            "Unknown node type: unknown"
+        );
+    }
+
+    #[test]
+    fn test_node_type_default() {
+        assert_eq!(NodeType::default(), NodeType::Thought);
+    }
+
+    #[test]
+    fn test_node_type_round_trip() {
+        for node_type in [
+            NodeType::Thought,
+            NodeType::Hypothesis,
+            NodeType::Conclusion,
+            NodeType::Aggregation,
+            NodeType::Root,
+            NodeType::Refinement,
+            NodeType::Terminal,
+        ] {
+            let str_val = node_type.to_string();
+            let parsed = NodeType::from_str(&str_val).unwrap();
+            assert_eq!(parsed, node_type);
+        }
+    }
+
+    // ========================================================================
+    // EdgeType tests
+    // ========================================================================
+
+    #[test]
+    fn test_edge_type_display() {
+        assert_eq!(EdgeType::Generates.to_string(), "generates");
+        assert_eq!(EdgeType::Refines.to_string(), "refines");
+        assert_eq!(EdgeType::Aggregates.to_string(), "aggregates");
+        assert_eq!(EdgeType::Supports.to_string(), "supports");
+        assert_eq!(EdgeType::Contradicts.to_string(), "contradicts");
+    }
+
+    #[test]
+    fn test_edge_type_from_str() {
+        assert_eq!(
+            EdgeType::from_str("generates").unwrap(),
+            EdgeType::Generates
+        );
+        assert_eq!(EdgeType::from_str("refines").unwrap(), EdgeType::Refines);
+        assert_eq!(
+            EdgeType::from_str("aggregates").unwrap(),
+            EdgeType::Aggregates
+        );
+        assert_eq!(EdgeType::from_str("supports").unwrap(), EdgeType::Supports);
+        assert_eq!(
+            EdgeType::from_str("contradicts").unwrap(),
+            EdgeType::Contradicts
+        );
+    }
+
+    #[test]
+    fn test_edge_type_from_str_case_insensitive() {
+        assert_eq!(
+            EdgeType::from_str("GENERATES").unwrap(),
+            EdgeType::Generates
+        );
+        assert_eq!(EdgeType::from_str("Refines").unwrap(), EdgeType::Refines);
+        assert_eq!(
+            EdgeType::from_str("AGGREGATES").unwrap(),
+            EdgeType::Aggregates
+        );
+    }
+
+    #[test]
+    fn test_edge_type_from_str_invalid() {
+        assert!(EdgeType::from_str("invalid").is_err());
+        assert!(EdgeType::from_str("").is_err());
+        assert_eq!(
+            EdgeType::from_str("unknown").unwrap_err(),
+            "Unknown edge type: unknown"
+        );
+    }
+
+    #[test]
+    fn test_edge_type_default() {
+        assert_eq!(EdgeType::default(), EdgeType::Generates);
+    }
+
+    #[test]
+    fn test_edge_type_round_trip() {
+        for edge_type in [
+            EdgeType::Generates,
+            EdgeType::Refines,
+            EdgeType::Aggregates,
+            EdgeType::Supports,
+            EdgeType::Contradicts,
+        ] {
+            let str_val = edge_type.to_string();
+            let parsed = EdgeType::from_str(&str_val).unwrap();
+            assert_eq!(parsed, edge_type);
+        }
+    }
+
+    // ========================================================================
+    // SnapshotType tests
+    // ========================================================================
+
+    #[test]
+    fn test_snapshot_type_display() {
+        assert_eq!(SnapshotType::Full.to_string(), "full");
+        assert_eq!(SnapshotType::Incremental.to_string(), "incremental");
+        assert_eq!(SnapshotType::Branch.to_string(), "branch");
+    }
+
+    #[test]
+    fn test_snapshot_type_from_str() {
+        assert_eq!(SnapshotType::from_str("full").unwrap(), SnapshotType::Full);
+        assert_eq!(
+            SnapshotType::from_str("incremental").unwrap(),
+            SnapshotType::Incremental
+        );
+        assert_eq!(
+            SnapshotType::from_str("branch").unwrap(),
+            SnapshotType::Branch
+        );
+    }
+
+    #[test]
+    fn test_snapshot_type_from_str_case_insensitive() {
+        assert_eq!(SnapshotType::from_str("FULL").unwrap(), SnapshotType::Full);
+        assert_eq!(
+            SnapshotType::from_str("Incremental").unwrap(),
+            SnapshotType::Incremental
+        );
+        assert_eq!(
+            SnapshotType::from_str("BRANCH").unwrap(),
+            SnapshotType::Branch
+        );
+    }
+
+    #[test]
+    fn test_snapshot_type_from_str_invalid() {
+        assert!(SnapshotType::from_str("invalid").is_err());
+        assert!(SnapshotType::from_str("").is_err());
+        assert_eq!(
+            SnapshotType::from_str("unknown").unwrap_err(),
+            "Unknown snapshot type: unknown"
+        );
+    }
+
+    #[test]
+    fn test_snapshot_type_default() {
+        assert_eq!(SnapshotType::default(), SnapshotType::Full);
+    }
+
+    #[test]
+    fn test_snapshot_type_round_trip() {
+        for snapshot_type in [
+            SnapshotType::Full,
+            SnapshotType::Incremental,
+            SnapshotType::Branch,
+        ] {
+            let str_val = snapshot_type.to_string();
+            let parsed = SnapshotType::from_str(&str_val).unwrap();
+            assert_eq!(parsed, snapshot_type);
+        }
+    }
+
+    // ========================================================================
+    // DetectionType tests
+    // ========================================================================
+
+    #[test]
+    fn test_detection_type_display() {
+        assert_eq!(DetectionType::Bias.to_string(), "bias");
+        assert_eq!(DetectionType::Fallacy.to_string(), "fallacy");
+    }
+
+    #[test]
+    fn test_detection_type_from_str() {
+        assert_eq!(
+            DetectionType::from_str("bias").unwrap(),
+            DetectionType::Bias
+        );
+        assert_eq!(
+            DetectionType::from_str("fallacy").unwrap(),
+            DetectionType::Fallacy
+        );
+    }
+
+    #[test]
+    fn test_detection_type_from_str_case_insensitive() {
+        assert_eq!(
+            DetectionType::from_str("BIAS").unwrap(),
+            DetectionType::Bias
+        );
+        assert_eq!(
+            DetectionType::from_str("Fallacy").unwrap(),
+            DetectionType::Fallacy
+        );
+    }
+
+    #[test]
+    fn test_detection_type_from_str_invalid() {
+        assert!(DetectionType::from_str("invalid").is_err());
+        assert!(DetectionType::from_str("").is_err());
+        assert_eq!(
+            DetectionType::from_str("unknown").unwrap_err(),
+            "Unknown detection type: unknown"
+        );
+    }
+
+    #[test]
+    fn test_detection_type_default() {
+        assert_eq!(DetectionType::default(), DetectionType::Bias);
+    }
+
+    #[test]
+    fn test_detection_type_round_trip() {
+        for detection_type in [DetectionType::Bias, DetectionType::Fallacy] {
+            let str_val = detection_type.to_string();
+            let parsed = DetectionType::from_str(&str_val).unwrap();
+            assert_eq!(parsed, detection_type);
+        }
+    }
+
+    // ========================================================================
+    // Builder method tests
+    // ========================================================================
+
+    #[test]
+    fn test_session_new() {
+        let session = Session::new("linear");
+        assert_eq!(session.mode, "linear");
+        assert!(session.metadata.is_none());
+        assert!(session.active_branch_id.is_none());
+        assert!(!session.id.is_empty());
+    }
+
+    #[test]
+    fn test_session_with_active_branch() {
+        let session = Session::new("tree").with_active_branch("branch-123");
+        assert_eq!(session.active_branch_id, Some("branch-123".to_string()));
+    }
+
+    #[test]
+    fn test_thought_new() {
+        let thought = Thought::new("session-123", "test content", "linear");
+        assert_eq!(thought.session_id, "session-123");
+        assert_eq!(thought.content, "test content");
+        assert_eq!(thought.mode, "linear");
+        assert_eq!(thought.confidence, 0.8);
+        assert!(thought.parent_id.is_none());
+        assert!(thought.branch_id.is_none());
+        assert!(!thought.id.is_empty());
+    }
+
+    #[test]
+    fn test_thought_with_confidence() {
+        let thought = Thought::new("s1", "content", "linear").with_confidence(0.95);
+        assert_eq!(thought.confidence, 0.95);
+    }
+
+    #[test]
+    fn test_thought_with_confidence_clamping() {
+        let thought1 = Thought::new("s1", "content", "linear").with_confidence(1.5);
+        assert_eq!(thought1.confidence, 1.0);
+
+        let thought2 = Thought::new("s1", "content", "linear").with_confidence(-0.5);
+        assert_eq!(thought2.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_thought_with_parent() {
+        let thought = Thought::new("s1", "content", "linear").with_parent("parent-123");
+        assert_eq!(thought.parent_id, Some("parent-123".to_string()));
+    }
+
+    #[test]
+    fn test_thought_with_branch() {
+        let thought = Thought::new("s1", "content", "tree").with_branch("branch-123");
+        assert_eq!(thought.branch_id, Some("branch-123".to_string()));
+    }
+
+    #[test]
+    fn test_thought_builder_chain() {
+        let thought = Thought::new("s1", "content", "tree")
+            .with_confidence(0.9)
+            .with_parent("p1")
+            .with_branch("b1")
+            .with_metadata(serde_json::json!({"key": "value"}));
+
+        assert_eq!(thought.confidence, 0.9);
+        assert_eq!(thought.parent_id, Some("p1".to_string()));
+        assert_eq!(thought.branch_id, Some("b1".to_string()));
+        assert!(thought.metadata.is_some());
+    }
+
+    #[test]
+    fn test_branch_new() {
+        let branch = Branch::new("session-123");
+        assert_eq!(branch.session_id, "session-123");
+        assert!(branch.name.is_none());
+        assert!(branch.parent_branch_id.is_none());
+        assert_eq!(branch.priority, 1.0);
+        assert_eq!(branch.confidence, 0.8);
+        assert_eq!(branch.state, BranchState::Active);
+        assert!(!branch.id.is_empty());
+    }
+
+    #[test]
+    fn test_branch_with_name() {
+        let branch = Branch::new("s1").with_name("main branch");
+        assert_eq!(branch.name, Some("main branch".to_string()));
+    }
+
+    #[test]
+    fn test_branch_with_parent() {
+        let branch = Branch::new("s1").with_parent("parent-branch");
+        assert_eq!(branch.parent_branch_id, Some("parent-branch".to_string()));
+    }
+
+    #[test]
+    fn test_branch_with_priority() {
+        let branch = Branch::new("s1").with_priority(0.5);
+        assert_eq!(branch.priority, 0.5);
+    }
+
+    #[test]
+    fn test_branch_with_confidence() {
+        let branch = Branch::new("s1").with_confidence(0.95);
+        assert_eq!(branch.confidence, 0.95);
+    }
+
+    #[test]
+    fn test_branch_with_confidence_clamping() {
+        let branch1 = Branch::new("s1").with_confidence(1.5);
+        assert_eq!(branch1.confidence, 1.0);
+
+        let branch2 = Branch::new("s1").with_confidence(-0.5);
+        assert_eq!(branch2.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_branch_with_state() {
+        let branch = Branch::new("s1").with_state(BranchState::Completed);
+        assert_eq!(branch.state, BranchState::Completed);
+    }
+
+    #[test]
+    fn test_cross_ref_new() {
+        let cross_ref = CrossRef::new("branch1", "branch2", CrossRefType::Supports);
+        assert_eq!(cross_ref.from_branch_id, "branch1");
+        assert_eq!(cross_ref.to_branch_id, "branch2");
+        assert_eq!(cross_ref.ref_type, CrossRefType::Supports);
+        assert!(cross_ref.reason.is_none());
+        assert_eq!(cross_ref.strength, 1.0);
+        assert!(!cross_ref.id.is_empty());
+    }
+
+    #[test]
+    fn test_cross_ref_with_reason() {
+        let cross_ref = CrossRef::new("b1", "b2", CrossRefType::Extends)
+            .with_reason("builds on previous analysis");
+        assert_eq!(
+            cross_ref.reason,
+            Some("builds on previous analysis".to_string())
+        );
+    }
+
+    #[test]
+    fn test_cross_ref_with_strength() {
+        let cross_ref = CrossRef::new("b1", "b2", CrossRefType::Contradicts).with_strength(0.75);
+        assert_eq!(cross_ref.strength, 0.75);
+    }
+
+    #[test]
+    fn test_cross_ref_strength_clamping() {
+        let cross_ref1 = CrossRef::new("b1", "b2", CrossRefType::Supports).with_strength(1.5);
+        assert_eq!(cross_ref1.strength, 1.0);
+
+        let cross_ref2 = CrossRef::new("b1", "b2", CrossRefType::Supports).with_strength(-0.5);
+        assert_eq!(cross_ref2.strength, 0.0);
+    }
+
+    #[test]
+    fn test_checkpoint_new() {
+        let snapshot = serde_json::json!({"state": "test"});
+        let checkpoint = Checkpoint::new("session-123", "checkpoint1", snapshot.clone());
+        assert_eq!(checkpoint.session_id, "session-123");
+        assert_eq!(checkpoint.name, "checkpoint1");
+        assert_eq!(checkpoint.snapshot, snapshot);
+        assert!(checkpoint.branch_id.is_none());
+        assert!(checkpoint.description.is_none());
+        assert!(!checkpoint.id.is_empty());
+    }
+
+    #[test]
+    fn test_checkpoint_with_branch() {
+        let snapshot = serde_json::json!({"state": "test"});
+        let checkpoint = Checkpoint::new("s1", "cp1", snapshot).with_branch("branch-123");
+        assert_eq!(checkpoint.branch_id, Some("branch-123".to_string()));
+    }
+
+    #[test]
+    fn test_checkpoint_with_description() {
+        let snapshot = serde_json::json!({"state": "test"});
+        let checkpoint =
+            Checkpoint::new("s1", "cp1", snapshot).with_description("before major decision");
+        assert_eq!(
+            checkpoint.description,
+            Some("before major decision".to_string())
+        );
+    }
+
+    #[test]
+    fn test_graph_node_new() {
+        let node = GraphNode::new("session-123", "node content");
+        assert_eq!(node.session_id, "session-123");
+        assert_eq!(node.content, "node content");
+        assert_eq!(node.node_type, NodeType::Thought);
+        assert!(node.score.is_none());
+        assert_eq!(node.depth, 0);
+        assert!(!node.is_terminal);
+        assert!(!node.is_root);
+        assert!(node.is_active);
+        assert!(!node.id.is_empty());
+    }
+
+    #[test]
+    fn test_graph_node_with_type() {
+        let node = GraphNode::new("s1", "content").with_type(NodeType::Hypothesis);
+        assert_eq!(node.node_type, NodeType::Hypothesis);
+    }
+
+    #[test]
+    fn test_graph_node_with_score() {
+        let node = GraphNode::new("s1", "content").with_score(0.85);
+        assert_eq!(node.score, Some(0.85));
+    }
+
+    #[test]
+    fn test_graph_node_with_score_clamping() {
+        let node1 = GraphNode::new("s1", "content").with_score(1.5);
+        assert_eq!(node1.score, Some(1.0));
+
+        let node2 = GraphNode::new("s1", "content").with_score(-0.5);
+        assert_eq!(node2.score, Some(0.0));
+    }
+
+    #[test]
+    fn test_graph_node_with_depth() {
+        let node = GraphNode::new("s1", "content").with_depth(3);
+        assert_eq!(node.depth, 3);
+    }
+
+    #[test]
+    fn test_graph_node_as_terminal() {
+        let node = GraphNode::new("s1", "content").as_terminal();
+        assert!(node.is_terminal);
+    }
+
+    #[test]
+    fn test_graph_node_as_root() {
+        let node = GraphNode::new("s1", "content").as_root();
+        assert!(node.is_root);
+    }
+
+    #[test]
+    fn test_graph_node_as_active() {
+        let node = GraphNode::new("s1", "content").as_inactive().as_active();
+        assert!(node.is_active);
+    }
+
+    #[test]
+    fn test_graph_node_as_inactive() {
+        let node = GraphNode::new("s1", "content").as_inactive();
+        assert!(!node.is_active);
+    }
+
+    #[test]
+    fn test_graph_edge_new() {
+        let edge = GraphEdge::new("session-123", "node1", "node2");
+        assert_eq!(edge.session_id, "session-123");
+        assert_eq!(edge.from_node, "node1");
+        assert_eq!(edge.to_node, "node2");
+        assert_eq!(edge.edge_type, EdgeType::Generates);
+        assert_eq!(edge.weight, 1.0);
+        assert!(!edge.id.is_empty());
+    }
+
+    #[test]
+    fn test_graph_edge_with_type() {
+        let edge = GraphEdge::new("s1", "n1", "n2").with_type(EdgeType::Refines);
+        assert_eq!(edge.edge_type, EdgeType::Refines);
+    }
+
+    #[test]
+    fn test_graph_edge_with_weight() {
+        let edge = GraphEdge::new("s1", "n1", "n2").with_weight(0.75);
+        assert_eq!(edge.weight, 0.75);
+    }
+
+    #[test]
+    fn test_graph_edge_with_weight_clamping() {
+        let edge1 = GraphEdge::new("s1", "n1", "n2").with_weight(1.5);
+        assert_eq!(edge1.weight, 1.0);
+
+        let edge2 = GraphEdge::new("s1", "n1", "n2").with_weight(-0.5);
+        assert_eq!(edge2.weight, 0.0);
+    }
+
+    #[test]
+    fn test_state_snapshot_new() {
+        let data = serde_json::json!({"key": "value"});
+        let snapshot = StateSnapshot::new("session-123", data.clone());
+        assert_eq!(snapshot.session_id, "session-123");
+        assert_eq!(snapshot.state_data, data);
+        assert_eq!(snapshot.snapshot_type, SnapshotType::Full);
+        assert!(snapshot.parent_snapshot_id.is_none());
+        assert!(snapshot.description.is_none());
+        assert!(!snapshot.id.is_empty());
+    }
+
+    #[test]
+    fn test_state_snapshot_with_type() {
+        let data = serde_json::json!({"key": "value"});
+        let snapshot = StateSnapshot::new("s1", data).with_type(SnapshotType::Incremental);
+        assert_eq!(snapshot.snapshot_type, SnapshotType::Incremental);
+    }
+
+    #[test]
+    fn test_state_snapshot_with_parent() {
+        let data = serde_json::json!({"key": "value"});
+        let snapshot = StateSnapshot::new("s1", data).with_parent("parent-123");
+        assert_eq!(snapshot.parent_snapshot_id, Some("parent-123".to_string()));
+    }
+
+    #[test]
+    fn test_state_snapshot_with_description() {
+        let data = serde_json::json!({"key": "value"});
+        let snapshot = StateSnapshot::new("s1", data).with_description("after step 5");
+        assert_eq!(snapshot.description, Some("after step 5".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_new() {
+        let input = serde_json::json!({"param": "value"});
+        let invocation = Invocation::new("linear_reasoning", input.clone());
+        assert_eq!(invocation.tool_name, "linear_reasoning");
+        assert_eq!(invocation.input, input);
+        assert!(invocation.session_id.is_none());
+        assert!(invocation.output.is_none());
+        assert!(invocation.pipe_name.is_none());
+        assert!(invocation.latency_ms.is_none());
+        assert!(invocation.success);
+        assert!(invocation.error.is_none());
+        assert!(!invocation.id.is_empty());
+    }
+
+    #[test]
+    fn test_invocation_with_session() {
+        let input = serde_json::json!({"param": "value"});
+        let invocation = Invocation::new("tool", input).with_session("session-123");
+        assert_eq!(invocation.session_id, Some("session-123".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_with_pipe() {
+        let input = serde_json::json!({"param": "value"});
+        let invocation = Invocation::new("tool", input).with_pipe("linear-v1");
+        assert_eq!(invocation.pipe_name, Some("linear-v1".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_success() {
+        let input = serde_json::json!({"param": "value"});
+        let output = serde_json::json!({"result": "ok"});
+        let invocation = Invocation::new("tool", input).success(output.clone(), 150);
+        assert!(invocation.success);
+        assert_eq!(invocation.output, Some(output));
+        assert_eq!(invocation.latency_ms, Some(150));
+        assert!(invocation.error.is_none());
+    }
+
+    #[test]
+    fn test_invocation_failure() {
+        let input = serde_json::json!({"param": "value"});
+        let invocation = Invocation::new("tool", input).failure("connection timeout", 3000);
+        assert!(!invocation.success);
+        assert_eq!(invocation.error, Some("connection timeout".to_string()));
+        assert_eq!(invocation.latency_ms, Some(3000));
+        assert!(invocation.output.is_none());
+    }
+
+    #[test]
+    fn test_detection_new() {
+        let detection = Detection::new(
+            DetectionType::Bias,
+            "confirmation_bias",
+            4,
+            0.85,
+            "Only seeking confirming evidence",
+        );
+        assert_eq!(detection.detection_type, DetectionType::Bias);
+        assert_eq!(detection.detected_issue, "confirmation_bias");
+        assert_eq!(detection.severity, 4);
+        assert_eq!(detection.confidence, 0.85);
+        assert_eq!(detection.explanation, "Only seeking confirming evidence");
+        assert!(detection.session_id.is_none());
+        assert!(detection.thought_id.is_none());
+        assert!(detection.remediation.is_none());
+        assert!(!detection.id.is_empty());
+    }
+
+    #[test]
+    fn test_detection_severity_clamping() {
+        let detection1 = Detection::new(
+            DetectionType::Fallacy,
+            "ad_hominem",
+            10,
+            0.9,
+            "Attacking person not argument",
+        );
+        assert_eq!(detection1.severity, 5);
+
+        let detection2 = Detection::new(
+            DetectionType::Fallacy,
+            "ad_hominem",
+            0,
+            0.9,
+            "Attacking person not argument",
+        );
+        assert_eq!(detection2.severity, 1);
+    }
+
+    #[test]
+    fn test_detection_confidence_clamping() {
+        let detection1 = Detection::new(
+            DetectionType::Bias,
+            "anchoring",
+            3,
+            1.5,
+            "Over-reliance on initial info",
+        );
+        assert_eq!(detection1.confidence, 1.0);
+
+        let detection2 = Detection::new(
+            DetectionType::Bias,
+            "anchoring",
+            3,
+            -0.5,
+            "Over-reliance on initial info",
+        );
+        assert_eq!(detection2.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_detection_with_session() {
+        let detection = Detection::new(DetectionType::Bias, "sunk_cost", 3, 0.75, "explanation")
+            .with_session("session-123");
+        assert_eq!(detection.session_id, Some("session-123".to_string()));
+    }
+
+    #[test]
+    fn test_detection_with_thought() {
+        let detection = Detection::new(DetectionType::Fallacy, "strawman", 4, 0.8, "explanation")
+            .with_thought("thought-123");
+        assert_eq!(detection.thought_id, Some("thought-123".to_string()));
+    }
+
+    #[test]
+    fn test_detection_with_remediation() {
+        let detection = Detection::new(DetectionType::Bias, "availability", 2, 0.7, "explanation")
+            .with_remediation("Consider base rates");
+        assert_eq!(
+            detection.remediation,
+            Some("Consider base rates".to_string())
+        );
+    }
+
+    #[test]
+    fn test_detection_with_metadata() {
+        let metadata = serde_json::json!({"source": "automatic"});
+        let detection = Detection::new(DetectionType::Bias, "hindsight", 2, 0.65, "explanation")
+            .with_metadata(metadata.clone());
+        assert_eq!(detection.metadata, Some(metadata));
+    }
+
+    #[test]
+    fn test_decision_new() {
+        let options = vec!["option1".to_string(), "option2".to_string()];
+        let recommendation = serde_json::json!({"choice": "option1"});
+        let scores = serde_json::json!([{"option": "option1", "score": 0.8}]);
+
+        let decision = Decision::new(
+            "session-123",
+            "Which option to choose?",
+            options.clone(),
+            "weighted_sum",
+            recommendation.clone(),
+            scores.clone(),
+        );
+
+        assert_eq!(decision.session_id, "session-123");
+        assert_eq!(decision.question, "Which option to choose?");
+        assert_eq!(decision.options, options);
+        assert_eq!(decision.method, "weighted_sum");
+        assert_eq!(decision.recommendation, recommendation);
+        assert_eq!(decision.scores, scores);
+        assert!(decision.criteria.is_none());
+        assert!(!decision.id.is_empty());
+    }
+
+    #[test]
+    fn test_decision_with_criteria() {
+        let options = vec!["a".to_string()];
+        let criteria = vec![StoredCriterion {
+            name: "cost".to_string(),
+            weight: 0.5,
+            description: Some("Total cost".to_string()),
+        }];
+
+        let decision = Decision::new(
+            "s1",
+            "question",
+            options,
+            "method",
+            serde_json::json!({}),
+            serde_json::json!([]),
+        )
+        .with_criteria(criteria.clone());
+
+        assert_eq!(decision.criteria.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_perspective_analysis_new() {
+        let stakeholders = serde_json::json!([{"name": "users"}]);
+        let synthesis = serde_json::json!({"summary": "analysis"});
+
+        let analysis = PerspectiveAnalysis::new(
+            "session-123",
+            "new feature",
+            stakeholders.clone(),
+            synthesis.clone(),
+            0.85,
+        );
+
+        assert_eq!(analysis.session_id, "session-123");
+        assert_eq!(analysis.topic, "new feature");
+        assert_eq!(analysis.stakeholders, stakeholders);
+        assert_eq!(analysis.synthesis, synthesis);
+        assert_eq!(analysis.confidence, 0.85);
+        assert!(analysis.power_matrix.is_none());
+        assert!(!analysis.id.is_empty());
+    }
+
+    #[test]
+    fn test_perspective_analysis_confidence_clamping() {
+        let stakeholders = serde_json::json!([]);
+        let synthesis = serde_json::json!({});
+
+        let analysis1 =
+            PerspectiveAnalysis::new("s1", "topic", stakeholders.clone(), synthesis.clone(), 1.5);
+        assert_eq!(analysis1.confidence, 1.0);
+
+        let analysis2 = PerspectiveAnalysis::new("s1", "topic", stakeholders, synthesis, -0.5);
+        assert_eq!(analysis2.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_evidence_assessment_new() {
+        let evidence = serde_json::json!([{"type": "empirical"}]);
+        let support = serde_json::json!({"level": "strong"});
+        let analysis = serde_json::json!([{"id": 1}]);
+
+        let assessment = EvidenceAssessment::new(
+            "session-123",
+            "climate change is real",
+            evidence.clone(),
+            support.clone(),
+            analysis.clone(),
+        );
+
+        assert_eq!(assessment.session_id, "session-123");
+        assert_eq!(assessment.claim, "climate change is real");
+        assert_eq!(assessment.evidence, evidence);
+        assert_eq!(assessment.overall_support, support);
+        assert_eq!(assessment.evidence_analysis, analysis);
+        assert!(assessment.chain_analysis.is_none());
+        assert!(!assessment.id.is_empty());
+    }
+
+    #[test]
+    fn test_probability_update_new() {
+        let steps = serde_json::json!([{"step": 1}]);
+        let interpretation = serde_json::json!({"result": "increased"});
+
+        let update = ProbabilityUpdate::new(
+            "session-123",
+            "hypothesis X is true",
+            0.5,
+            0.75,
+            steps.clone(),
+            interpretation.clone(),
+        );
+
+        assert_eq!(update.session_id, "session-123");
+        assert_eq!(update.hypothesis, "hypothesis X is true");
+        assert_eq!(update.prior, 0.5);
+        assert_eq!(update.posterior, 0.75);
+        assert_eq!(update.update_steps, steps);
+        assert_eq!(update.interpretation, interpretation);
+        assert!(update.confidence_lower.is_none());
+        assert!(!update.id.is_empty());
+    }
+
+    #[test]
+    fn test_probability_update_prior_posterior_clamping() {
+        let steps = serde_json::json!([]);
+        let interpretation = serde_json::json!({});
+
+        let update1 =
+            ProbabilityUpdate::new("s1", "h1", 1.5, -0.5, steps.clone(), interpretation.clone());
+        assert_eq!(update1.prior, 1.0);
+        assert_eq!(update1.posterior, 0.0);
+
+        let update2 = ProbabilityUpdate::new("s1", "h1", -0.2, 1.2, steps, interpretation);
+        assert_eq!(update2.prior, 0.0);
+        assert_eq!(update2.posterior, 1.0);
+    }
+
+    #[test]
+    fn test_probability_update_with_confidence_interval() {
+        let steps = serde_json::json!([]);
+        let interpretation = serde_json::json!({});
+
+        let update = ProbabilityUpdate::new("s1", "h1", 0.5, 0.7, steps, interpretation)
+            .with_confidence_interval(Some(0.6), Some(0.8), Some(0.95));
+
+        assert_eq!(update.confidence_lower, Some(0.6));
+        assert_eq!(update.confidence_upper, Some(0.8));
+        assert_eq!(update.confidence_level, Some(0.95));
+    }
+
+    #[test]
+    fn test_probability_update_confidence_interval_clamping() {
+        let steps = serde_json::json!([]);
+        let interpretation = serde_json::json!({});
+
+        let update = ProbabilityUpdate::new("s1", "h1", 0.5, 0.7, steps, interpretation)
+            .with_confidence_interval(Some(1.5), Some(-0.5), Some(2.0));
+
+        assert_eq!(update.confidence_lower, Some(1.0));
+        assert_eq!(update.confidence_upper, Some(0.0));
+        assert_eq!(update.confidence_level, Some(1.0));
+    }
+}

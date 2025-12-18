@@ -472,4 +472,404 @@ mod tests {
     // Note: Config::from_env() tests are in tests/config_env_test.rs
     // because they require serial execution and full env var control.
     // Unit tests here focus on Default impls and type behavior.
+
+    #[test]
+    fn test_database_config_struct() {
+        let config = DatabaseConfig {
+            path: PathBuf::from("/test/path.db"),
+            max_connections: 10,
+        };
+        assert_eq!(config.path, PathBuf::from("/test/path.db"));
+        assert_eq!(config.max_connections, 10);
+    }
+
+    #[test]
+    fn test_langbase_config_struct() {
+        let config = LangbaseConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://test.api.com".to_string(),
+        };
+        assert_eq!(config.api_key, "test-key");
+        assert_eq!(config.base_url, "https://test.api.com");
+    }
+
+    #[test]
+    fn test_logging_config_struct() {
+        let config_pretty = LoggingConfig {
+            level: "debug".to_string(),
+            format: LogFormat::Pretty,
+        };
+        assert_eq!(config_pretty.level, "debug");
+        assert_eq!(config_pretty.format, LogFormat::Pretty);
+
+        let config_json = LoggingConfig {
+            level: "info".to_string(),
+            format: LogFormat::Json,
+        };
+        assert_eq!(config_json.level, "info");
+        assert_eq!(config_json.format, LogFormat::Json);
+    }
+
+    #[test]
+    fn test_request_config_struct() {
+        let config = RequestConfig {
+            timeout_ms: 60000,
+            max_retries: 5,
+            retry_delay_ms: 2000,
+        };
+        assert_eq!(config.timeout_ms, 60000);
+        assert_eq!(config.max_retries, 5);
+        assert_eq!(config.retry_delay_ms, 2000);
+    }
+
+    #[test]
+    fn test_pipe_config_struct_all_fields() {
+        let config = PipeConfig {
+            linear: "linear-v1".to_string(),
+            tree: "tree-v1".to_string(),
+            divergent: "divergent-v1".to_string(),
+            reflection: "reflection-v1".to_string(),
+            auto_router: "router-v1".to_string(),
+            auto: Some("auto-v1".to_string()),
+            backtracking: Some("backtrack-v1".to_string()),
+            got: Some(GotPipeConfig::default()),
+            detection: Some(DetectionPipeConfig::default()),
+            decision: Some(DecisionPipeConfig::default()),
+            evidence: Some(EvidencePipeConfig::default()),
+        };
+
+        assert_eq!(config.linear, "linear-v1");
+        assert_eq!(config.tree, "tree-v1");
+        assert_eq!(config.divergent, "divergent-v1");
+        assert_eq!(config.reflection, "reflection-v1");
+        assert_eq!(config.auto_router, "router-v1");
+        assert_eq!(config.auto, Some("auto-v1".to_string()));
+        assert_eq!(config.backtracking, Some("backtrack-v1".to_string()));
+        assert!(config.got.is_some());
+        assert!(config.detection.is_some());
+        assert!(config.decision.is_some());
+        assert!(config.evidence.is_some());
+    }
+
+    #[test]
+    fn test_detection_pipe_config_struct() {
+        let config = DetectionPipeConfig {
+            bias_pipe: Some("bias-v1".to_string()),
+            fallacy_pipe: Some("fallacy-v1".to_string()),
+        };
+        assert_eq!(config.bias_pipe, Some("bias-v1".to_string()));
+        assert_eq!(config.fallacy_pipe, Some("fallacy-v1".to_string()));
+    }
+
+    #[test]
+    fn test_detection_pipe_config_none_values() {
+        let config = DetectionPipeConfig {
+            bias_pipe: None,
+            fallacy_pipe: None,
+        };
+        assert!(config.bias_pipe.is_none());
+        assert!(config.fallacy_pipe.is_none());
+    }
+
+    #[test]
+    fn test_got_pipe_config_struct_all_fields() {
+        let config = GotPipeConfig {
+            generate_pipe: Some("generate-v1".to_string()),
+            score_pipe: Some("score-v1".to_string()),
+            aggregate_pipe: Some("aggregate-v1".to_string()),
+            refine_pipe: Some("refine-v1".to_string()),
+            max_nodes: Some(50),
+            max_depth: Some(5),
+            default_k: Some(2),
+            prune_threshold: Some(0.5),
+        };
+
+        assert_eq!(config.generate_pipe, Some("generate-v1".to_string()));
+        assert_eq!(config.score_pipe, Some("score-v1".to_string()));
+        assert_eq!(config.aggregate_pipe, Some("aggregate-v1".to_string()));
+        assert_eq!(config.refine_pipe, Some("refine-v1".to_string()));
+        assert_eq!(config.max_nodes, Some(50));
+        assert_eq!(config.max_depth, Some(5));
+        assert_eq!(config.default_k, Some(2));
+        assert_eq!(config.prune_threshold, Some(0.5));
+    }
+
+    #[test]
+    fn test_got_pipe_config_none_values() {
+        let config = GotPipeConfig {
+            generate_pipe: None,
+            score_pipe: None,
+            aggregate_pipe: None,
+            refine_pipe: None,
+            max_nodes: None,
+            max_depth: None,
+            default_k: None,
+            prune_threshold: None,
+        };
+
+        assert!(config.generate_pipe.is_none());
+        assert!(config.score_pipe.is_none());
+        assert!(config.aggregate_pipe.is_none());
+        assert!(config.refine_pipe.is_none());
+        assert!(config.max_nodes.is_none());
+        assert!(config.max_depth.is_none());
+        assert!(config.default_k.is_none());
+        assert!(config.prune_threshold.is_none());
+    }
+
+    #[test]
+    fn test_decision_pipe_config_struct() {
+        let config = DecisionPipeConfig {
+            decision_pipe: Some("decision-v1".to_string()),
+            perspective_pipe: Some("perspective-v1".to_string()),
+        };
+        assert_eq!(config.decision_pipe, Some("decision-v1".to_string()));
+        assert_eq!(config.perspective_pipe, Some("perspective-v1".to_string()));
+    }
+
+    #[test]
+    fn test_decision_pipe_config_none_values() {
+        let config = DecisionPipeConfig {
+            decision_pipe: None,
+            perspective_pipe: None,
+        };
+        assert!(config.decision_pipe.is_none());
+        assert!(config.perspective_pipe.is_none());
+    }
+
+    #[test]
+    fn test_evidence_pipe_config_struct() {
+        let config = EvidencePipeConfig {
+            evidence_pipe: Some("evidence-v1".to_string()),
+            bayesian_pipe: Some("bayesian-v1".to_string()),
+        };
+        assert_eq!(config.evidence_pipe, Some("evidence-v1".to_string()));
+        assert_eq!(config.bayesian_pipe, Some("bayesian-v1".to_string()));
+    }
+
+    #[test]
+    fn test_evidence_pipe_config_none_values() {
+        let config = EvidencePipeConfig {
+            evidence_pipe: None,
+            bayesian_pipe: None,
+        };
+        assert!(config.evidence_pipe.is_none());
+        assert!(config.bayesian_pipe.is_none());
+    }
+
+    #[test]
+    fn test_config_struct_clone() {
+        let config = RequestConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.timeout_ms, cloned.timeout_ms);
+        assert_eq!(config.max_retries, cloned.max_retries);
+        assert_eq!(config.retry_delay_ms, cloned.retry_delay_ms);
+    }
+
+    #[test]
+    fn test_pipe_config_clone() {
+        let config = PipeConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.linear, cloned.linear);
+        assert_eq!(config.tree, cloned.tree);
+        assert_eq!(config.divergent, cloned.divergent);
+    }
+
+    #[test]
+    fn test_log_format_debug() {
+        let pretty = LogFormat::Pretty;
+        let json = LogFormat::Json;
+        assert!(format!("{:?}", pretty).contains("Pretty"));
+        assert!(format!("{:?}", json).contains("Json"));
+    }
+
+    #[test]
+    fn test_database_config_debug() {
+        let config = DatabaseConfig {
+            path: PathBuf::from("/test.db"),
+            max_connections: 5,
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("DatabaseConfig"));
+        assert!(debug_str.contains("test.db"));
+    }
+
+    #[test]
+    fn test_langbase_config_debug() {
+        let config = LangbaseConfig {
+            api_key: "key123".to_string(),
+            base_url: "https://api.test.com".to_string(),
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("LangbaseConfig"));
+        assert!(debug_str.contains("key123"));
+    }
+
+    #[test]
+    fn test_got_pipe_config_default_values() {
+        let config = GotPipeConfig::default();
+
+        // Verify all string fields have expected default values
+        assert_eq!(config.generate_pipe.as_deref(), Some("got-generate-v1"));
+        assert_eq!(config.score_pipe.as_deref(), Some("got-score-v1"));
+        assert_eq!(config.aggregate_pipe.as_deref(), Some("got-aggregate-v1"));
+        assert_eq!(config.refine_pipe.as_deref(), Some("got-refine-v1"));
+
+        // Verify all numeric fields have expected default values
+        assert_eq!(config.max_nodes, Some(100));
+        assert_eq!(config.max_depth, Some(10));
+        assert_eq!(config.default_k, Some(3));
+        assert_eq!(config.prune_threshold, Some(0.3));
+    }
+
+    #[test]
+    fn test_detection_pipe_config_default_values() {
+        let config = DetectionPipeConfig::default();
+
+        assert_eq!(config.bias_pipe.as_deref(), Some("detect-biases-v1"));
+        assert_eq!(config.fallacy_pipe.as_deref(), Some("detect-fallacies-v1"));
+    }
+
+    #[test]
+    fn test_decision_pipe_config_default_values() {
+        let config = DecisionPipeConfig::default();
+
+        assert_eq!(config.decision_pipe.as_deref(), Some("decision-maker-v1"));
+        assert_eq!(
+            config.perspective_pipe.as_deref(),
+            Some("perspective-analyzer-v1")
+        );
+    }
+
+    #[test]
+    fn test_evidence_pipe_config_default_values() {
+        let config = EvidencePipeConfig::default();
+
+        assert_eq!(
+            config.evidence_pipe.as_deref(),
+            Some("evidence-assessor-v1")
+        );
+        assert_eq!(config.bayesian_pipe.as_deref(), Some("bayesian-updater-v1"));
+    }
+
+    #[test]
+    fn test_request_config_default_values() {
+        let config = RequestConfig::default();
+
+        // Verify all fields have expected defaults
+        assert_eq!(config.timeout_ms, 30000);
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.retry_delay_ms, 1000);
+    }
+
+    #[test]
+    fn test_pipe_config_default_values() {
+        let config = PipeConfig::default();
+
+        // Verify all required string fields
+        assert_eq!(config.linear, "linear-reasoning-v1");
+        assert_eq!(config.tree, "tree-reasoning-v1");
+        assert_eq!(config.divergent, "divergent-reasoning-v1");
+        assert_eq!(config.reflection, "reflection-v1");
+        assert_eq!(config.auto_router, "mode-router-v1");
+
+        // Verify all optional fields are None by default
+        assert!(config.auto.is_none());
+        assert!(config.backtracking.is_none());
+        assert!(config.got.is_none());
+        assert!(config.detection.is_none());
+        assert!(config.decision.is_none());
+        assert!(config.evidence.is_none());
+    }
+
+    #[test]
+    fn test_log_format_clone() {
+        let original = LogFormat::Pretty;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+
+        let original_json = LogFormat::Json;
+        let cloned_json = original_json.clone();
+        assert_eq!(original_json, cloned_json);
+    }
+
+    #[test]
+    fn test_detection_pipe_config_clone() {
+        let config = DetectionPipeConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.bias_pipe, cloned.bias_pipe);
+        assert_eq!(config.fallacy_pipe, cloned.fallacy_pipe);
+    }
+
+    #[test]
+    fn test_got_pipe_config_clone() {
+        let config = GotPipeConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.generate_pipe, cloned.generate_pipe);
+        assert_eq!(config.score_pipe, cloned.score_pipe);
+        assert_eq!(config.max_nodes, cloned.max_nodes);
+        assert_eq!(config.prune_threshold, cloned.prune_threshold);
+    }
+
+    #[test]
+    fn test_decision_pipe_config_clone() {
+        let config = DecisionPipeConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.decision_pipe, cloned.decision_pipe);
+        assert_eq!(config.perspective_pipe, cloned.perspective_pipe);
+    }
+
+    #[test]
+    fn test_evidence_pipe_config_clone() {
+        let config = EvidencePipeConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.evidence_pipe, cloned.evidence_pipe);
+        assert_eq!(config.bayesian_pipe, cloned.bayesian_pipe);
+    }
+
+    #[test]
+    fn test_database_config_clone() {
+        let config = DatabaseConfig {
+            path: PathBuf::from("/test.db"),
+            max_connections: 10,
+        };
+        let cloned = config.clone();
+        assert_eq!(config.path, cloned.path);
+        assert_eq!(config.max_connections, cloned.max_connections);
+    }
+
+    #[test]
+    fn test_langbase_config_clone() {
+        let config = LangbaseConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://test.com".to_string(),
+        };
+        let cloned = config.clone();
+        assert_eq!(config.api_key, cloned.api_key);
+        assert_eq!(config.base_url, cloned.base_url);
+    }
+
+    #[test]
+    fn test_logging_config_clone() {
+        let config = LoggingConfig {
+            level: "debug".to_string(),
+            format: LogFormat::Pretty,
+        };
+        let cloned = config.clone();
+        assert_eq!(config.level, cloned.level);
+        assert_eq!(config.format, cloned.format);
+    }
+
+    #[test]
+    fn test_request_config_clone() {
+        let config = RequestConfig {
+            timeout_ms: 5000,
+            max_retries: 2,
+            retry_delay_ms: 500,
+        };
+        let cloned = config.clone();
+        assert_eq!(config.timeout_ms, cloned.timeout_ms);
+        assert_eq!(config.max_retries, cloned.max_retries);
+        assert_eq!(config.retry_delay_ms, cloned.retry_delay_ms);
+    }
 }

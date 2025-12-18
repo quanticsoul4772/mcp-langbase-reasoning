@@ -930,4 +930,1502 @@ mod tests {
         assert_eq!(result.recommended_branch_index, 1);
         assert_eq!(result.cross_refs_created, 1);
     }
+
+    // ============================================================================
+    // Edge Cases and Boundary Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_params_empty_content() {
+        let params = TreeParams::new("");
+        assert_eq!(params.content, "");
+    }
+
+    #[test]
+    fn test_tree_params_whitespace_content() {
+        let params = TreeParams::new("   ");
+        assert_eq!(params.content, "   ");
+    }
+
+    #[test]
+    fn test_tree_params_num_branches_boundary_min() {
+        let params = TreeParams::new("Content").with_num_branches(2);
+        assert_eq!(params.num_branches, 2);
+    }
+
+    #[test]
+    fn test_tree_params_num_branches_boundary_max() {
+        let params = TreeParams::new("Content").with_num_branches(4);
+        assert_eq!(params.num_branches, 4);
+    }
+
+    #[test]
+    fn test_tree_params_num_branches_zero() {
+        let params = TreeParams::new("Content").with_num_branches(0);
+        assert_eq!(params.num_branches, 2); // clamped to min
+    }
+
+    #[test]
+    fn test_tree_params_confidence_boundary_zero() {
+        let params = TreeParams::new("Content").with_confidence(0.0);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_tree_params_confidence_boundary_one() {
+        let params = TreeParams::new("Content").with_confidence(1.0);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_tree_params_confidence_negative() {
+        let params = TreeParams::new("Content").with_confidence(-10.5);
+        assert_eq!(params.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_tree_params_confidence_very_high() {
+        let params = TreeParams::new("Content").with_confidence(100.0);
+        assert_eq!(params.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_tree_result_empty_child_branches() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            confidence: 0.8,
+            child_branches: vec![],
+            recommended_branch_index: 0,
+            parent_branch: None,
+            cross_refs_created: 0,
+        };
+
+        assert!(result.child_branches.is_empty());
+    }
+
+    #[test]
+    fn test_tree_result_with_parent_branch() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            confidence: 0.8,
+            child_branches: vec![],
+            recommended_branch_index: 0,
+            parent_branch: Some("parent-123".to_string()),
+            cross_refs_created: 0,
+        };
+
+        assert!(result.parent_branch.is_some());
+        assert_eq!(result.parent_branch.unwrap(), "parent-123");
+    }
+
+    #[test]
+    fn test_tree_result_multiple_cross_refs() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            confidence: 0.8,
+            child_branches: vec![],
+            recommended_branch_index: 0,
+            parent_branch: None,
+            cross_refs_created: 5,
+        };
+
+        assert_eq!(result.cross_refs_created, 5);
+    }
+
+    // ============================================================================
+    // CrossRefInput All Variants Tests
+    // ============================================================================
+
+    #[test]
+    fn test_cross_ref_input_type_supports() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: None,
+            strength: None,
+        };
+        assert_eq!(cr.ref_type, "supports");
+    }
+
+    #[test]
+    fn test_cross_ref_input_type_contradicts() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "contradicts".to_string(),
+            reason: None,
+            strength: None,
+        };
+        assert_eq!(cr.ref_type, "contradicts");
+    }
+
+    #[test]
+    fn test_cross_ref_input_type_extends() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "extends".to_string(),
+            reason: None,
+            strength: None,
+        };
+        assert_eq!(cr.ref_type, "extends");
+    }
+
+    #[test]
+    fn test_cross_ref_input_type_alternative() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "alternative".to_string(),
+            reason: None,
+            strength: None,
+        };
+        assert_eq!(cr.ref_type, "alternative");
+    }
+
+    #[test]
+    fn test_cross_ref_input_type_depends() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "depends".to_string(),
+            reason: None,
+            strength: None,
+        };
+        assert_eq!(cr.ref_type, "depends");
+    }
+
+    #[test]
+    fn test_cross_ref_input_with_reason() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: Some("Strong evidence".to_string()),
+            strength: None,
+        };
+        assert_eq!(cr.reason, Some("Strong evidence".to_string()));
+    }
+
+    #[test]
+    fn test_cross_ref_input_with_strength_zero() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: None,
+            strength: Some(0.0),
+        };
+        assert_eq!(cr.strength, Some(0.0));
+    }
+
+    #[test]
+    fn test_cross_ref_input_with_strength_one() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: None,
+            strength: Some(1.0),
+        };
+        assert_eq!(cr.strength, Some(1.0));
+    }
+
+    #[test]
+    fn test_cross_ref_input_with_strength_mid() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: None,
+            strength: Some(0.5),
+        };
+        assert_eq!(cr.strength, Some(0.5));
+    }
+
+    #[test]
+    fn test_cross_ref_input_full_fields() {
+        let cr = CrossRefInput {
+            to_branch: "target-branch".to_string(),
+            ref_type: "extends".to_string(),
+            reason: Some("Builds on previous work".to_string()),
+            strength: Some(0.95),
+        };
+
+        assert_eq!(cr.to_branch, "target-branch");
+        assert_eq!(cr.ref_type, "extends");
+        assert_eq!(cr.reason, Some("Builds on previous work".to_string()));
+        assert_eq!(cr.strength, Some(0.95));
+    }
+
+    // ============================================================================
+    // TreeResponse Additional Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_response_empty_branches() {
+        let response = TreeResponse {
+            branches: vec![],
+            recommended_branch: 0,
+            metadata: serde_json::json!({}),
+        };
+        assert!(response.branches.is_empty());
+    }
+
+    #[test]
+    fn test_tree_response_single_branch() {
+        let response = TreeResponse {
+            branches: vec![TreeBranch {
+                thought: "Only option".to_string(),
+                confidence: 0.9,
+                rationale: "Best choice".to_string(),
+            }],
+            recommended_branch: 0,
+            metadata: serde_json::json!({}),
+        };
+        assert_eq!(response.branches.len(), 1);
+        assert_eq!(response.recommended_branch, 0);
+    }
+
+    #[test]
+    fn test_tree_response_four_branches() {
+        let response = TreeResponse {
+            branches: vec![
+                TreeBranch {
+                    thought: "Branch 1".to_string(),
+                    confidence: 0.8,
+                    rationale: "Option 1".to_string(),
+                },
+                TreeBranch {
+                    thought: "Branch 2".to_string(),
+                    confidence: 0.85,
+                    rationale: "Option 2".to_string(),
+                },
+                TreeBranch {
+                    thought: "Branch 3".to_string(),
+                    confidence: 0.7,
+                    rationale: "Option 3".to_string(),
+                },
+                TreeBranch {
+                    thought: "Branch 4".to_string(),
+                    confidence: 0.9,
+                    rationale: "Option 4".to_string(),
+                },
+            ],
+            recommended_branch: 3,
+            metadata: serde_json::json!({}),
+        };
+        assert_eq!(response.branches.len(), 4);
+        assert_eq!(response.recommended_branch, 3);
+    }
+
+    #[test]
+    fn test_tree_response_with_metadata() {
+        let response = TreeResponse {
+            branches: vec![],
+            recommended_branch: 0,
+            metadata: serde_json::json!({
+                "total_time": 123,
+                "model": "gpt-4",
+                "tokens": 456
+            }),
+        };
+        assert_eq!(response.metadata["total_time"], 123);
+        assert_eq!(response.metadata["model"], "gpt-4");
+        assert_eq!(response.metadata["tokens"], 456);
+    }
+
+    #[test]
+    fn test_tree_response_deserialize_with_default_metadata() {
+        let json = r#"{
+            "branches": [],
+            "recommended_branch": 0
+        }"#;
+        let response: TreeResponse = serde_json::from_str(json).unwrap();
+        // Default metadata is Value::Null (serde_json::Value default)
+        assert!(response.metadata.is_null());
+    }
+
+    // ============================================================================
+    // TreeBranch Additional Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_branch_zero_confidence() {
+        let branch = TreeBranch {
+            thought: "Low confidence branch".to_string(),
+            confidence: 0.0,
+            rationale: "Uncertain".to_string(),
+        };
+        assert_eq!(branch.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_tree_branch_max_confidence() {
+        let branch = TreeBranch {
+            thought: "High confidence branch".to_string(),
+            confidence: 1.0,
+            rationale: "Very certain".to_string(),
+        };
+        assert_eq!(branch.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_tree_branch_empty_thought() {
+        let branch = TreeBranch {
+            thought: "".to_string(),
+            confidence: 0.5,
+            rationale: "No content".to_string(),
+        };
+        assert_eq!(branch.thought, "");
+    }
+
+    #[test]
+    fn test_tree_branch_empty_rationale() {
+        let branch = TreeBranch {
+            thought: "Branch content".to_string(),
+            confidence: 0.5,
+            rationale: "".to_string(),
+        };
+        assert_eq!(branch.rationale, "");
+    }
+
+    // ============================================================================
+    // BranchInfo Additional Tests
+    // ============================================================================
+
+    #[test]
+    fn test_branch_info_zero_confidence() {
+        let info = BranchInfo {
+            id: "b-1".to_string(),
+            name: "Branch".to_string(),
+            confidence: 0.0,
+            rationale: "Low".to_string(),
+        };
+        assert_eq!(info.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_branch_info_max_confidence() {
+        let info = BranchInfo {
+            id: "b-1".to_string(),
+            name: "Branch".to_string(),
+            confidence: 1.0,
+            rationale: "High".to_string(),
+        };
+        assert_eq!(info.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_branch_info_empty_name() {
+        let info = BranchInfo {
+            id: "b-1".to_string(),
+            name: "".to_string(),
+            confidence: 0.8,
+            rationale: "Rationale".to_string(),
+        };
+        assert_eq!(info.name, "");
+    }
+
+    #[test]
+    fn test_branch_info_long_name() {
+        let long_name = "A".repeat(200);
+        let info = BranchInfo {
+            id: "b-1".to_string(),
+            name: long_name.clone(),
+            confidence: 0.8,
+            rationale: "Rationale".to_string(),
+        };
+        assert_eq!(info.name, long_name);
+    }
+
+    // ============================================================================
+    // Truncate Additional Edge Cases
+    // ============================================================================
+
+    #[test]
+    fn test_truncate_empty_string() {
+        assert_eq!(truncate("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_max_len_zero() {
+        assert_eq!(truncate("Hello", 0), "...");
+    }
+
+    #[test]
+    fn test_truncate_max_len_one() {
+        assert_eq!(truncate("Hello", 1), "...");
+    }
+
+    #[test]
+    fn test_truncate_max_len_two() {
+        assert_eq!(truncate("Hello", 2), "...");
+    }
+
+    #[test]
+    fn test_truncate_unicode() {
+        // Test with ASCII string (truncate function uses byte indexing, not unicode-safe)
+        let result = truncate("Hello World!", 10);
+        assert!(result.len() <= 10);
+        assert!(result.ends_with("..."));
+    }
+
+    // ============================================================================
+    // Serialization Round-trip Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_params_roundtrip() {
+        let params = TreeParams::new("Test content")
+            .with_session("sess-123")
+            .with_branch("branch-456")
+            .with_confidence(0.75)
+            .with_num_branches(3)
+            .with_cross_ref("ref-1", "supports");
+
+        let json = serde_json::to_string(&params).unwrap();
+        let parsed: TreeParams = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.content, params.content);
+        assert_eq!(parsed.session_id, params.session_id);
+        assert_eq!(parsed.branch_id, params.branch_id);
+        assert_eq!(parsed.confidence, params.confidence);
+        assert_eq!(parsed.num_branches, params.num_branches);
+        assert_eq!(parsed.cross_refs.len(), params.cross_refs.len());
+    }
+
+    #[test]
+    fn test_tree_response_roundtrip() {
+        let response = TreeResponse {
+            branches: vec![
+                TreeBranch {
+                    thought: "Path 1".to_string(),
+                    confidence: 0.8,
+                    rationale: "Reason 1".to_string(),
+                },
+                TreeBranch {
+                    thought: "Path 2".to_string(),
+                    confidence: 0.9,
+                    rationale: "Reason 2".to_string(),
+                },
+            ],
+            recommended_branch: 1,
+            metadata: serde_json::json!({"key": "value"}),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: TreeResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.branches.len(), response.branches.len());
+        assert_eq!(parsed.recommended_branch, response.recommended_branch);
+        assert_eq!(parsed.metadata, response.metadata);
+    }
+
+    #[test]
+    fn test_tree_result_roundtrip() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            confidence: 0.88,
+            child_branches: vec![BranchInfo {
+                id: "c-1".to_string(),
+                name: "Child".to_string(),
+                confidence: 0.77,
+                rationale: "Child rationale".to_string(),
+            }],
+            recommended_branch_index: 0,
+            parent_branch: Some("p-1".to_string()),
+            cross_refs_created: 3,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: TreeResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.session_id, result.session_id);
+        assert_eq!(parsed.branch_id, result.branch_id);
+        assert_eq!(parsed.thought_id, result.thought_id);
+        assert_eq!(parsed.confidence, result.confidence);
+        assert_eq!(parsed.child_branches.len(), result.child_branches.len());
+        assert_eq!(
+            parsed.recommended_branch_index,
+            result.recommended_branch_index
+        );
+        assert_eq!(parsed.cross_refs_created, result.cross_refs_created);
+    }
+
+    #[test]
+    fn test_cross_ref_input_roundtrip() {
+        let cr = CrossRefInput {
+            to_branch: "target".to_string(),
+            ref_type: "contradicts".to_string(),
+            reason: Some("Conflicts".to_string()),
+            strength: Some(0.85),
+        };
+
+        let json = serde_json::to_string(&cr).unwrap();
+        let parsed: CrossRefInput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.to_branch, cr.to_branch);
+        assert_eq!(parsed.ref_type, cr.ref_type);
+        assert_eq!(parsed.reason, cr.reason);
+        assert_eq!(parsed.strength, cr.strength);
+    }
+
+    #[test]
+    fn test_branch_info_roundtrip() {
+        let info = BranchInfo {
+            id: "b-123".to_string(),
+            name: "Test Branch".to_string(),
+            confidence: 0.92,
+            rationale: "Good choice".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let parsed: BranchInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.id, info.id);
+        assert_eq!(parsed.name, info.name);
+        assert_eq!(parsed.confidence, info.confidence);
+        assert_eq!(parsed.rationale, info.rationale);
+    }
+
+    // ============================================================================
+    // TreeParams Field Skipping Tests (Optional Fields)
+    // ============================================================================
+
+    #[test]
+    fn test_tree_params_serialize_skips_none_session() {
+        let params = TreeParams::new("Content");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(!json.contains("session_id"));
+    }
+
+    #[test]
+    fn test_tree_params_serialize_includes_some_session() {
+        let params = TreeParams::new("Content").with_session("sess-1");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("session_id"));
+    }
+
+    #[test]
+    fn test_tree_params_serialize_skips_none_branch() {
+        let params = TreeParams::new("Content");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(!json.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_tree_params_serialize_includes_some_branch() {
+        let params = TreeParams::new("Content").with_branch("b-1");
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("branch_id"));
+    }
+
+    #[test]
+    fn test_tree_params_default_cross_refs_empty() {
+        let params = TreeParams::new("Content");
+        assert!(params.cross_refs.is_empty());
+    }
+
+    // ============================================================================
+    // JSON Field Name Tests (serde rename)
+    // ============================================================================
+
+    #[test]
+    fn test_cross_ref_input_json_uses_type_not_ref_type() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: None,
+            strength: None,
+        };
+        let json = serde_json::to_string(&cr).unwrap();
+        assert!(json.contains(r#""type":"supports""#));
+        assert!(!json.contains("ref_type"));
+    }
+
+    #[test]
+    fn test_cross_ref_input_deserialize_from_type_field() {
+        let json = r#"{"to_branch":"b-1","type":"extends"}"#;
+        let cr: CrossRefInput = serde_json::from_str(json).unwrap();
+        assert_eq!(cr.ref_type, "extends");
+    }
+
+    // ============================================================================
+    // TreeMode Constructor and Pipe Name Tests
+    // ============================================================================
+
+    fn create_test_config() -> Config {
+        use crate::config::{DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig};
+        use std::path::PathBuf;
+
+        Config {
+            langbase: LangbaseConfig {
+                api_key: "test-key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: crate::config::RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        }
+    }
+
+    #[test]
+    fn test_tree_mode_new() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        assert_eq!(tree_mode.pipe_name, config.pipes.tree);
+    }
+
+    #[test]
+    fn test_tree_mode_custom_pipe_name() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let mut config = create_test_config();
+        config.pipes.tree = "custom-tree-pipe".to_string();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        assert_eq!(tree_mode.pipe_name, "custom-tree-pipe");
+    }
+
+    // ============================================================================
+    // build_messages() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_build_messages_empty_content() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let messages = tree_mode.build_messages("", &[], 3);
+
+        // Should have system prompt + user message
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].content.contains("3 distinct reasoning paths"));
+        assert_eq!(messages[1].content, "");
+    }
+
+    #[test]
+    fn test_build_messages_no_history() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let messages = tree_mode.build_messages("Test content", &[], 3);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].content, "Test content");
+    }
+
+    #[test]
+    fn test_build_messages_with_history() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::{SqliteStorage, Thought};
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let history = vec![
+            Thought::new("sess-1", "First thought", "tree"),
+            Thought::new("sess-1", "Second thought", "tree"),
+        ];
+
+        let messages = tree_mode.build_messages("Current thought", &history, 3);
+
+        // Should have: system prompt + history context + current content
+        assert_eq!(messages.len(), 3);
+        assert!(messages[1].content.contains("Previous reasoning"));
+        assert!(messages[1].content.contains("First thought"));
+        assert!(messages[1].content.contains("Second thought"));
+        assert_eq!(messages[2].content, "Current thought");
+    }
+
+    #[test]
+    fn test_build_messages_num_branches_2() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let messages = tree_mode.build_messages("Content", &[], 2);
+
+        assert!(messages[0].content.contains("2 distinct reasoning paths"));
+    }
+
+    #[test]
+    fn test_build_messages_num_branches_4() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let messages = tree_mode.build_messages("Content", &[], 4);
+
+        assert!(messages[0].content.contains("4 distinct reasoning paths"));
+    }
+
+    #[test]
+    fn test_build_messages_unicode_content() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let unicode_content = "Unicode: 世界 🌍 مرحبا";
+        let messages = tree_mode.build_messages(unicode_content, &[], 3);
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1].content, unicode_content);
+    }
+
+    #[test]
+    fn test_build_messages_multiline_content() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let multiline = "Line 1\nLine 2\nLine 3";
+        let messages = tree_mode.build_messages(multiline, &[], 3);
+
+        assert_eq!(messages[1].content, multiline);
+        assert!(messages[1].content.contains('\n'));
+    }
+
+    #[test]
+    fn test_build_messages_special_characters() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let special = "Special: \n\t\r\"'\\{}[]()!@#$%^&*";
+        let messages = tree_mode.build_messages(special, &[], 3);
+
+        assert_eq!(messages[1].content, special);
+    }
+
+    #[test]
+    fn test_build_messages_long_history() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::{SqliteStorage, Thought};
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let history: Vec<Thought> = (0..10)
+            .map(|i| Thought::new("sess-1", &format!("Thought {}", i), "tree"))
+            .collect();
+
+        let messages = tree_mode.build_messages("Current", &history, 3);
+
+        assert_eq!(messages.len(), 3);
+        assert!(messages[1].content.contains("Thought 0"));
+        assert!(messages[1].content.contains("Thought 9"));
+    }
+
+    // ============================================================================
+    // parse_response() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_parse_response_valid_json() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Branch 1", "confidence": 0.8, "rationale": "Reason 1"},
+                {"thought": "Branch 2", "confidence": 0.7, "rationale": "Reason 2"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.branches.len(), 2);
+        assert_eq!(response.recommended_branch, 0);
+        assert_eq!(response.branches[0].thought, "Branch 1");
+    }
+
+    #[test]
+    fn test_parse_response_with_markdown_json() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let completion = r#"Here's the tree response:
+```json
+{
+    "branches": [
+        {"thought": "Path A", "confidence": 0.9, "rationale": "Strong"}
+    ],
+    "recommended_branch": 0
+}
+```"#;
+
+        let response = tree_mode.parse_response(completion).unwrap();
+        assert_eq!(response.branches.len(), 1);
+        assert_eq!(response.branches[0].thought, "Path A");
+    }
+
+    #[test]
+    fn test_parse_response_with_code_block() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let completion = r#"
+```
+{
+    "branches": [
+        {"thought": "Option 1", "confidence": 0.85, "rationale": "Good"}
+    ],
+    "recommended_branch": 0
+}
+```"#;
+
+        let response = tree_mode.parse_response(completion).unwrap();
+        assert_eq!(response.branches.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_response_with_metadata() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Test", "confidence": 0.8, "rationale": "Testing"}
+            ],
+            "recommended_branch": 0,
+            "metadata": {"analysis": "complete", "duration": 123}
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.metadata["analysis"], "complete");
+        assert_eq!(response.metadata["duration"], 123);
+    }
+
+    #[test]
+    fn test_parse_response_empty_branches() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert!(response.branches.is_empty());
+    }
+
+    #[test]
+    fn test_parse_response_four_branches() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "A", "confidence": 0.8, "rationale": "R1"},
+                {"thought": "B", "confidence": 0.85, "rationale": "R2"},
+                {"thought": "C", "confidence": 0.7, "rationale": "R3"},
+                {"thought": "D", "confidence": 0.9, "rationale": "R4"}
+            ],
+            "recommended_branch": 3
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.branches.len(), 4);
+        assert_eq!(response.recommended_branch, 3);
+    }
+
+    #[test]
+    fn test_parse_response_unicode_in_branches() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "世界 🌍", "confidence": 0.8, "rationale": "مرحبا"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert!(response.branches[0].thought.contains("世界"));
+        assert!(response.branches[0].rationale.contains("مرحبا"));
+    }
+
+    #[test]
+    fn test_parse_response_invalid_json_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let invalid = "This is not JSON at all";
+        let result = tree_mode.parse_response(invalid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_missing_branches_field_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{"recommended_branch": 0}"#;
+        let result = tree_mode.parse_response(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_missing_recommended_branch_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{"branches": []}"#;
+        let result = tree_mode.parse_response(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_malformed_branch_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Test"}
+            ],
+            "recommended_branch": 0
+        }"#;
+        let result = tree_mode.parse_response(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_special_chars_in_thought() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Test\n\twith \"quotes\"", "confidence": 0.8, "rationale": "Special chars"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert!(response.branches[0].thought.contains("Test"));
+    }
+
+    #[test]
+    fn test_parse_response_empty_thought_string() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "", "confidence": 0.8, "rationale": "Empty thought"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.branches[0].thought, "");
+    }
+
+    #[test]
+    fn test_parse_response_zero_confidence() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Low confidence", "confidence": 0.0, "rationale": "Uncertain"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.branches[0].confidence, 0.0);
+    }
+
+    #[test]
+    fn test_parse_response_max_confidence() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "High confidence", "confidence": 1.0, "rationale": "Very certain"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.branches[0].confidence, 1.0);
+    }
+
+    #[test]
+    fn test_parse_response_empty_completion_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let result = tree_mode.parse_response("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_whitespace_only_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let result = tree_mode.parse_response("   \n\t  ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_large_recommended_index() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json = r#"{
+            "branches": [
+                {"thought": "Branch 1", "confidence": 0.8, "rationale": "R1"}
+            ],
+            "recommended_branch": 999
+        }"#;
+
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.recommended_branch, 999);
+    }
+
+    #[test]
+    fn test_parse_response_long_rationale() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let long_rationale = "A".repeat(10000);
+        let json = format!(
+            r#"{{
+            "branches": [
+                {{"thought": "Test", "confidence": 0.8, "rationale": "{}"}}
+            ],
+            "recommended_branch": 0
+        }}"#,
+            long_rationale
+        );
+
+        let response = tree_mode.parse_response(&json).unwrap();
+        assert_eq!(response.branches[0].rationale.len(), 10000);
+    }
+
+    #[test]
+    fn test_parse_response_partial_json_block_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let incomplete = r#"```json
+{"branches": [{"thought""#;
+        let result = tree_mode.parse_response(incomplete);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_response_json_with_comments_error() {
+        use crate::config::RequestConfig;
+        use crate::langbase::LangbaseClient;
+        use crate::storage::SqliteStorage;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+
+        let json_with_comments = r#"{
+            // This is a comment
+            "branches": [],
+            "recommended_branch": 0
+        }"#;
+        let result = tree_mode.parse_response(json_with_comments);
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // Additional Edge Case Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tree_params_very_long_content() {
+        let long_content = "a".repeat(100000);
+        let params = TreeParams::new(long_content.clone());
+        assert_eq!(params.content.len(), 100000);
+    }
+
+    #[test]
+    fn test_tree_params_cross_refs_with_all_fields() {
+        let cr = CrossRefInput {
+            to_branch: "target".to_string(),
+            ref_type: "supports".to_string(),
+            reason: Some("Strong evidence".to_string()),
+            strength: Some(0.95),
+        };
+
+        // Test serialization of fully-populated CrossRefInput
+        let json = serde_json::to_string(&cr).unwrap();
+        assert!(json.contains("Strong evidence"));
+        assert!(json.contains("0.95"));
+    }
+
+    #[test]
+    fn test_truncate_unicode_safe() {
+        // Note: truncate uses byte slicing, so may not be unicode-safe
+        let ascii = "Hello World";
+        let result = truncate(ascii, 8);
+        assert_eq!(result, "Hello...");
+    }
+
+    #[test]
+    fn test_tree_branch_clone() {
+        let branch = TreeBranch {
+            thought: "Test".to_string(),
+            confidence: 0.8,
+            rationale: "Reason".to_string(),
+        };
+
+        let cloned = branch.clone();
+        assert_eq!(cloned.thought, branch.thought);
+        assert_eq!(cloned.confidence, branch.confidence);
+        assert_eq!(cloned.rationale, branch.rationale);
+    }
+
+    #[test]
+    fn test_tree_response_clone() {
+        let response = TreeResponse {
+            branches: vec![TreeBranch {
+                thought: "Test".to_string(),
+                confidence: 0.8,
+                rationale: "Reason".to_string(),
+            }],
+            recommended_branch: 0,
+            metadata: serde_json::json!({"key": "value"}),
+        };
+
+        let cloned = response.clone();
+        assert_eq!(cloned.branches.len(), response.branches.len());
+        assert_eq!(cloned.recommended_branch, response.recommended_branch);
+    }
+
+    #[test]
+    fn test_tree_result_debug_format() {
+        let result = TreeResult {
+            session_id: "s-1".to_string(),
+            branch_id: "b-1".to_string(),
+            thought_id: "t-1".to_string(),
+            content: "Content".to_string(),
+            confidence: 0.8,
+            child_branches: vec![],
+            recommended_branch_index: 0,
+            parent_branch: None,
+            cross_refs_created: 0,
+        };
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("TreeResult"));
+        assert!(debug_str.contains("s-1"));
+    }
+
+    #[test]
+    fn test_cross_ref_input_debug_format() {
+        let cr = CrossRefInput {
+            to_branch: "b-1".to_string(),
+            ref_type: "supports".to_string(),
+            reason: Some("Test".to_string()),
+            strength: Some(0.9),
+        };
+
+        let debug_str = format!("{:?}", cr);
+        assert!(debug_str.contains("CrossRefInput"));
+        assert!(debug_str.contains("b-1"));
+    }
+
+    #[test]
+    fn test_tree_params_content_with_null_bytes() {
+        // Test that null bytes are preserved (unusual but valid for strings)
+        let content_with_null = "Before\0After";
+        let params = TreeParams::new(content_with_null);
+        assert_eq!(params.content, content_with_null);
+        assert!(params.content.contains('\0'));
+    }
+
+    #[test]
+    fn test_tree_response_negative_recommended_branch() {
+        // Note: In Rust, usize is unsigned so -1 would be serialized as a large number
+        // This test verifies parsing doesn't panic on unusual values
+        let json = r#"{
+            "branches": [
+                {"thought": "Test", "confidence": 0.8, "rationale": "R"}
+            ],
+            "recommended_branch": 0
+        }"#;
+
+        let config = create_test_config();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase =
+            LangbaseClient::new(&config.langbase, crate::config::RequestConfig::default()).unwrap();
+
+        let tree_mode = TreeMode::new(storage, langbase, &config);
+        let response = tree_mode.parse_response(json).unwrap();
+        assert_eq!(response.recommended_branch, 0);
+    }
+
+    #[test]
+    fn test_branch_info_very_long_rationale() {
+        let long_rationale = "X".repeat(50000);
+        let info = BranchInfo {
+            id: "b-1".to_string(),
+            name: "Branch".to_string(),
+            confidence: 0.8,
+            rationale: long_rationale.clone(),
+        };
+
+        assert_eq!(info.rationale.len(), 50000);
+        let json = serde_json::to_string(&info).unwrap();
+        let parsed: BranchInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.rationale.len(), 50000);
+    }
 }

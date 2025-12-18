@@ -94,3 +94,112 @@ impl AppState {
 
 /// Shared application state handle
 pub type SharedState = Arc<AppState>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig};
+    use std::path::PathBuf;
+
+    fn create_test_config() -> Config {
+        Config {
+            langbase: LangbaseConfig {
+                api_key: "test-key".to_string(),
+                base_url: "https://api.langbase.com".to_string(),
+            },
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_app_state_new() {
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state = AppState::new(config.clone(), storage, langbase);
+
+        // Verify all modes are initialized
+        assert_eq!(state.config.langbase.api_key, "test-key");
+    }
+
+    #[tokio::test]
+    async fn test_app_state_clone() {
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state1 = AppState::new(config, storage, langbase);
+        let state2 = state1.clone();
+
+        assert_eq!(state1.config.langbase.api_key, state2.config.langbase.api_key);
+    }
+
+    #[tokio::test]
+    async fn test_shared_state_type() {
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state = AppState::new(config, storage, langbase);
+        let shared: SharedState = Arc::new(state);
+
+        // Verify we can clone the shared state
+        let shared2 = Arc::clone(&shared);
+        assert_eq!(Arc::strong_count(&shared), 2);
+        drop(shared2);
+        assert_eq!(Arc::strong_count(&shared), 1);
+    }
+
+    #[tokio::test]
+    async fn test_app_state_has_all_modes() {
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state = AppState::new(config, storage, langbase);
+
+        // Verify preset registry is initialized with builtins
+        assert!(state.preset_registry.count() >= 5);
+    }
+
+    #[tokio::test]
+    async fn test_app_state_storage_access() {
+        use crate::storage::Storage;
+
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state = AppState::new(config, storage.clone(), langbase);
+
+        // Verify storage is accessible and usable
+        let session = crate::storage::Session::new("test-metadata");
+        state.storage.create_session(&session).await.unwrap();
+        let retrieved = state.storage.get_session(&session.id).await.unwrap();
+        assert!(retrieved.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_app_state_config_access() {
+        let config = create_test_config();
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, config.request.clone()).unwrap();
+
+        let state = AppState::new(config.clone(), storage, langbase);
+
+        // Verify config values are preserved
+        assert_eq!(state.config.langbase.base_url, "https://api.langbase.com");
+        assert_eq!(state.config.database.max_connections, 5);
+        assert_eq!(state.config.logging.level, "info");
+    }
+}

@@ -760,4 +760,516 @@ mod tests {
         assert_eq!(get_prompt_for_mode("EVIDENCE"), EVIDENCE_ASSESSOR_PROMPT);
         assert_eq!(get_prompt_for_mode("BAYESIAN"), BAYESIAN_UPDATER_PROMPT);
     }
+
+    // ========================================================================
+    // Additional Comprehensive Tests
+    // ========================================================================
+
+    // Test 1: Verify all GoT prompts are non-empty
+    #[test]
+    fn test_got_prompts_not_empty() {
+        assert!(!GOT_GENERATE_PROMPT.is_empty());
+        assert!(!GOT_SCORE_PROMPT.is_empty());
+        assert!(!GOT_AGGREGATE_PROMPT.is_empty());
+        assert!(!GOT_REFINE_PROMPT.is_empty());
+    }
+
+    // Test 2: Verify backtracking prompt is non-empty
+    #[test]
+    fn test_backtracking_prompt_not_empty() {
+        assert!(!BACKTRACKING_PROMPT.is_empty());
+    }
+
+    // Test 3: Verify all GoT prompts contain JSON format hints
+    #[test]
+    fn test_got_prompts_contain_json() {
+        assert!(GOT_GENERATE_PROMPT.contains("JSON"));
+        assert!(GOT_SCORE_PROMPT.contains("JSON"));
+        assert!(GOT_AGGREGATE_PROMPT.contains("JSON"));
+        assert!(GOT_REFINE_PROMPT.contains("JSON"));
+    }
+
+    // Test 4: Verify backtracking prompt contains JSON format hints
+    #[test]
+    fn test_backtracking_prompt_contains_json() {
+        assert!(BACKTRACKING_PROMPT.contains("JSON"));
+    }
+
+    // Test 5: Verify linear prompt contains required keywords
+    #[test]
+    fn test_linear_prompt_keywords() {
+        assert!(LINEAR_REASONING_PROMPT.contains("reasoning"));
+        assert!(LINEAR_REASONING_PROMPT.contains("thought"));
+        assert!(LINEAR_REASONING_PROMPT.contains("confidence"));
+        assert!(LINEAR_REASONING_PROMPT.contains("metadata"));
+    }
+
+    // Test 6: Verify tree prompt contains required keywords
+    #[test]
+    fn test_tree_prompt_keywords() {
+        assert!(TREE_REASONING_PROMPT.contains("branches"));
+        assert!(TREE_REASONING_PROMPT.contains("reasoning paths"));
+        assert!(TREE_REASONING_PROMPT.contains("recommended_branch"));
+        assert!(TREE_REASONING_PROMPT.contains("rationale"));
+    }
+
+    // Test 7: Verify divergent prompt contains required keywords
+    #[test]
+    fn test_divergent_prompt_keywords() {
+        assert!(DIVERGENT_REASONING_PROMPT.contains("creative"));
+        assert!(DIVERGENT_REASONING_PROMPT.contains("perspectives"));
+        assert!(DIVERGENT_REASONING_PROMPT.contains("novelty"));
+        assert!(DIVERGENT_REASONING_PROMPT.contains("synthesis"));
+    }
+
+    // Test 8: Verify reflection prompt contains required keywords
+    #[test]
+    fn test_reflection_prompt_keywords() {
+        assert!(REFLECTION_PROMPT.contains("meta-cognitive"));
+        assert!(REFLECTION_PROMPT.contains("analysis"));
+        assert!(REFLECTION_PROMPT.contains("strengths"));
+        assert!(REFLECTION_PROMPT.contains("weaknesses"));
+        assert!(REFLECTION_PROMPT.contains("recommendations"));
+    }
+
+    // Test 9: Verify auto router prompt contains required keywords
+    #[test]
+    fn test_auto_router_prompt_keywords() {
+        assert!(AUTO_ROUTER_PROMPT.contains("mode selector"));
+        assert!(AUTO_ROUTER_PROMPT.contains("recommended_mode"));
+        assert!(AUTO_ROUTER_PROMPT.contains("complexity"));
+        assert!(AUTO_ROUTER_PROMPT.contains("linear|tree|divergent|reflection|got"));
+    }
+
+    // Test 10: Verify backtracking prompt contains required keywords
+    #[test]
+    fn test_backtracking_prompt_keywords() {
+        assert!(BACKTRACKING_PROMPT.contains("backtracking"));
+        assert!(BACKTRACKING_PROMPT.contains("checkpoint"));
+        assert!(BACKTRACKING_PROMPT.contains("context_restored"));
+        assert!(BACKTRACKING_PROMPT.contains("new_direction"));
+    }
+
+    // Test 11: Verify GoT generate prompt contains required keywords
+    #[test]
+    fn test_got_generate_prompt_keywords() {
+        assert!(GOT_GENERATE_PROMPT.contains("Graph-of-Thoughts"));
+        assert!(GOT_GENERATE_PROMPT.contains("continuations"));
+        assert!(GOT_GENERATE_PROMPT.contains("novelty"));
+        assert!(GOT_GENERATE_PROMPT.contains("diverse"));
+    }
+
+    // Test 12: Verify GoT score prompt contains required keywords
+    #[test]
+    fn test_got_score_prompt_keywords() {
+        assert!(GOT_SCORE_PROMPT.contains("evaluator"));
+        assert!(GOT_SCORE_PROMPT.contains("overall_score"));
+        assert!(GOT_SCORE_PROMPT.contains("relevance"));
+        assert!(GOT_SCORE_PROMPT.contains("validity"));
+        assert!(GOT_SCORE_PROMPT.contains("is_terminal_candidate"));
+    }
+
+    // Test 13: Verify GoT aggregate prompt contains required keywords
+    #[test]
+    fn test_got_aggregate_prompt_keywords() {
+        assert!(GOT_AGGREGATE_PROMPT.contains("synthesizer"));
+        assert!(GOT_AGGREGATE_PROMPT.contains("aggregated_thought"));
+        assert!(GOT_AGGREGATE_PROMPT.contains("synthesis_approach"));
+        assert!(GOT_AGGREGATE_PROMPT.contains("conflicts_resolved"));
+    }
+
+    // Test 14: Verify GoT refine prompt contains required keywords
+    #[test]
+    fn test_got_refine_prompt_keywords() {
+        assert!(GOT_REFINE_PROMPT.contains("refiner"));
+        assert!(GOT_REFINE_PROMPT.contains("refined_thought"));
+        assert!(GOT_REFINE_PROMPT.contains("improvements_made"));
+        assert!(GOT_REFINE_PROMPT.contains("quality_delta"));
+    }
+
+    // Test 15: Verify prompts have reasonable minimum lengths
+    #[test]
+    fn test_prompts_minimum_lengths() {
+        assert!(LINEAR_REASONING_PROMPT.len() > 300);
+        assert!(TREE_REASONING_PROMPT.len() > 300);
+        assert!(DIVERGENT_REASONING_PROMPT.len() > 300);
+        assert!(REFLECTION_PROMPT.len() > 300);
+        assert!(AUTO_ROUTER_PROMPT.len() > 300);
+        assert!(BACKTRACKING_PROMPT.len() > 300);
+    }
+
+    // Test 16: Verify GoT prompts have reasonable minimum lengths
+    #[test]
+    fn test_got_prompts_minimum_lengths() {
+        assert!(GOT_GENERATE_PROMPT.len() > 300);
+        assert!(GOT_SCORE_PROMPT.len() > 300);
+        assert!(GOT_AGGREGATE_PROMPT.len() > 300);
+        assert!(GOT_REFINE_PROMPT.len() > 300);
+    }
+
+    // Test 17: Verify detection prompts have reasonable minimum lengths
+    #[test]
+    fn test_detection_prompts_minimum_lengths() {
+        assert!(BIAS_DETECTION_PROMPT.len() > 800);
+        assert!(FALLACY_DETECTION_PROMPT.len() > 800);
+    }
+
+    // Test 18: Verify decision framework prompts have reasonable minimum lengths
+    #[test]
+    fn test_decision_framework_prompts_minimum_lengths() {
+        assert!(DECISION_MAKER_PROMPT.len() > 800);
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.len() > 800);
+        assert!(EVIDENCE_ASSESSOR_PROMPT.len() > 800);
+        assert!(BAYESIAN_UPDATER_PROMPT.len() > 800);
+    }
+
+    // Test 19: Verify prompts don't contain each other (no copy-paste errors)
+    #[test]
+    fn test_prompts_uniqueness() {
+        let prompts = vec![
+            LINEAR_REASONING_PROMPT,
+            TREE_REASONING_PROMPT,
+            DIVERGENT_REASONING_PROMPT,
+            REFLECTION_PROMPT,
+            AUTO_ROUTER_PROMPT,
+            BACKTRACKING_PROMPT,
+            GOT_GENERATE_PROMPT,
+            GOT_SCORE_PROMPT,
+            GOT_AGGREGATE_PROMPT,
+            GOT_REFINE_PROMPT,
+        ];
+
+        // Check each pair of prompts
+        for (i, prompt1) in prompts.iter().enumerate() {
+            for (j, prompt2) in prompts.iter().enumerate() {
+                if i != j {
+                    // No prompt should contain the entire content of another
+                    assert!(
+                        !prompt1.contains(prompt2),
+                        "Prompt {} contains prompt {}",
+                        i,
+                        j
+                    );
+                }
+            }
+        }
+    }
+
+    // Test 20: Verify bias detection prompt contains expected bias types
+    #[test]
+    fn test_bias_detection_prompt_bias_types() {
+        assert!(BIAS_DETECTION_PROMPT.contains("confirmation_bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("anchoring_bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("availability_heuristic"));
+        assert!(BIAS_DETECTION_PROMPT.contains("sunk_cost_fallacy"));
+        assert!(BIAS_DETECTION_PROMPT.contains("hindsight_bias"));
+        assert!(BIAS_DETECTION_PROMPT.contains("bandwagon_effect"));
+    }
+
+    // Test 21: Verify fallacy detection prompt contains expected fallacy types
+    #[test]
+    fn test_fallacy_detection_prompt_fallacy_types() {
+        assert!(FALLACY_DETECTION_PROMPT.contains("ad_hominem"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("straw_man"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("false_dichotomy"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("circular_reasoning"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("slippery_slope"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("hasty_generalization"));
+    }
+
+    // Test 22: Verify all prompts end with valid JSON instruction
+    #[test]
+    fn test_prompts_json_instruction_ending() {
+        let prompts_with_endings = vec![
+            (LINEAR_REASONING_PROMPT, "valid JSON"),
+            (BIAS_DETECTION_PROMPT, "valid JSON"),
+            (FALLACY_DETECTION_PROMPT, "valid JSON"),
+            (DECISION_MAKER_PROMPT, "valid JSON"),
+            (PERSPECTIVE_ANALYZER_PROMPT, "valid JSON"),
+            (EVIDENCE_ASSESSOR_PROMPT, "valid JSON"),
+            (BAYESIAN_UPDATER_PROMPT, "valid JSON"),
+        ];
+
+        for (prompt, expected_phrase) in prompts_with_endings {
+            assert!(
+                prompt.contains(expected_phrase),
+                "Prompt should contain '{}'",
+                expected_phrase
+            );
+        }
+    }
+
+    // Test 23: Verify get_prompt_for_mode handles GoT variations
+    #[test]
+    fn test_get_prompt_for_got_modes() {
+        assert_eq!(get_prompt_for_mode("got_generate"), GOT_GENERATE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got-generate"), GOT_GENERATE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got_score"), GOT_SCORE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got-score"), GOT_SCORE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got_aggregate"), GOT_AGGREGATE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got-aggregate"), GOT_AGGREGATE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got_refine"), GOT_REFINE_PROMPT);
+        assert_eq!(get_prompt_for_mode("got-refine"), GOT_REFINE_PROMPT);
+    }
+
+    // Test 24: Verify get_prompt_for_mode handles backtracking
+    #[test]
+    fn test_get_prompt_for_backtracking_mode() {
+        assert_eq!(get_prompt_for_mode("backtracking"), BACKTRACKING_PROMPT);
+    }
+
+    // Test 25: Verify confidence range is mentioned in relevant prompts
+    #[test]
+    fn test_prompts_mention_confidence_range() {
+        let prompts_with_confidence = vec![
+            LINEAR_REASONING_PROMPT,
+            TREE_REASONING_PROMPT,
+            REFLECTION_PROMPT,
+            AUTO_ROUTER_PROMPT,
+            BACKTRACKING_PROMPT,
+        ];
+
+        for prompt in prompts_with_confidence {
+            // Should mention confidence between 0 and 1 or similar
+            assert!(
+                prompt.contains("0.0") || prompt.contains("0.") || prompt.contains("confidence"),
+                "Prompt should mention confidence scoring"
+            );
+        }
+    }
+
+    // Test 26: Verify decision maker prompt contains scoring elements
+    #[test]
+    fn test_decision_maker_prompt_scoring_elements() {
+        assert!(DECISION_MAKER_PROMPT.contains("score"));
+        assert!(DECISION_MAKER_PROMPT.contains("criteria_scores"));
+        assert!(DECISION_MAKER_PROMPT.contains("rank"));
+        assert!(DECISION_MAKER_PROMPT.contains("weights"));
+    }
+
+    // Test 27: Verify perspective analyzer prompt contains power matrix
+    #[test]
+    fn test_perspective_analyzer_prompt_power_matrix() {
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("power_level"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("interest_level"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("quadrant"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("keep_satisfied"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("keep_informed"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("minimal_effort"));
+    }
+
+    // Test 28: Verify evidence assessor prompt contains assessment criteria
+    #[test]
+    fn test_evidence_assessor_prompt_criteria() {
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("relevance"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("credibility"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("chain_analysis"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("inferential_distance"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("weak_links"));
+    }
+
+    // Test 29: Verify Bayesian updater prompt contains probability concepts
+    #[test]
+    fn test_bayesian_updater_prompt_probability_concepts() {
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("prior"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("posterior"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("likelihood_ratio"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("Bayes"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("P(H|E)"));
+    }
+
+    // Test 30: Verify evidence support levels are defined
+    #[test]
+    fn test_evidence_support_levels_defined() {
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("strong"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("moderate"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("weak"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("insufficient"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("contradictory"));
+    }
+
+    // Test 31: Verify Bayesian verbal probability scale is defined
+    #[test]
+    fn test_bayesian_verbal_probability_scale() {
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("almost_certain"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("highly_likely"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("likely"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("unlikely"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("almost_impossible"));
+    }
+
+    // Test 32: Verify all prompts contain response format braces
+    #[test]
+    fn test_prompts_contain_json_format_braces() {
+        let all_prompts = vec![
+            LINEAR_REASONING_PROMPT,
+            TREE_REASONING_PROMPT,
+            DIVERGENT_REASONING_PROMPT,
+            REFLECTION_PROMPT,
+            AUTO_ROUTER_PROMPT,
+            BACKTRACKING_PROMPT,
+            GOT_GENERATE_PROMPT,
+            GOT_SCORE_PROMPT,
+            GOT_AGGREGATE_PROMPT,
+            GOT_REFINE_PROMPT,
+            BIAS_DETECTION_PROMPT,
+            FALLACY_DETECTION_PROMPT,
+            DECISION_MAKER_PROMPT,
+            PERSPECTIVE_ANALYZER_PROMPT,
+            EVIDENCE_ASSESSOR_PROMPT,
+            BAYESIAN_UPDATER_PROMPT,
+        ];
+
+        for prompt in all_prompts {
+            assert!(prompt.contains("{"), "Prompt should contain opening brace");
+            assert!(prompt.contains("}"), "Prompt should contain closing brace");
+        }
+    }
+
+    // Test 33: Verify fallacy categories are specified
+    #[test]
+    fn test_fallacy_categories_specified() {
+        assert!(FALLACY_DETECTION_PROMPT.contains("formal"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("informal"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("category"));
+    }
+
+    // Test 34: Verify GoT score prompt has scoring dimensions
+    #[test]
+    fn test_got_score_prompt_dimensions() {
+        assert!(GOT_SCORE_PROMPT.contains("relevance"));
+        assert!(GOT_SCORE_PROMPT.contains("validity"));
+        assert!(GOT_SCORE_PROMPT.contains("depth"));
+        assert!(GOT_SCORE_PROMPT.contains("novelty"));
+        assert!(GOT_SCORE_PROMPT.contains("breakdown"));
+    }
+
+    // Test 35: Verify severity scales are consistent
+    #[test]
+    fn test_severity_scales_consistent() {
+        assert!(BIAS_DETECTION_PROMPT.contains("severity: 1"));
+        assert!(BIAS_DETECTION_PROMPT.contains("5"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("severity: 1"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("5"));
+    }
+
+    // Test 36: Verify guidelines sections exist in all prompts
+    #[test]
+    fn test_guidelines_sections_exist() {
+        let prompts_with_guidelines = vec![
+            LINEAR_REASONING_PROMPT,
+            TREE_REASONING_PROMPT,
+            DIVERGENT_REASONING_PROMPT,
+            REFLECTION_PROMPT,
+            BACKTRACKING_PROMPT,
+            GOT_GENERATE_PROMPT,
+            GOT_AGGREGATE_PROMPT,
+            GOT_REFINE_PROMPT,
+        ];
+
+        for prompt in prompts_with_guidelines {
+            assert!(
+                prompt.contains("Guidelines:") || prompt.contains("criteria:"),
+                "Prompt should contain guidelines or criteria"
+            );
+        }
+    }
+
+    // Test 37: Verify auto router prompt mentions all modes
+    #[test]
+    fn test_auto_router_mentions_all_modes() {
+        assert!(AUTO_ROUTER_PROMPT.contains("linear"));
+        assert!(AUTO_ROUTER_PROMPT.contains("tree"));
+        assert!(AUTO_ROUTER_PROMPT.contains("divergent"));
+        assert!(AUTO_ROUTER_PROMPT.contains("reflection"));
+        assert!(AUTO_ROUTER_PROMPT.contains("got"));
+    }
+
+    // Test 38: Verify decision framework prompt has constraint satisfaction
+    #[test]
+    fn test_decision_framework_constraints() {
+        assert!(DECISION_MAKER_PROMPT.contains("constraints_satisfied"));
+        assert!(DECISION_MAKER_PROMPT.contains("constraint"));
+    }
+
+    // Test 39: Verify perspective analyzer has engagement strategies
+    #[test]
+    fn test_perspective_analyzer_engagement() {
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("engagement_strategy"));
+        assert!(PERSPECTIVE_ANALYZER_PROMPT.contains("engagement"));
+    }
+
+    // Test 40: Verify evidence assessor has gap analysis
+    #[test]
+    fn test_evidence_assessor_gaps() {
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("gaps"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("suggested_evidence"));
+        assert!(EVIDENCE_ASSESSOR_PROMPT.contains("recommendations"));
+    }
+
+    // Test 41: Verify Bayesian updater has uncertainty analysis
+    #[test]
+    fn test_bayesian_updater_uncertainty() {
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("uncertainty_analysis"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("entropy"));
+        assert!(BAYESIAN_UPDATER_PROMPT.contains("information_gained"));
+    }
+
+    // Test 42: Verify get_prompt_for_mode default fallback
+    #[test]
+    fn test_get_prompt_for_mode_default_fallback() {
+        // Unknown modes should fall back to linear
+        assert_eq!(
+            get_prompt_for_mode("completely_unknown_mode"),
+            LINEAR_REASONING_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode(""), LINEAR_REASONING_PROMPT);
+        assert_eq!(get_prompt_for_mode("xyz123"), LINEAR_REASONING_PROMPT);
+    }
+
+    // Test 43: Verify router mode aliases work
+    #[test]
+    fn test_router_mode_aliases() {
+        assert_eq!(get_prompt_for_mode("auto"), AUTO_ROUTER_PROMPT);
+        assert_eq!(get_prompt_for_mode("router"), AUTO_ROUTER_PROMPT);
+    }
+
+    // Test 44: Verify prompts don't have common typos
+    #[test]
+    fn test_prompts_no_common_typos() {
+        let all_prompts = vec![
+            LINEAR_REASONING_PROMPT,
+            TREE_REASONING_PROMPT,
+            DIVERGENT_REASONING_PROMPT,
+            REFLECTION_PROMPT,
+            AUTO_ROUTER_PROMPT,
+            BACKTRACKING_PROMPT,
+            GOT_GENERATE_PROMPT,
+            GOT_SCORE_PROMPT,
+            GOT_AGGREGATE_PROMPT,
+            GOT_REFINE_PROMPT,
+        ];
+
+        for prompt in all_prompts {
+            // Check for common typos
+            assert!(!prompt.contains("teh "));
+            assert!(!prompt.contains("recieve"));
+            assert!(!prompt.contains("occured"));
+            assert!(!prompt.contains("seperate"));
+        }
+    }
+
+    // Test 45: Verify bias detection has remediation guidance
+    #[test]
+    fn test_bias_detection_remediation() {
+        assert!(BIAS_DETECTION_PROMPT.contains("remediation"));
+        assert!(BIAS_DETECTION_PROMPT.contains("address it"));
+    }
+
+    // Test 46: Verify fallacy detection has remediation guidance
+    #[test]
+    fn test_fallacy_detection_remediation() {
+        assert!(FALLACY_DETECTION_PROMPT.contains("remediation"));
+        assert!(FALLACY_DETECTION_PROMPT.contains("fix the argument"));
+    }
 }

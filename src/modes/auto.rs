@@ -761,4 +761,972 @@ mod tests {
         assert_eq!(parsed.complexity, original.complexity);
         assert_eq!(parsed.alternative_modes.len(), 1);
     }
+
+    // ============================================================================
+    // local_heuristics() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_local_heuristics_short_content() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Short text");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Linear);
+        assert_eq!(result.confidence, 0.9);
+        assert_eq!(result.complexity, 0.2);
+    }
+
+    #[test]
+    fn test_local_heuristics_evaluate_keyword() {
+        let mode = create_test_mode();
+        let params =
+            AutoParams::new("Please evaluate this solution for correctness and efficiency");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+        assert_eq!(result.confidence, 0.85);
+        assert_eq!(result.alternative_modes.len(), 1);
+    }
+
+    #[test]
+    fn test_local_heuristics_assess_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("I need you to assess the quality of this implementation");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_review_quality_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "Can you review quality of the architecture design and implementation patterns?",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_critique_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Please critique this approach to see if it works effectively and meets our requirements");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_creative_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("We need a creative solution to this unique problem that differs from existing approaches");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Divergent);
+        assert_eq!(result.confidence, 0.85);
+    }
+
+    #[test]
+    fn test_local_heuristics_brainstorm_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "Let's brainstorm ideas for improving user engagement and retention metrics",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Divergent);
+    }
+
+    #[test]
+    fn test_local_heuristics_novel_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "We need novel approaches to solve this challenge in the competitive market",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Divergent);
+    }
+
+    #[test]
+    fn test_local_heuristics_unconventional_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "Looking for unconventional strategies to differentiate our product offering",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Divergent);
+    }
+
+    #[test]
+    fn test_local_heuristics_options_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("What options do we have for implementing authentication?");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Tree);
+        assert_eq!(result.confidence, 0.8);
+    }
+
+    #[test]
+    fn test_local_heuristics_alternatives_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Consider alternatives to the current database design");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Tree);
+    }
+
+    #[test]
+    fn test_local_heuristics_compare_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "Compare different approaches to API versioning and list their pros and cons",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Tree);
+    }
+
+    #[test]
+    fn test_local_heuristics_tradeoffs_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "Analyze the trade-offs between consistency and availability in distributed systems",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Tree);
+    }
+
+    #[test]
+    fn test_local_heuristics_complex_system_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "We have a complex system with many interdependencies that need careful analysis",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Got);
+        assert_eq!(result.confidence, 0.75);
+        assert_eq!(result.complexity, 0.8);
+    }
+
+    #[test]
+    fn test_local_heuristics_interconnected_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "These services are highly interconnected across multiple domains and boundaries",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_local_heuristics_multistep_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "This requires a multi-step deployment process with various dependencies and stages",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_local_heuristics_graph_keyword() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Analyze this graph of dependencies between services and components in our architecture");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_local_heuristics_no_match() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Just a regular query without special keywords that would trigger heuristics and patterns");
+        let result = mode.local_heuristics(&params);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_local_heuristics_case_insensitive() {
+        let mode = create_test_mode();
+        let params = AutoParams::new(
+            "BRAINSTORM new IDEAS for this CREATIVE project with innovative solutions",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Divergent);
+    }
+
+    // ============================================================================
+    // generate_alternatives() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_generate_alternatives_low_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "tree".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.2, // Low complexity
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        assert!(!alternatives.is_empty());
+        assert_eq!(alternatives[0].mode, ReasoningMode::Linear);
+        assert_eq!(alternatives[0].confidence, 0.7);
+    }
+
+    #[test]
+    fn test_generate_alternatives_low_complexity_already_linear() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.9,
+            rationale: "Simple".to_string(),
+            complexity: 0.1,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should not suggest linear if already recommended
+        assert!(alternatives.is_empty() || alternatives[0].mode != ReasoningMode::Linear);
+    }
+
+    #[test]
+    fn test_generate_alternatives_high_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.7,
+            rationale: "Test".to_string(),
+            complexity: 0.8, // High complexity
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        assert!(!alternatives.is_empty());
+        // Should suggest GoT for high complexity
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Got));
+    }
+
+    #[test]
+    fn test_generate_alternatives_high_complexity_already_got() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "got".to_string(),
+            confidence: 0.9,
+            rationale: "Complex".to_string(),
+            complexity: 0.9,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should suggest Tree as alternative
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_medium_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.5, // Medium complexity
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        assert!(!alternatives.is_empty());
+        // Should suggest Tree for medium complexity
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_medium_complexity_already_tree() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "tree".to_string(),
+            confidence: 0.85,
+            rationale: "Branching".to_string(),
+            complexity: 0.5,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should not suggest Tree if already recommended
+        assert!(
+            alternatives.is_empty() || !alternatives.iter().any(|a| a.mode == ReasoningMode::Tree)
+        );
+    }
+
+    // ============================================================================
+    // build_messages() Tests
+    // ============================================================================
+
+    #[test]
+    fn test_build_messages_basic() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Test content for analysis");
+        let messages = mode.build_messages(&params);
+
+        assert_eq!(messages.len(), 2);
+        // First message should be system with AUTO_ROUTER_PROMPT
+        assert!(messages[0].content.contains("reasoning mode"));
+        // Second message should be user with content
+        assert!(messages[1].content.contains("Test content for analysis"));
+    }
+
+    #[test]
+    fn test_build_messages_with_hints() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Complex problem").with_hints(vec![
+            "performance critical".to_string(),
+            "needs scalability".to_string(),
+        ]);
+        let messages = mode.build_messages(&params);
+
+        assert_eq!(messages.len(), 2);
+        assert!(messages[1].content.contains("Hints about the problem"));
+        assert!(messages[1].content.contains("performance critical"));
+        assert!(messages[1].content.contains("needs scalability"));
+    }
+
+    #[test]
+    fn test_build_messages_with_single_hint() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Question").with_hints(vec!["security".to_string()]);
+        let messages = mode.build_messages(&params);
+
+        assert!(messages[1].content.contains("Hints"));
+        assert!(messages[1].content.contains("security"));
+    }
+
+    #[test]
+    fn test_build_messages_with_empty_hints() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Question").with_hints(vec![]);
+        let messages = mode.build_messages(&params);
+
+        // Empty hints should still be included
+        assert!(messages[1].content.contains("Hints"));
+    }
+
+    #[test]
+    fn test_build_messages_no_hints() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Simple question");
+        let messages = mode.build_messages(&params);
+
+        assert_eq!(messages.len(), 2);
+        assert!(!messages[1].content.contains("Hints"));
+    }
+
+    #[test]
+    fn test_build_messages_long_content() {
+        let mode = create_test_mode();
+        let long_content = "A".repeat(5000);
+        let params = AutoParams::new(long_content.clone());
+        let messages = mode.build_messages(&params);
+
+        assert_eq!(messages.len(), 2);
+        assert!(messages[1].content.contains(&long_content));
+    }
+
+    #[test]
+    fn test_build_messages_special_characters_in_content() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Special: \n\t\"quotes\" and <brackets>");
+        let messages = mode.build_messages(&params);
+
+        assert_eq!(messages.len(), 2);
+        assert!(messages[1].content.contains("Special:"));
+    }
+
+    #[test]
+    fn test_build_messages_special_characters_in_hints() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("Question").with_hints(vec![
+            "hint with \"quotes\"".to_string(),
+            "hint with \nnewlines".to_string(),
+        ]);
+        let messages = mode.build_messages(&params);
+
+        assert!(messages[1].content.contains("Hints"));
+        assert!(messages[1].content.contains("quotes"));
+    }
+
+    // ============================================================================
+    // AutoMode Constructor Tests
+    // ============================================================================
+
+    #[test]
+    fn test_auto_mode_new_creates_instance() {
+        let mode = create_test_mode();
+        // Verify the mode is created successfully
+        assert_eq!(mode.pipe_name, "mode-router-v1");
+    }
+
+    #[test]
+    fn test_auto_mode_new_with_custom_pipe() {
+        use crate::config::{
+            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let langbase_config = LangbaseConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+
+        let mut pipes = PipeConfig::default();
+        pipes.auto = Some("custom-auto-pipe".to_string());
+
+        let config = Config {
+            langbase: langbase_config.clone(),
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes,
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let mode = AutoMode::new(storage, langbase, &config);
+        assert_eq!(mode.pipe_name, "custom-auto-pipe");
+    }
+
+    #[test]
+    fn test_auto_mode_new_without_custom_pipe_uses_default() {
+        use crate::config::{
+            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let langbase_config = LangbaseConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+
+        let mut pipes = PipeConfig::default();
+        pipes.auto = None; // Explicitly set to None
+
+        let config = Config {
+            langbase: langbase_config.clone(),
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes,
+        };
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        let mode = AutoMode::new(storage, langbase, &config);
+        assert_eq!(mode.pipe_name, "mode-router-v1");
+    }
+
+    // ============================================================================
+    // AutoResponse Edge Cases
+    // ============================================================================
+
+    #[test]
+    fn test_auto_response_from_empty_json() {
+        let json = "{}";
+        let resp = AutoResponse::from_completion(json);
+        // Should fallback to linear with defaults
+        assert_eq!(resp.recommended_mode, "linear");
+        assert_eq!(resp.confidence, 0.7);
+    }
+
+    #[test]
+    fn test_auto_response_from_json_missing_rationale() {
+        let json = r#"{"recommended_mode": "tree", "confidence": 0.8}"#;
+        let resp = AutoResponse::from_completion(json);
+        // Should fallback because rationale is missing
+        assert_eq!(resp.recommended_mode, "linear");
+    }
+
+    #[test]
+    fn test_auto_response_from_json_null_metadata() {
+        let json = r#"{
+            "recommended_mode": "reflection",
+            "confidence": 0.82,
+            "rationale": "Test",
+            "complexity": 0.5,
+            "metadata": null
+        }"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.recommended_mode, "reflection");
+        assert!(resp.metadata.is_none());
+    }
+
+    #[test]
+    fn test_auto_response_from_json_empty_string_mode() {
+        let json = r#"{"recommended_mode": "", "confidence": 0.8, "rationale": "Test"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.recommended_mode, "");
+    }
+
+    #[test]
+    fn test_auto_response_from_json_invalid_mode_string() {
+        let json =
+            r#"{"recommended_mode": "invalid_mode", "confidence": 0.8, "rationale": "Test"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.recommended_mode, "invalid_mode");
+    }
+
+    #[test]
+    fn test_auto_response_from_json_negative_confidence() {
+        let json = r#"{"recommended_mode": "linear", "confidence": -0.5, "rationale": "Test"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.confidence, -0.5); // No clamping in AutoResponse
+    }
+
+    #[test]
+    fn test_auto_response_from_json_over_one_confidence() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 1.5, "rationale": "Test"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.confidence, 1.5); // No clamping in AutoResponse
+    }
+
+    #[test]
+    fn test_auto_response_from_json_negative_complexity() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test", "complexity": -0.3}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.complexity, -0.3);
+    }
+
+    #[test]
+    fn test_auto_response_from_json_over_one_complexity() {
+        let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test", "complexity": 1.5}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.complexity, 1.5);
+    }
+
+    #[test]
+    fn test_auto_response_from_long_preview_text() {
+        let long_text = "Not JSON: ".to_owned() + &"a".repeat(300);
+        let resp = AutoResponse::from_completion(&long_text);
+        // Should fallback to linear
+        assert_eq!(resp.recommended_mode, "linear");
+        assert_eq!(resp.confidence, 0.7);
+    }
+
+    #[test]
+    fn test_auto_response_from_backtracking_mode() {
+        let json = r#"{"recommended_mode": "backtracking", "confidence": 0.85, "rationale": "Needs backtracking"}"#;
+        let resp = AutoResponse::from_completion(json);
+        assert_eq!(resp.recommended_mode, "backtracking");
+    }
+
+    // ============================================================================
+    // local_heuristics() Additional Coverage
+    // ============================================================================
+
+    #[test]
+    fn test_local_heuristics_exactly_50_chars() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("A".repeat(50));
+        let result = mode.local_heuristics(&params);
+        // Should NOT trigger short content heuristic (< 50)
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_local_heuristics_49_chars() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("A".repeat(49));
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Linear);
+    }
+
+    #[test]
+    fn test_local_heuristics_multiple_keywords_first_wins() {
+        let mode = create_test_mode();
+        // Contains both "evaluate" (reflection) and "creative" (divergent)
+        // Reflection check comes first, should win
+        let params = AutoParams::new("Please evaluate this creative solution with novel ideas");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_mixed_case_keywords() {
+        let mode = create_test_mode();
+        // Content must be >= 50 chars to bypass short content check
+        let params = AutoParams::new(
+            "EVALUATE this CREATIVE approach with NOVEL IDEAS and more context here",
+        );
+        let result = mode.local_heuristics(&params).unwrap();
+        // Should match case-insensitively
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_keyword_in_middle() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("The system has many interconnected parts that need analysis");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Got);
+    }
+
+    #[test]
+    fn test_local_heuristics_partial_keyword_no_match() {
+        let mode = create_test_mode();
+        // "creating" contains "creative" but as substring
+        let params = AutoParams::new("We are creating a new system for data processing");
+        let result = mode.local_heuristics(&params);
+        // "creative" should still match as substring via contains()
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_local_heuristics_whitespace_around_keywords() {
+        let mode = create_test_mode();
+        // Content must be >= 50 chars to bypass short content check
+        let params =
+            AutoParams::new("  evaluate  this  approach  with significant context padding  ");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Reflection);
+    }
+
+    #[test]
+    fn test_local_heuristics_backtracking_not_detected() {
+        let mode = create_test_mode();
+        // Content must be >= 50 chars to bypass short content check
+        let params = AutoParams::new(
+            "This requires backtracking to find the solution with additional context",
+        );
+        let result = mode.local_heuristics(&params);
+        // "backtracking" is not in the heuristics keywords
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_local_heuristics_empty_string() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Linear);
+        assert_eq!(result.complexity, 0.2);
+    }
+
+    #[test]
+    fn test_local_heuristics_single_char() {
+        let mode = create_test_mode();
+        let params = AutoParams::new("x");
+        let result = mode.local_heuristics(&params).unwrap();
+        assert_eq!(result.recommended_mode, ReasoningMode::Linear);
+    }
+
+    // ============================================================================
+    // generate_alternatives() Complete Coverage
+    // ============================================================================
+
+    #[test]
+    fn test_generate_alternatives_boundary_low_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "tree".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.29, // Just below 0.3
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Linear));
+    }
+
+    #[test]
+    fn test_generate_alternatives_boundary_high_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.7,
+            rationale: "Test".to_string(),
+            complexity: 0.71, // Just above 0.7
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Got));
+    }
+
+    #[test]
+    fn test_generate_alternatives_exactly_0_3_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "tree".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.3, // Boundary
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should NOT suggest linear (complexity >= 0.3)
+        assert!(
+            alternatives.is_empty()
+                || !alternatives.iter().any(|a| a.mode == ReasoningMode::Linear)
+        );
+    }
+
+    #[test]
+    fn test_generate_alternatives_exactly_0_7_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.7, // Boundary
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should NOT suggest high-complexity modes (complexity <= 0.7)
+        assert!(
+            alternatives.is_empty() || !alternatives.iter().any(|a| a.mode == ReasoningMode::Got)
+        );
+    }
+
+    #[test]
+    fn test_generate_alternatives_high_complexity_both_alternatives() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.7,
+            rationale: "Test".to_string(),
+            complexity: 0.9,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should suggest both GoT and Tree for high complexity
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Got));
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_recommended_divergent() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "divergent".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.5,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Medium complexity, not divergent -> should suggest Tree
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_recommended_reflection() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "reflection".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.5,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Should suggest Tree for medium complexity
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_zero_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "got".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.0,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Very low complexity -> suggest Linear
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Linear));
+    }
+
+    #[test]
+    fn test_generate_alternatives_max_complexity() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "linear".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 1.0,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Very high complexity -> suggest GoT and Tree
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Got));
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    #[test]
+    fn test_generate_alternatives_backtracking_mode() {
+        let mode = create_test_mode();
+        let response = AutoResponse {
+            recommended_mode: "backtracking".to_string(),
+            confidence: 0.8,
+            rationale: "Test".to_string(),
+            complexity: 0.5,
+            metadata: None,
+        };
+        let alternatives = mode.generate_alternatives(&response);
+        // Medium complexity, not one of the standard modes -> suggest Tree
+        assert!(alternatives.iter().any(|a| a.mode == ReasoningMode::Tree));
+    }
+
+    // ============================================================================
+    // Additional Edge Cases for All Structs
+    // ============================================================================
+
+    #[test]
+    fn test_auto_result_complexity_boundaries() {
+        let result = AutoResult {
+            recommended_mode: ReasoningMode::Linear,
+            confidence: 0.9,
+            rationale: "Test".to_string(),
+            complexity: 0.0,
+            alternative_modes: vec![],
+        };
+        assert_eq!(result.complexity, 0.0);
+
+        let result2 = AutoResult {
+            recommended_mode: ReasoningMode::Linear,
+            confidence: 0.9,
+            rationale: "Test".to_string(),
+            complexity: 1.0,
+            alternative_modes: vec![],
+        };
+        assert_eq!(result2.complexity, 1.0);
+    }
+
+    #[test]
+    fn test_auto_result_many_alternatives() {
+        let result = AutoResult {
+            recommended_mode: ReasoningMode::Linear,
+            confidence: 0.9,
+            rationale: "Test".to_string(),
+            complexity: 0.5,
+            alternative_modes: vec![
+                ModeRecommendation {
+                    mode: ReasoningMode::Tree,
+                    confidence: 0.8,
+                    rationale: "Alt 1".to_string(),
+                },
+                ModeRecommendation {
+                    mode: ReasoningMode::Divergent,
+                    confidence: 0.7,
+                    rationale: "Alt 2".to_string(),
+                },
+                ModeRecommendation {
+                    mode: ReasoningMode::Reflection,
+                    confidence: 0.6,
+                    rationale: "Alt 3".to_string(),
+                },
+            ],
+        };
+        assert_eq!(result.alternative_modes.len(), 3);
+    }
+
+    #[test]
+    fn test_mode_recommendation_all_reasoning_modes() {
+        let modes = vec![
+            (ReasoningMode::Linear, "linear"),
+            (ReasoningMode::Tree, "tree"),
+            (ReasoningMode::Divergent, "divergent"),
+            (ReasoningMode::Reflection, "reflection"),
+            (ReasoningMode::Got, "got"),
+            (ReasoningMode::Backtracking, "backtracking"),
+        ];
+
+        for (mode, expected_str) in modes {
+            let rec = ModeRecommendation {
+                mode: mode.clone(),
+                confidence: 0.5,
+                rationale: "Test".to_string(),
+            };
+            let json = serde_json::to_string(&rec).unwrap();
+            assert!(json.contains(expected_str));
+
+            let parsed: ModeRecommendation = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.mode, mode);
+        }
+    }
+
+    #[test]
+    fn test_auto_params_very_long_hints() {
+        let long_hints: Vec<String> = (0..100).map(|i| format!("Hint number {}", i)).collect();
+        let params = AutoParams::new("Content").with_hints(long_hints.clone());
+        assert_eq!(params.hints.as_ref().unwrap().len(), 100);
+    }
+
+    #[test]
+    fn test_auto_params_empty_string_hints() {
+        let params =
+            AutoParams::new("Content").with_hints(vec!["".to_string(), "valid".to_string()]);
+        let hints = params.hints.unwrap();
+        assert_eq!(hints.len(), 2);
+        assert_eq!(hints[0], "");
+        assert_eq!(hints[1], "valid");
+    }
+
+    #[test]
+    fn test_auto_params_unicode_hints() {
+        let params = AutoParams::new("Content")
+            .with_hints(vec!["Unicode: 世界".to_string(), "Emoji: 🌍".to_string()]);
+        let hints = params.hints.unwrap();
+        assert!(hints[0].contains("世界"));
+        assert!(hints[1].contains("🌍"));
+    }
+
+    #[test]
+    fn test_auto_params_newlines_in_hints() {
+        let params = AutoParams::new("Content").with_hints(vec!["Multi\nline\nhint".to_string()]);
+        assert!(params.hints.unwrap()[0].contains('\n'));
+    }
+
+    // ============================================================================
+    // Helper Functions
+    // ============================================================================
+
+    fn create_test_mode() -> AutoMode {
+        use crate::config::{
+            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            RequestConfig,
+        };
+        use std::path::PathBuf;
+
+        let langbase_config = LangbaseConfig {
+            api_key: "test-key".to_string(),
+            base_url: "https://api.langbase.com".to_string(),
+        };
+
+        let config = Config {
+            langbase: langbase_config.clone(),
+            database: DatabaseConfig {
+                path: PathBuf::from(":memory:"),
+                max_connections: 5,
+            },
+            logging: LoggingConfig {
+                level: "info".to_string(),
+                format: LogFormat::Pretty,
+            },
+            request: RequestConfig::default(),
+            pipes: PipeConfig::default(),
+        };
+
+        // Use a runtime for async operations in tests
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let storage = rt.block_on(SqliteStorage::new_in_memory()).unwrap();
+        let langbase = LangbaseClient::new(&config.langbase, RequestConfig::default()).unwrap();
+
+        AutoMode::new(storage, langbase, &config)
+    }
 }

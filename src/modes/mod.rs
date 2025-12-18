@@ -50,7 +50,10 @@ use tracing::warn;
 /// This helper is used across all reasoning modes for invocation logging.
 /// Instead of panicking or silently failing on serialization errors,
 /// it logs a warning and returns an error object.
-pub(crate) fn serialize_for_log<T: serde::Serialize>(value: &T, context: &str) -> serde_json::Value {
+pub(crate) fn serialize_for_log<T: serde::Serialize>(
+    value: &T,
+    context: &str,
+) -> serde_json::Value {
     serde_json::to_value(value).unwrap_or_else(|e| {
         warn!(
             error = %e,

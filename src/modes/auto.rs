@@ -165,16 +165,13 @@ impl AutoMode {
         let auto_response = AutoResponse::from_completion(&response.completion);
 
         // Convert mode string to enum
-        let recommended_mode = auto_response
-            .recommended_mode
-            .parse()
-            .unwrap_or_else(|_| {
-                warn!(
-                    invalid_mode = %auto_response.recommended_mode,
-                    "Invalid mode returned by auto-router, falling back to Linear"
-                );
-                ReasoningMode::Linear
-            });
+        let recommended_mode = auto_response.recommended_mode.parse().unwrap_or_else(|_| {
+            warn!(
+                invalid_mode = %auto_response.recommended_mode,
+                "Invalid mode returned by auto-router, falling back to Linear"
+            );
+            ReasoningMode::Linear
+        });
 
         // Generate alternative recommendations based on complexity
         let alternatives = self.generate_alternatives(&auto_response);

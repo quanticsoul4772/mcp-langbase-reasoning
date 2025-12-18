@@ -151,13 +151,18 @@ impl DivergentMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "divergent")
             .await?;
         debug!(session_id = %session.id, "Processing divergent reasoning");
 
         // Get previous context
-        let previous_thoughts = self.core.storage().get_session_thoughts(&session.id).await?;
+        let previous_thoughts = self
+            .core
+            .storage()
+            .get_session_thoughts(&session.id)
+            .await?;
 
         // Build messages for Langbase
         let messages = self.build_messages(
@@ -226,7 +231,10 @@ impl DivergentMode {
                 perspective_thought
             };
 
-            self.core.storage().create_thought(&perspective_thought).await?;
+            self.core
+                .storage()
+                .create_thought(&perspective_thought)
+                .await?;
 
             total_novelty += p.novelty;
 
@@ -264,7 +272,10 @@ impl DivergentMode {
             synthesis_thought
         };
 
-        self.core.storage().create_thought(&synthesis_thought).await?;
+        self.core
+            .storage()
+            .create_thought(&synthesis_thought)
+            .await?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;

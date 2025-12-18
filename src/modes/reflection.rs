@@ -149,17 +149,20 @@ impl ReflectionMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "reflection")
             .await?;
         debug!(session_id = %session.id, "Processing reflection reasoning");
 
         // Get the content to reflect upon
         let (original_content, original_thought) = if let Some(thought_id) = &params.thought_id {
-            let thought =
-                self.core.storage().get_thought(thought_id).await?.ok_or_else(|| {
-                    ToolError::Session(format!("Thought not found: {}", thought_id))
-                })?;
+            let thought = self
+                .core
+                .storage()
+                .get_thought(thought_id)
+                .await?
+                .ok_or_else(|| ToolError::Session(format!("Thought not found: {}", thought_id)))?;
             (thought.content.clone(), Some(thought))
         } else {
             (params.content.clone().unwrap_or_default(), None)
@@ -275,7 +278,10 @@ impl ReflectionMode {
             reflection_thought
         };
 
-        self.core.storage().create_thought(&reflection_thought).await?;
+        self.core
+            .storage()
+            .create_thought(&reflection_thought)
+            .await?;
 
         // Create improved thought if available and different from original
         let improved_thought = if let Some(ref improved_content) = reflection.improved_thought {

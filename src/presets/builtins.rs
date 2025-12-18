@@ -15,8 +15,9 @@ pub fn code_review_preset() -> WorkflowPreset {
     WorkflowPreset {
         id: "code-review".to_string(),
         name: "Code Review".to_string(),
-        description: "Analyze code quality using divergent thinking, bias detection, and reflection"
-            .to_string(),
+        description:
+            "Analyze code quality using divergent thinking, bias detection, and reflection"
+                .to_string(),
         category: "code".to_string(),
         estimated_time: "2-3 minutes".to_string(),
         output_format: "structured_review".to_string(),
@@ -274,7 +275,8 @@ pub fn strategic_decision_preset() -> WorkflowPreset {
                     param_type: "string".to_string(),
                     required: false,
                     default: None,
-                    description: "Topic for stakeholder analysis (defaults to question)".to_string(),
+                    description: "Topic for stakeholder analysis (defaults to question)"
+                        .to_string(),
                     examples: vec![],
                 },
             ),
@@ -442,8 +444,12 @@ mod tests {
         assert!(preset.steps[0].depends_on.is_empty());
 
         // Later steps depend on earlier ones
-        assert!(preset.steps[1].depends_on.contains(&"divergent_analysis".to_string()));
-        assert!(preset.steps[2].depends_on.contains(&"divergent_analysis".to_string()));
+        assert!(preset.steps[1]
+            .depends_on
+            .contains(&"divergent_analysis".to_string()));
+        assert!(preset.steps[2]
+            .depends_on
+            .contains(&"divergent_analysis".to_string()));
 
         // Final step depends on multiple
         assert!(preset.steps[3].depends_on.len() >= 2);

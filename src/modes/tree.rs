@@ -157,7 +157,8 @@ impl TreeMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "tree")
             .await?;
         debug!(session_id = %session.id, "Processing tree reasoning");
@@ -182,7 +183,8 @@ impl TreeMode {
                 // Check if session has an active branch, or create root
                 match &session.active_branch_id {
                     Some(active_id) => self
-                        .core.storage()
+                        .core
+                        .storage()
                         .get_branch(active_id)
                         .await?
                         .unwrap_or_else(|| Branch::new(&session.id).with_name("Root")),
@@ -258,7 +260,10 @@ impl TreeMode {
 
             child_branches.push(BranchInfo {
                 id: child.id,
-                name: child.name.clone().unwrap_or_else(|| "Unnamed Branch".to_string()),
+                name: child
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| "Unnamed Branch".to_string()),
                 confidence: tb.confidence,
                 rationale: tb.rationale.clone(),
             });
@@ -313,7 +318,8 @@ impl TreeMode {
     /// Focus on a specific branch, making it the active branch
     pub async fn focus_branch(&self, session_id: &str, branch_id: &str) -> AppResult<Branch> {
         let branch = self
-            .core.storage()
+            .core
+            .storage()
             .get_branch(branch_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;
@@ -327,7 +333,8 @@ impl TreeMode {
 
         // Update session's active branch
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_session(session_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Session not found: {}", session_id)))?;
@@ -351,7 +358,8 @@ impl TreeMode {
         state: BranchState,
     ) -> AppResult<Branch> {
         let mut branch = self
-            .core.storage()
+            .core
+            .storage()
             .get_branch(branch_id)
             .await?
             .ok_or_else(|| ToolError::Session(format!("Branch not found: {}", branch_id)))?;

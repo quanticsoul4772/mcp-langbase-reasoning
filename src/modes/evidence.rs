@@ -497,7 +497,8 @@ impl EvidenceMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "evidence")
             .await?;
         debug!(session_id = %session.id, "Processing evidence assessment");
@@ -603,18 +604,22 @@ impl EvidenceMode {
         .with_recommendations(serde_json::to_value(&result.recommendations).unwrap_or_default());
 
         if let Some(chain) = &result.chain_analysis {
-            stored_evidence =
-                stored_evidence.with_chain_analysis(serde_json::to_value(chain).unwrap_or_default());
+            stored_evidence = stored_evidence
+                .with_chain_analysis(serde_json::to_value(chain).unwrap_or_default());
         }
 
-        self.core.storage().create_evidence_assessment(&stored_evidence).await.map_err(|e| {
-            error!(
-                error = %e,
-                assessment_id = %assessment_id,
-                "Failed to persist evidence assessment - operation failed"
-            );
-            e
-        })?;
+        self.core
+            .storage()
+            .create_evidence_assessment(&stored_evidence)
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    assessment_id = %assessment_id,
+                    "Failed to persist evidence assessment - operation failed"
+                );
+                e
+            })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -646,7 +651,8 @@ impl EvidenceMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "evidence")
             .await?;
         debug!(session_id = %session.id, "Processing probabilistic update");
@@ -693,7 +699,8 @@ impl EvidenceMode {
                     },
                     interpretation: ProbabilityInterpretation {
                         verbal: self.probability_to_verbal(posterior),
-                        recommendation: "Local calculation used due to API unavailability".to_string(),
+                        recommendation: "Local calculation used due to API unavailability"
+                            .to_string(),
                         caveats: vec!["Likelihood ratios may be estimates".to_string()],
                     },
                 });
@@ -765,18 +772,25 @@ impl EvidenceMode {
         .with_uncertainty(serde_json::to_value(&result.uncertainty).unwrap_or_default());
 
         if let Some(ci) = &result.confidence_interval {
-            stored_probability =
-                stored_probability.with_confidence_interval(Some(ci.lower), Some(ci.upper), Some(ci.level));
+            stored_probability = stored_probability.with_confidence_interval(
+                Some(ci.lower),
+                Some(ci.upper),
+                Some(ci.level),
+            );
         }
 
-        self.core.storage().create_probability_update(&stored_probability).await.map_err(|e| {
-            error!(
-                error = %e,
-                update_id = %update_id,
-                "Failed to persist probability update - operation failed"
-            );
-            e
-        })?;
+        self.core
+            .storage()
+            .create_probability_update(&stored_probability)
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    update_id = %update_id,
+                    "Failed to persist probability update - operation failed"
+                );
+                e
+            })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -1146,7 +1160,10 @@ mod tests {
             SourceType::Primary,
         );
         assert_eq!(params.evidence.len(), 1);
-        assert_eq!(params.evidence[0].source, Some("Research paper".to_string()));
+        assert_eq!(
+            params.evidence[0].source,
+            Some("Research paper".to_string())
+        );
         assert_eq!(params.evidence[0].source_type, Some(SourceType::Primary));
     }
 

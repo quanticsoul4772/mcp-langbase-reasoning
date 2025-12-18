@@ -155,10 +155,14 @@ async fn handle_tree_focus(state: &SharedState, arguments: Option<Value>) -> Mcp
 
 /// Handle reasoning.tree.list - list all branches in a session
 async fn handle_tree_list(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
-    execute_handler("reasoning.tree.list", arguments, |params: TreeListParams| {
-        let session_id = params.session_id;
-        async move { state.tree_mode.list_branches(&session_id).await }
-    })
+    execute_handler(
+        "reasoning.tree.list",
+        arguments,
+        |params: TreeListParams| {
+            let session_id = params.session_id;
+            async move { state.tree_mode.list_branches(&session_id).await }
+        },
+    )
     .await
 }
 
@@ -174,7 +178,12 @@ async fn handle_tree_complete(state: &SharedState, arguments: Option<Value>) -> 
             } else {
                 BranchState::Abandoned
             };
-            async move { state.tree_mode.update_branch_state(&branch_id, branch_state).await }
+            async move {
+                state
+                    .tree_mode
+                    .update_branch_state(&branch_id, branch_state)
+                    .await
+            }
         },
     )
     .await
@@ -573,10 +582,7 @@ async fn handle_analyze_perspectives(
 }
 
 /// Handle reasoning_assess_evidence tool call
-async fn handle_assess_evidence(
-    state: &SharedState,
-    arguments: Option<Value>,
-) -> McpResult<Value> {
+async fn handle_assess_evidence(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
     execute_handler(
         "reasoning.assess_evidence",
         arguments,

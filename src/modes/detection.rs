@@ -135,11 +135,13 @@ impl DetectionMode {
         let start = Instant::now();
 
         // Validate and resolve content
-        let (analysis_content, thought_id) = self.resolve_content(
-            params.content.as_deref(),
-            params.thought_id.as_deref(),
-            "detect_biases",
-        ).await?;
+        let (analysis_content, thought_id) = self
+            .resolve_content(
+                params.content.as_deref(),
+                params.thought_id.as_deref(),
+                "detect_biases",
+            )
+            .await?;
 
         // Build messages for Langbase
         let mut messages = vec![Message::system(BIAS_DETECTION_PROMPT)];
@@ -218,7 +220,10 @@ impl DetectionMode {
     }
 
     /// Detect fallacies in content or a thought
-    pub async fn detect_fallacies(&self, params: DetectFallaciesParams) -> AppResult<DetectFallaciesResult> {
+    pub async fn detect_fallacies(
+        &self,
+        params: DetectFallaciesParams,
+    ) -> AppResult<DetectFallaciesResult> {
         let start = Instant::now();
 
         // Validate check flags
@@ -226,15 +231,18 @@ impl DetectionMode {
             return Err(ToolError::Validation {
                 field: "check_formal/check_informal".to_string(),
                 reason: "At least one of check_formal or check_informal must be true".to_string(),
-            }.into());
+            }
+            .into());
         }
 
         // Validate and resolve content
-        let (analysis_content, thought_id) = self.resolve_content(
-            params.content.as_deref(),
-            params.thought_id.as_deref(),
-            "detect_fallacies",
-        ).await?;
+        let (analysis_content, thought_id) = self
+            .resolve_content(
+                params.content.as_deref(),
+                params.thought_id.as_deref(),
+                "detect_fallacies",
+            )
+            .await?;
 
         info!(
             check_formal = %params.check_formal,
@@ -332,10 +340,13 @@ impl DetectionMode {
             (Some(content), _) => Ok((content.to_string(), thought_id.map(|s| s.to_string()))),
             (None, Some(thought_id)) => {
                 let thought = self
-                    .core.storage()
+                    .core
+                    .storage()
                     .get_thought(thought_id)
                     .await?
-                    .ok_or_else(|| ToolError::Session(format!("Thought not found: {}", thought_id)))?;
+                    .ok_or_else(|| {
+                        ToolError::Session(format!("Thought not found: {}", thought_id))
+                    })?;
                 Ok((thought.content, Some(thought_id.to_string())))
             }
             (None, None) => Err(ToolError::Validation {
@@ -344,7 +355,8 @@ impl DetectionMode {
                     "Either 'content' or 'thought_id' must be provided for {}",
                     operation
                 ),
-            }.into()),
+            }
+            .into()),
         }
     }
 }
@@ -367,7 +379,13 @@ mod tests {
     fn test_detect_biases_params_with_check_types() {
         let json = r#"{"content": "Test", "check_types": ["confirmation_bias", "anchoring"]}"#;
         let params: DetectBiasesParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.check_types, Some(vec!["confirmation_bias".to_string(), "anchoring".to_string()]));
+        assert_eq!(
+            params.check_types,
+            Some(vec![
+                "confirmation_bias".to_string(),
+                "anchoring".to_string()
+            ])
+        );
     }
 
     #[test]

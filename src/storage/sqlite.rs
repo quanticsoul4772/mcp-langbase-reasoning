@@ -1021,7 +1021,10 @@ impl Storage for SqliteStorage {
             .as_ref()
             .map(|v| v.to_string());
         let trade_offs_json = decision.trade_offs.as_ref().map(|v| v.to_string());
-        let constraints_json = decision.constraints_satisfied.as_ref().map(|v| v.to_string());
+        let constraints_json = decision
+            .constraints_satisfied
+            .as_ref()
+            .map(|v| v.to_string());
         let metadata_json = decision.metadata.as_ref().map(|v| v.to_string());
 
         sqlx::query(
@@ -1835,8 +1838,8 @@ impl From<DecisionRow> for Decision {
             })
         });
 
-        let recommendation: serde_json::Value =
-            serde_json::from_str(&row.recommendation).unwrap_or_else(|e| {
+        let recommendation: serde_json::Value = serde_json::from_str(&row.recommendation)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     decision_id = row.id,
@@ -1863,14 +1866,12 @@ impl From<DecisionRow> for Decision {
             method: row.method,
             recommendation,
             scores,
-            sensitivity_analysis: row
-                .sensitivity_analysis
-                .as_deref()
-                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} sensitivity", row.id))),
-            trade_offs: row
-                .trade_offs
-                .as_deref()
-                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} trade_offs", row.id))),
+            sensitivity_analysis: row.sensitivity_analysis.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("decision {} sensitivity", row.id))
+            }),
+            trade_offs: row.trade_offs.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("decision {} trade_offs", row.id))
+            }),
             constraints_satisfied: row.constraints_satisfied.as_deref().and_then(|s| {
                 parse_metadata_with_logging(s, &format!("decision {} constraints", row.id))
             }),
@@ -1878,10 +1879,9 @@ impl From<DecisionRow> for Decision {
                 &row.created_at,
                 &format!("decision {} created_at", row.id),
             ),
-            metadata: row
-                .metadata
-                .as_deref()
-                .and_then(|s| parse_metadata_with_logging(s, &format!("decision {} metadata", row.id))),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("decision {} metadata", row.id))
+            }),
         }
     }
 }
@@ -1904,8 +1904,8 @@ struct PerspectiveRow {
 
 impl From<PerspectiveRow> for PerspectiveAnalysis {
     fn from(row: PerspectiveRow) -> Self {
-        let stakeholders: serde_json::Value =
-            serde_json::from_str(&row.stakeholders).unwrap_or_else(|e| {
+        let stakeholders: serde_json::Value = serde_json::from_str(&row.stakeholders)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     perspective_id = row.id,
@@ -1974,18 +1974,17 @@ struct EvidenceAssessmentRow {
 
 impl From<EvidenceAssessmentRow> for EvidenceAssessment {
     fn from(row: EvidenceAssessmentRow) -> Self {
-        let evidence: serde_json::Value =
-            serde_json::from_str(&row.evidence).unwrap_or_else(|e| {
-                warn!(
-                    error = %e,
-                    assessment_id = row.id,
-                    "Failed to parse evidence, using null"
-                );
-                serde_json::Value::Null
-            });
+        let evidence: serde_json::Value = serde_json::from_str(&row.evidence).unwrap_or_else(|e| {
+            warn!(
+                error = %e,
+                assessment_id = row.id,
+                "Failed to parse evidence, using null"
+            );
+            serde_json::Value::Null
+        });
 
-        let overall_support: serde_json::Value =
-            serde_json::from_str(&row.overall_support).unwrap_or_else(|e| {
+        let overall_support: serde_json::Value = serde_json::from_str(&row.overall_support)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     assessment_id = row.id,
@@ -1994,8 +1993,8 @@ impl From<EvidenceAssessmentRow> for EvidenceAssessment {
                 serde_json::Value::Null
             });
 
-        let evidence_analysis: serde_json::Value =
-            serde_json::from_str(&row.evidence_analysis).unwrap_or_else(|e| {
+        let evidence_analysis: serde_json::Value = serde_json::from_str(&row.evidence_analysis)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     assessment_id = row.id,
@@ -2055,8 +2054,8 @@ struct ProbabilityUpdateRow {
 
 impl From<ProbabilityUpdateRow> for ProbabilityUpdate {
     fn from(row: ProbabilityUpdateRow) -> Self {
-        let update_steps: serde_json::Value =
-            serde_json::from_str(&row.update_steps).unwrap_or_else(|e| {
+        let update_steps: serde_json::Value = serde_json::from_str(&row.update_steps)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     update_id = row.id,
@@ -2065,8 +2064,8 @@ impl From<ProbabilityUpdateRow> for ProbabilityUpdate {
                 serde_json::Value::Null
             });
 
-        let interpretation: serde_json::Value =
-            serde_json::from_str(&row.interpretation).unwrap_or_else(|e| {
+        let interpretation: serde_json::Value = serde_json::from_str(&row.interpretation)
+            .unwrap_or_else(|e| {
                 warn!(
                     error = %e,
                     update_id = row.id,

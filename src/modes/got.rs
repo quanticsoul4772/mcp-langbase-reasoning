@@ -638,7 +638,8 @@ impl GotMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "got")
             .await?;
 
@@ -676,18 +677,19 @@ impl GotMode {
 
         // Get source node (specified or first active)
         let source_node = match &params.node_id {
-            Some(id) => {
-                self.core.storage()
-                    .get_graph_node(id)
-                    .await?
-                    .ok_or_else(|| ToolError::Validation {
-                        field: "node_id".to_string(),
-                        reason: format!("Node not found: {}", id),
-                    })?
-            }
+            Some(id) => self
+                .core
+                .storage()
+                .get_graph_node(id)
+                .await?
+                .ok_or_else(|| ToolError::Validation {
+                    field: "node_id".to_string(),
+                    reason: format!("Node not found: {}", id),
+                })?,
             None => {
                 let active = self
-                    .core.storage()
+                    .core
+                    .storage()
                     .get_active_graph_nodes(&params.session_id)
                     .await?;
                 active
@@ -780,7 +782,10 @@ impl GotMode {
         // Mark source node as no longer active (branched)
         let mut updated_source = source_node.clone();
         updated_source.is_active = false;
-        self.core.storage().update_graph_node(&updated_source).await?;
+        self.core
+            .storage()
+            .update_graph_node(&updated_source)
+            .await?;
 
         let latency = start.elapsed().as_millis() as i64;
         invocation = invocation.success(
@@ -817,7 +822,8 @@ impl GotMode {
 
         // Get the node
         let node = self
-            .core.storage()
+            .core
+            .storage()
             .get_graph_node(&params.node_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -919,14 +925,15 @@ impl GotMode {
         // Get all nodes
         let mut nodes = Vec::new();
         for id in &params.node_ids {
-            let node =
-                self.core.storage()
-                    .get_graph_node(id)
-                    .await?
-                    .ok_or_else(|| ToolError::Validation {
-                        field: "node_ids".to_string(),
-                        reason: format!("Node not found: {}", id),
-                    })?;
+            let node = self
+                .core
+                .storage()
+                .get_graph_node(id)
+                .await?
+                .ok_or_else(|| ToolError::Validation {
+                    field: "node_ids".to_string(),
+                    reason: format!("Node not found: {}", id),
+                })?;
             nodes.push(node);
         }
 
@@ -1030,7 +1037,8 @@ impl GotMode {
 
         // Get the node
         let node = self
-            .core.storage()
+            .core
+            .storage()
             .get_graph_node(&params.node_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -1136,7 +1144,8 @@ impl GotMode {
 
         // Get all nodes for session
         let nodes = self
-            .core.storage()
+            .core
+            .storage()
             .get_session_graph_nodes(&params.session_id)
             .await?;
 
@@ -1202,7 +1211,8 @@ impl GotMode {
         let nodes_to_finalize = if params.terminal_node_ids.is_empty() {
             // Auto-select best active nodes as terminal
             let active = self
-                .core.storage()
+                .core
+                .storage()
                 .get_active_graph_nodes(&params.session_id)
                 .await?;
             let mut scored: Vec<_> = active.into_iter().filter(|n| n.score.is_some()).collect();
@@ -1218,12 +1228,15 @@ impl GotMode {
             // Use specified nodes
             let mut nodes = Vec::new();
             for id in &params.terminal_node_ids {
-                let node = self.core.storage().get_graph_node(id).await?.ok_or_else(|| {
-                    ToolError::Validation {
+                let node = self
+                    .core
+                    .storage()
+                    .get_graph_node(id)
+                    .await?
+                    .ok_or_else(|| ToolError::Validation {
                         field: "terminal_node_ids".to_string(),
                         reason: format!("Node not found: {}", id),
-                    }
-                })?;
+                    })?;
                 nodes.push(node);
             }
             nodes
@@ -1264,10 +1277,15 @@ impl GotMode {
     /// Get current graph state
     pub async fn get_state(&self, params: GotGetStateParams) -> AppResult<GotStateResult> {
         let nodes = self
-            .core.storage()
+            .core
+            .storage()
             .get_session_graph_nodes(&params.session_id)
             .await?;
-        let edges = self.core.storage().get_session_edges(&params.session_id).await?;
+        let edges = self
+            .core
+            .storage()
+            .get_session_edges(&params.session_id)
+            .await?;
 
         let active_nodes: Vec<_> = nodes.iter().filter(|n| n.is_active).collect();
         let terminal_nodes: Vec<_> = nodes.iter().filter(|n| n.is_terminal).collect();
@@ -1289,7 +1307,11 @@ impl GotMode {
 
     /// Detect cycles in the graph (returns true if cycle exists)
     pub async fn has_cycle(&self, session_id: &str) -> AppResult<bool> {
-        let nodes = self.core.storage().get_session_graph_nodes(session_id).await?;
+        let nodes = self
+            .core
+            .storage()
+            .get_session_graph_nodes(session_id)
+            .await?;
         let edges = self.core.storage().get_session_edges(session_id).await?;
 
         // Build adjacency list

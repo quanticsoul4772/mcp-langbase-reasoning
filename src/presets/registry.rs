@@ -84,9 +84,15 @@ impl PresetRegistry {
         let presets = [
             ("code-review", builtins::code_review_preset()),
             ("debug-analysis", builtins::debug_analysis_preset()),
-            ("architecture-decision", builtins::architecture_decision_preset()),
+            (
+                "architecture-decision",
+                builtins::architecture_decision_preset(),
+            ),
             ("strategic-decision", builtins::strategic_decision_preset()),
-            ("evidence-based-conclusion", builtins::evidence_based_conclusion_preset()),
+            (
+                "evidence-based-conclusion",
+                builtins::evidence_based_conclusion_preset(),
+            ),
         ];
 
         for (name, preset) in presets {

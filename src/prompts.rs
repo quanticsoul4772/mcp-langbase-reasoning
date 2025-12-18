@@ -728,20 +728,35 @@ mod tests {
         assert_eq!(get_prompt_for_mode("make_decision"), DECISION_MAKER_PROMPT);
         assert_eq!(get_prompt_for_mode("decision-maker"), DECISION_MAKER_PROMPT);
 
-        assert_eq!(get_prompt_for_mode("perspective"), PERSPECTIVE_ANALYZER_PROMPT);
-        assert_eq!(get_prompt_for_mode("analyze_perspectives"), PERSPECTIVE_ANALYZER_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("perspective"),
+            PERSPECTIVE_ANALYZER_PROMPT
+        );
+        assert_eq!(
+            get_prompt_for_mode("analyze_perspectives"),
+            PERSPECTIVE_ANALYZER_PROMPT
+        );
 
         assert_eq!(get_prompt_for_mode("evidence"), EVIDENCE_ASSESSOR_PROMPT);
-        assert_eq!(get_prompt_for_mode("assess_evidence"), EVIDENCE_ASSESSOR_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("assess_evidence"),
+            EVIDENCE_ASSESSOR_PROMPT
+        );
 
-        assert_eq!(get_prompt_for_mode("probabilistic"), BAYESIAN_UPDATER_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("probabilistic"),
+            BAYESIAN_UPDATER_PROMPT
+        );
         assert_eq!(get_prompt_for_mode("bayesian"), BAYESIAN_UPDATER_PROMPT);
     }
 
     #[test]
     fn test_decision_prompts_case_insensitive() {
         assert_eq!(get_prompt_for_mode("DECISION"), DECISION_MAKER_PROMPT);
-        assert_eq!(get_prompt_for_mode("PERSPECTIVE"), PERSPECTIVE_ANALYZER_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("PERSPECTIVE"),
+            PERSPECTIVE_ANALYZER_PROMPT
+        );
         assert_eq!(get_prompt_for_mode("EVIDENCE"), EVIDENCE_ASSESSOR_PROMPT);
         assert_eq!(get_prompt_for_mode("BAYESIAN"), BAYESIAN_UPDATER_PROMPT);
     }

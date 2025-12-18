@@ -463,7 +463,10 @@ mod tests {
             config.evidence_pipe,
             Some("evidence-assessor-v1".to_string())
         );
-        assert_eq!(config.bayesian_pipe, Some("bayesian-updater-v1".to_string()));
+        assert_eq!(
+            config.bayesian_pipe,
+            Some("bayesian-updater-v1".to_string())
+        );
     }
 
     // Note: Config::from_env() tests are in tests/config_env_test.rs

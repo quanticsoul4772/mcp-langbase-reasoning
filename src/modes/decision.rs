@@ -413,7 +413,8 @@ impl DecisionMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "decision")
             .await?;
         debug!(session_id = %session.id, "Processing decision analysis");
@@ -496,14 +497,18 @@ impl DecisionMode {
         .with_trade_offs(serde_json::to_value(&result.trade_offs).unwrap_or_default())
         .with_constraints(serde_json::to_value(&result.constraints_satisfied).unwrap_or_default());
 
-        self.core.storage().create_decision(&stored_decision).await.map_err(|e| {
-            error!(
-                error = %e,
-                decision_id = %decision_id,
-                "Failed to persist decision - operation failed"
-            );
-            e
-        })?;
+        self.core
+            .storage()
+            .create_decision(&stored_decision)
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    decision_id = %decision_id,
+                    "Failed to persist decision - operation failed"
+                );
+                e
+            })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -541,7 +546,8 @@ impl DecisionMode {
 
         // Get or create session
         let session = self
-            .core.storage()
+            .core
+            .storage()
             .get_or_create_session(&params.session_id, "decision")
             .await?;
         debug!(session_id = %session.id, "Processing perspective analysis");
@@ -632,14 +638,18 @@ impl DecisionMode {
                 stored_perspective.with_power_matrix(serde_json::to_value(pm).unwrap_or_default());
         }
 
-        self.core.storage().create_perspective(&stored_perspective).await.map_err(|e| {
-            error!(
-                error = %e,
-                analysis_id = %analysis_id,
-                "Failed to persist perspective analysis - operation failed"
-            );
-            e
-        })?;
+        self.core
+            .storage()
+            .create_perspective(&stored_perspective)
+            .await
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    analysis_id = %analysis_id,
+                    "Failed to persist perspective analysis - operation failed"
+                );
+                e
+            })?;
 
         // Log successful invocation
         let latency = start.elapsed().as_millis() as i64;
@@ -764,7 +774,10 @@ impl DecisionMode {
                 user_content.push_str(&format!(
                     "- {}{}{}\n",
                     s.name,
-                    s.role.as_ref().map(|r| format!(" ({})", r)).unwrap_or_default(),
+                    s.role
+                        .as_ref()
+                        .map(|r| format!(" ({})", r))
+                        .unwrap_or_default(),
                     if !s.interests.is_empty() {
                         format!(" - Interests: {}", s.interests.join(", "))
                     } else {

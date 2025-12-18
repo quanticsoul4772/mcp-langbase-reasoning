@@ -89,7 +89,11 @@ impl LinearMode {
         debug!(session_id = %session.id, "Processing linear reasoning");
 
         // Get previous thoughts for context
-        let previous_thoughts = self.core.storage().get_session_thoughts(&session.id).await?;
+        let previous_thoughts = self
+            .core
+            .storage()
+            .get_session_thoughts(&session.id)
+            .await?;
         let previous_thought = previous_thoughts.last().cloned();
 
         // Build context for Langbase

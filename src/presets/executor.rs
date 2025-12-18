@@ -26,7 +26,9 @@ pub enum ConditionError {
     },
 
     /// Threshold value in condition could not be parsed as a number.
-    #[error("Invalid threshold value for operator '{operator}': expected number, got {actual_type}")]
+    #[error(
+        "Invalid threshold value for operator '{operator}': expected number, got {actual_type}"
+    )]
     NonNumericThreshold {
         /// The operator being used.
         operator: String,
@@ -286,10 +288,7 @@ fn build_step_arguments(
         // Handle nested references like "analysis.thought_id"
         let value = if source.contains('.') {
             let parts: Vec<&str> = source.splitn(2, '.').collect();
-            context
-                .get(parts[0])
-                .and_then(|v| v.get(parts[1]))
-                .cloned()
+            context.get(parts[0]).and_then(|v| v.get(parts[1])).cloned()
         } else {
             context.get(source).cloned()
         };
@@ -345,10 +344,12 @@ fn evaluate_condition(
 
     match condition.operator.as_str() {
         "gt" => {
-            let val_f = val.as_f64().ok_or_else(|| ConditionError::NonNumericSource {
-                field: field_name.clone(),
-                actual_type: json_type_name(val).to_string(),
-            })?;
+            let val_f = val
+                .as_f64()
+                .ok_or_else(|| ConditionError::NonNumericSource {
+                    field: field_name.clone(),
+                    actual_type: json_type_name(val).to_string(),
+                })?;
             let threshold =
                 condition
                     .value
@@ -360,10 +361,12 @@ fn evaluate_condition(
             Ok(val_f > threshold)
         }
         "gte" => {
-            let val_f = val.as_f64().ok_or_else(|| ConditionError::NonNumericSource {
-                field: field_name.clone(),
-                actual_type: json_type_name(val).to_string(),
-            })?;
+            let val_f = val
+                .as_f64()
+                .ok_or_else(|| ConditionError::NonNumericSource {
+                    field: field_name.clone(),
+                    actual_type: json_type_name(val).to_string(),
+                })?;
             let threshold =
                 condition
                     .value
@@ -375,10 +378,12 @@ fn evaluate_condition(
             Ok(val_f >= threshold)
         }
         "lt" => {
-            let val_f = val.as_f64().ok_or_else(|| ConditionError::NonNumericSource {
-                field: field_name.clone(),
-                actual_type: json_type_name(val).to_string(),
-            })?;
+            let val_f = val
+                .as_f64()
+                .ok_or_else(|| ConditionError::NonNumericSource {
+                    field: field_name.clone(),
+                    actual_type: json_type_name(val).to_string(),
+                })?;
             let threshold =
                 condition
                     .value
@@ -390,10 +395,12 @@ fn evaluate_condition(
             Ok(val_f < threshold)
         }
         "lte" => {
-            let val_f = val.as_f64().ok_or_else(|| ConditionError::NonNumericSource {
-                field: field_name.clone(),
-                actual_type: json_type_name(val).to_string(),
-            })?;
+            let val_f = val
+                .as_f64()
+                .ok_or_else(|| ConditionError::NonNumericSource {
+                    field: field_name.clone(),
+                    actual_type: json_type_name(val).to_string(),
+                })?;
             let threshold =
                 condition
                     .value
@@ -439,10 +446,14 @@ mod tests {
             .with_input("content", "code")
             .with_static("confidence", serde_json::json!(0.8));
 
-        let context = HashMap::from([("code".to_string(), serde_json::json!("function test() {}"))]);
+        let context =
+            HashMap::from([("code".to_string(), serde_json::json!("function test() {}"))]);
 
         let args = build_step_arguments(&step, &context);
-        assert_eq!(args.get("content"), Some(&serde_json::json!("function test() {}")));
+        assert_eq!(
+            args.get("content"),
+            Some(&serde_json::json!("function test() {}"))
+        );
         assert_eq!(args.get("confidence"), Some(&serde_json::json!(0.8)));
     }
 
@@ -460,7 +471,10 @@ mod tests {
         )]);
 
         let args = build_step_arguments(&step, &context);
-        assert_eq!(args.get("thought_id"), Some(&serde_json::json!("thought-123")));
+        assert_eq!(
+            args.get("thought_id"),
+            Some(&serde_json::json!("thought-123"))
+        );
     }
 
     #[test]
@@ -632,10 +646,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_condition_gte() {
-        let context = HashMap::from([(
-            "analysis".to_string(),
-            serde_json::json!({"score": 0.7}),
-        )]);
+        let context = HashMap::from([("analysis".to_string(), serde_json::json!({"score": 0.7}))]);
 
         let condition = StepCondition {
             condition_type: "score_threshold".to_string(),
@@ -650,10 +661,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_condition_lt() {
-        let context = HashMap::from([(
-            "analysis".to_string(),
-            serde_json::json!({"score": 0.3}),
-        )]);
+        let context = HashMap::from([("analysis".to_string(), serde_json::json!({"score": 0.3}))]);
 
         let condition = StepCondition {
             condition_type: "score_threshold".to_string(),
@@ -668,10 +676,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_condition_lte() {
-        let context = HashMap::from([(
-            "analysis".to_string(),
-            serde_json::json!({"score": 0.5}),
-        )]);
+        let context = HashMap::from([("analysis".to_string(), serde_json::json!({"score": 0.5}))]);
 
         let condition = StepCondition {
             condition_type: "score_threshold".to_string(),
@@ -722,6 +727,9 @@ mod tests {
         assert_eq!(json_type_name(&serde_json::json!(3.14)), "number");
         assert_eq!(json_type_name(&serde_json::json!("hello")), "string");
         assert_eq!(json_type_name(&serde_json::json!([1, 2, 3])), "array");
-        assert_eq!(json_type_name(&serde_json::json!({"key": "value"})), "object");
+        assert_eq!(
+            json_type_name(&serde_json::json!({"key": "value"})),
+            "object"
+        );
     }
 }

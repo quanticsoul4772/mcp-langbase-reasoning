@@ -118,7 +118,8 @@ impl BacktrackingMode {
 
         // Get the checkpoint
         let checkpoint = self
-            .core.storage()
+            .core
+            .storage()
             .get_checkpoint(&params.checkpoint_id)
             .await?
             .ok_or_else(|| ToolError::Validation {
@@ -129,35 +130,36 @@ impl BacktrackingMode {
         debug!(checkpoint_id = %checkpoint.id, "Restoring from checkpoint");
 
         // Get or verify session
-        let session = match &params.session_id {
-            Some(id) => {
-                if id != &checkpoint.session_id {
-                    return Err(ToolError::Validation {
-                        field: "session_id".to_string(),
-                        reason: "Session ID does not match checkpoint".to_string(),
+        let session =
+            match &params.session_id {
+                Some(id) => {
+                    if id != &checkpoint.session_id {
+                        return Err(ToolError::Validation {
+                            field: "session_id".to_string(),
+                            reason: "Session ID does not match checkpoint".to_string(),
+                        }
+                        .into());
                     }
-                    .into());
+                    self.core.storage().get_session(id).await?.ok_or_else(|| {
+                        ToolError::Validation {
+                            field: "session_id".to_string(),
+                            reason: format!("Session not found: {}", id),
+                        }
+                    })?
                 }
-                self.core.storage()
-                    .get_session(id)
+                None => self
+                    .core
+                    .storage()
+                    .get_session(&checkpoint.session_id)
                     .await?
                     .ok_or_else(|| ToolError::Validation {
-                        field: "session_id".to_string(),
-                        reason: format!("Session not found: {}", id),
-                    })?
-            }
-            None => self
-                .core.storage()
-                .get_session(&checkpoint.session_id)
-                .await?
-                .ok_or_else(|| ToolError::Validation {
-                    field: "checkpoint_id".to_string(),
-                    reason: format!(
-                        "Session for checkpoint not found: {}",
-                        checkpoint.session_id
-                    ),
-                })?,
-        };
+                        field: "checkpoint_id".to_string(),
+                        reason: format!(
+                            "Session for checkpoint not found: {}",
+                            checkpoint.session_id
+                        ),
+                    })?,
+            };
 
         // Create a state snapshot before backtracking
         let snapshot = StateSnapshot::new(&session.id, checkpoint.snapshot.clone())
@@ -274,7 +276,11 @@ impl BacktrackingMode {
 
     /// List available checkpoints for a session
     pub async fn list_checkpoints(&self, session_id: &str) -> AppResult<Vec<Checkpoint>> {
-        Ok(self.core.storage().get_session_checkpoints(session_id).await?)
+        Ok(self
+            .core
+            .storage()
+            .get_session_checkpoints(session_id)
+            .await?)
     }
 }
 

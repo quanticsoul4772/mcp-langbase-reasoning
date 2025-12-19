@@ -28,7 +28,7 @@ pub struct Config {
 }
 
 /// Error handling behavior configuration for strict mode.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ErrorHandlingConfig {
     /// When true, parsing errors return Err instead of fallback values.
     /// Recommended for integration testing to catch actual failures.
@@ -323,15 +323,6 @@ impl Config {
     }
 }
 
-impl Default for ErrorHandlingConfig {
-    fn default() -> Self {
-        Self {
-            strict_mode: false,
-            require_pipe_response: false,
-            max_fallback_count: 0,
-        }
-    }
-}
 
 impl Default for RequestConfig {
     fn default() -> Self {

@@ -870,7 +870,7 @@ mod tests {
     fn test_request_config_default_values() {
         let config = RequestConfig::default();
         assert!(config.timeout_ms > 0);
-        assert!(config.max_retries >= 0);
+        assert_eq!(config.max_retries, 3); // default value
         assert!(config.retry_delay_ms > 0);
     }
 

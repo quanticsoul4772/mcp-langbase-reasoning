@@ -1251,7 +1251,7 @@ mod tests {
     #[test]
     fn test_auto_mode_new_without_custom_pipe_uses_default() {
         use crate::config::{
-            Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
             RequestConfig,
         };
         use std::path::PathBuf;

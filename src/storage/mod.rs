@@ -10,7 +10,8 @@ mod sqlite;
 mod types_tests;
 
 pub use sqlite::{
-    get_timestamp_reconstruction_count, reset_timestamp_reconstruction_count, SqliteStorage,
+    get_record_skip_count, get_timestamp_reconstruction_count, reset_record_skip_count,
+    reset_timestamp_reconstruction_count, SqliteStorage,
 };
 
 use async_trait::async_trait;
@@ -671,6 +672,9 @@ pub struct FallbackMetricsSummary {
     /// Number of timestamps that were reconstructed due to parse failures.
     /// This indicates data integrity issues in the database.
     pub timestamp_reconstructions: u64,
+    /// Number of database records skipped due to JSON or timestamp parse failures.
+    /// This indicates data loss when records fail parsing in query results.
+    pub records_skipped: u64,
 }
 
 /// Filter options for metrics queries.
@@ -2881,6 +2885,7 @@ mod tests {
             fallback_rate: 0.08,
             recommendation: "Test recommendation".to_string(),
             timestamp_reconstructions: 0,
+            records_skipped: 0,
         };
 
         // Test serialization

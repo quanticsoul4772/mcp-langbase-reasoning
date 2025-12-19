@@ -25,6 +25,67 @@ pub fn reset_timestamp_reconstruction_count() -> u64 {
     TIMESTAMP_RECONSTRUCTION_COUNT.swap(0, Ordering::Relaxed)
 }
 
+// ============================================================================
+// Record Skip Tracking
+// ============================================================================
+
+/// Global counter for database records skipped due to parse failures.
+/// This tracks data loss when records fail JSON or timestamp parsing in query results.
+static RECORD_SKIP_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Get the current count of records skipped due to parse failures.
+pub fn get_record_skip_count() -> u64 {
+    RECORD_SKIP_COUNT.load(Ordering::Relaxed)
+}
+
+/// Reset the record skip counter and return the previous value.
+pub fn reset_record_skip_count() -> u64 {
+    RECORD_SKIP_COUNT.swap(0, Ordering::Relaxed)
+}
+
+/// Parse JSON with logging on failure. Returns None and logs warning if parse fails.
+fn parse_json_or_skip<T: serde::de::DeserializeOwned>(
+    json_str: &str,
+    record_id: &str,
+    field_name: &str,
+) -> Option<T> {
+    match serde_json::from_str(json_str) {
+        Ok(value) => Some(value),
+        Err(e) => {
+            RECORD_SKIP_COUNT.fetch_add(1, Ordering::Relaxed);
+            warn!(
+                error = %e,
+                record_id = record_id,
+                field = field_name,
+                "RECORD SKIPPED: Failed to parse JSON field"
+            );
+            None
+        }
+    }
+}
+
+/// Parse timestamp with logging on failure. Returns None and logs warning if parse fails.
+fn parse_timestamp_or_skip(
+    ts_str: &str,
+    record_id: &str,
+    field_name: &str,
+) -> Option<DateTime<Utc>> {
+    match DateTime::parse_from_rfc3339(ts_str) {
+        Ok(dt) => Some(dt.with_timezone(&Utc)),
+        Err(e) => {
+            RECORD_SKIP_COUNT.fetch_add(1, Ordering::Relaxed);
+            warn!(
+                error = %e,
+                timestamp = ts_str,
+                record_id = record_id,
+                field = field_name,
+                "RECORD SKIPPED: Failed to parse timestamp"
+            );
+            None
+        }
+    }
+}
+
 use super::{
     Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
     FallbackMetricsSummary, GraphEdge, GraphNode, Invocation, MetricsFilter, PerspectiveAnalysis,
@@ -367,12 +428,9 @@ impl Storage for SqliteStorage {
                 let first_call: String = row.get("first_call");
                 let last_call: String = row.get("last_call");
 
-                let first_call_dt = DateTime::parse_from_rfc3339(&first_call)
-                    .ok()?
-                    .with_timezone(&Utc);
-                let last_call_dt = DateTime::parse_from_rfc3339(&last_call)
-                    .ok()?
-                    .with_timezone(&Utc);
+                // Parse with logging on failure
+                let first_call_dt = parse_timestamp_or_skip(&first_call, &pipe_name, "first_call")?;
+                let last_call_dt = parse_timestamp_or_skip(&last_call, &pipe_name, "last_call")?;
 
                 let success_rate = if total_calls > 0 {
                     success_count as f64 / total_calls as f64
@@ -431,12 +489,9 @@ impl Storage for SqliteStorage {
             let first_call: String = row.get("first_call");
             let last_call: String = row.get("last_call");
 
-            let first_call_dt = DateTime::parse_from_rfc3339(&first_call)
-                .ok()?
-                .with_timezone(&Utc);
-            let last_call_dt = DateTime::parse_from_rfc3339(&last_call)
-                .ok()?
-                .with_timezone(&Utc);
+            // Parse with logging on failure
+            let first_call_dt = parse_timestamp_or_skip(&first_call, &pipe_name, "first_call")?;
+            let last_call_dt = parse_timestamp_or_skip(&last_call, &pipe_name, "last_call")?;
 
             let success_rate = if total_calls > 0 {
                 success_count as f64 / total_calls as f64
@@ -530,12 +585,11 @@ impl Storage for SqliteStorage {
                 let error: Option<String> = row.get("error");
                 let created_at_str: String = row.get("created_at");
 
-                let input: serde_json::Value = serde_json::from_str(&input_str).ok()?;
+                // Parse with logging on failure
+                let input: serde_json::Value = parse_json_or_skip(&input_str, &id, "input")?;
                 let output: Option<serde_json::Value> =
-                    output_str.and_then(|s| serde_json::from_str(&s).ok());
-                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                    .ok()?
-                    .with_timezone(&Utc);
+                    output_str.and_then(|s| parse_json_or_skip(&s, &id, "output"));
+                let created_at = parse_timestamp_or_skip(&created_at_str, &id, "created_at")?;
 
                 // Get fallback fields (with defaults for old data)
                 let fallback_used: bool = row.try_get("fallback_used").unwrap_or(false);
@@ -668,6 +722,7 @@ impl Storage for SqliteStorage {
             fallback_rate,
             recommendation,
             timestamp_reconstructions: get_timestamp_reconstruction_count(),
+            records_skipped: get_record_skip_count(),
         })
     }
 
@@ -3619,5 +3674,72 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    // ============================================================================
+    // Record Skip Counter Tests
+    // ============================================================================
+
+    #[test]
+    fn test_record_skip_count_increments_on_json_parse_failure() {
+        reset_record_skip_count();
+        assert_eq!(get_record_skip_count(), 0);
+
+        // Parse invalid JSON - should increment counter and return None
+        let result: Option<serde_json::Value> =
+            parse_json_or_skip("invalid json", "test-id", "field");
+        assert!(result.is_none());
+        assert_eq!(get_record_skip_count(), 1);
+    }
+
+    #[test]
+    fn test_record_skip_count_increments_on_timestamp_parse_failure() {
+        reset_record_skip_count();
+        assert_eq!(get_record_skip_count(), 0);
+
+        // Parse invalid timestamp - should increment counter and return None
+        let result = parse_timestamp_or_skip("not-a-timestamp", "test-id", "created_at");
+        assert!(result.is_none());
+        assert_eq!(get_record_skip_count(), 1);
+    }
+
+    #[test]
+    fn test_valid_json_does_not_increment_skip_count() {
+        reset_record_skip_count();
+        assert_eq!(get_record_skip_count(), 0);
+
+        // Parse valid JSON - should NOT increment counter
+        let result: Option<serde_json::Value> =
+            parse_json_or_skip(r#"{"key": "value"}"#, "test-id", "field");
+        assert!(result.is_some());
+        assert_eq!(get_record_skip_count(), 0);
+    }
+
+    #[test]
+    fn test_valid_timestamp_does_not_increment_skip_count() {
+        reset_record_skip_count();
+        assert_eq!(get_record_skip_count(), 0);
+
+        // Parse valid timestamp - should NOT increment counter
+        let result = parse_timestamp_or_skip("2024-01-15T10:30:00Z", "test-id", "created_at");
+        assert!(result.is_some());
+        assert_eq!(get_record_skip_count(), 0);
+    }
+
+    #[test]
+    fn test_reset_record_skip_count_returns_previous() {
+        reset_record_skip_count();
+
+        // Trigger some skips
+        let _: Option<serde_json::Value> = parse_json_or_skip("bad1", "test-id", "f1");
+        let _: Option<serde_json::Value> = parse_json_or_skip("bad2", "test-id", "f2");
+        let _ = parse_timestamp_or_skip("bad3", "test-id", "f3");
+
+        // Reset should return previous value
+        let previous = reset_record_skip_count();
+        assert_eq!(previous, 3);
+
+        // Counter should now be 0
+        assert_eq!(get_record_skip_count(), 0);
     }
 }

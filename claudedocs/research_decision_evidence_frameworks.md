@@ -539,13 +539,15 @@ CREATE TABLE IF NOT EXISTS probability_updates (
 
 ### 3.3 Langbase Pipe Requirements
 
-**New Pipes Needed:**
+**Consolidated Pipe Architecture:**
+
+All decision framework and evidence assessment operations use a single consolidated pipe with dynamic prompts:
+
 | Pipe Name | Purpose |
 |-----------|---------|
-| `decision-maker-v1` | Multi-criteria decision analysis |
-| `perspective-analyzer-v1` | Stakeholder perspective synthesis |
-| `evidence-assessor-v1` | Evidence evaluation and chain analysis |
-| `bayesian-updater-v1` | Probabilistic reasoning and updates |
+| `decision-framework-v1` | All decision and evidence operations (prompts passed dynamically) |
+
+The consolidated architecture passes operation-specific prompts to a single pipe, reducing complexity and improving maintainability. This replaces the original plan for separate pipes.
 
 ### 3.4 Module Structure
 

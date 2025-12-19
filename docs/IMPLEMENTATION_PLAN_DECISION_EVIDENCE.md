@@ -1,5 +1,7 @@
 # Implementation Plan: Decision Framework & Evidence Assessment
 
+> **Note:** This plan was the original specification. The actual implementation uses a **consolidated pipe architecture** where all decision/evidence operations route through `decision-framework-v1` with dynamic prompts. The deprecated pipe names (`decision-maker-v1`, `perspective-analyzer-v1`, `evidence-assessor-v1`, `bayesian-updater-v1`) mentioned below were never created - instead, a single consolidated pipe handles all operations.
+
 ## Overview
 
 This plan details the implementation of 4 new reasoning tools for the mcp-langbase-reasoning server:
@@ -1837,7 +1839,9 @@ async fn test_strategic_decision_preset() {
 
 ### Overview
 
-Four new Langbase pipes must be created before the tools can function. Use the Langbase API or dashboard to create them.
+> **SUPERSEDED:** The original plan called for 4 separate pipes. The actual implementation uses a **single consolidated pipe** (`decision-framework-v1`) that handles all decision and evidence operations with dynamic prompts passed at runtime. The per-operation pipes below were never created.
+
+~~Four new Langbase pipes must be created before the tools can function.~~ A single consolidated pipe handles all operations:
 
 ### Pipe Creation via API
 
@@ -2108,27 +2112,37 @@ async fn ensure_pipes_exist(client: &LangbaseClient) -> Result<(), AppError> {
 
 ### Pipe Summary Table
 
-| Pipe Name | Temperature | Max Tokens | Model | Purpose |
+> **SUPERSEDED:** The following pipes were planned but never created. Instead, `decision-framework-v1` handles all operations.
+
+| ~~Pipe Name~~ | ~~Temperature~~ | ~~Max Tokens~~ | ~~Model~~ | ~~Purpose~~ |
 |-----------|-------------|------------|-------|---------|
-| `decision-maker-v1` | 0.6 | 4000 | gpt-4o | Multi-criteria decision analysis |
-| `perspective-analyzer-v1` | 0.7 | 4000 | gpt-4o | Stakeholder perspective mapping |
-| `evidence-assessor-v1` | 0.5 | 5000 | gpt-4o | Evidence evaluation & chain analysis |
-| `bayesian-updater-v1` | 0.4 | 3000 | gpt-4o | Probabilistic reasoning & updates |
+| ~~`decision-maker-v1`~~ | ~~0.6~~ | ~~4000~~ | ~~gpt-4o~~ | ~~Multi-criteria decision analysis~~ |
+| ~~`perspective-analyzer-v1`~~ | ~~0.7~~ | ~~4000~~ | ~~gpt-4o~~ | ~~Stakeholder perspective mapping~~ |
+| ~~`evidence-assessor-v1`~~ | ~~0.5~~ | ~~5000~~ | ~~gpt-4o~~ | ~~Evidence evaluation & chain analysis~~ |
+| ~~`bayesian-updater-v1`~~ | ~~0.4~~ | ~~3000~~ | ~~gpt-4o~~ | ~~Probabilistic reasoning & updates~~ |
+
+**Actual Implementation:**
+| Pipe Name | Purpose |
+|-----------|---------|
+| `decision-framework-v1` | All decision and evidence operations (prompts passed dynamically) |
 
 ---
 
 ### Environment Configuration
 
-Add to `.env.example`:
+> **SUPERSEDED:** The environment variables below were planned but the implementation uses a single consolidated pipe instead.
+
+~~Add to `.env.example`:~~
 
 ```bash
-# Decision Framework Pipes
-PIPE_DECISION=decision-maker-v1
-PIPE_PERSPECTIVE=perspective-analyzer-v1
+# DEPRECATED - Not used in actual implementation
+# PIPE_DECISION=decision-maker-v1
+# PIPE_PERSPECTIVE=perspective-analyzer-v1
+# PIPE_EVIDENCE=evidence-assessor-v1
+# PIPE_BAYESIAN=bayesian-updater-v1
 
-# Evidence Assessment Pipes
-PIPE_EVIDENCE=evidence-assessor-v1
-PIPE_BAYESIAN=bayesian-updater-v1
+# Actual implementation uses:
+PIPE_DECISION_FRAMEWORK=decision-framework-v1
 ```
 
 Update `src/config/mod.rs` to read these:

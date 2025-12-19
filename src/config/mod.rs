@@ -27,20 +27,16 @@ pub struct Config {
     pub error_handling: ErrorHandlingConfig,
 }
 
-/// Error handling behavior configuration for strict mode.
+/// Error handling behavior configuration.
+///
+/// Note: This struct is now empty as all fallback patterns have been removed.
+/// The system now always uses strict error handling - all parse failures and
+/// API failures propagate as errors. This struct is kept for backward compatibility
+/// and potential future configuration options.
 #[derive(Debug, Clone, Default)]
 pub struct ErrorHandlingConfig {
-    /// When true, parsing errors return Err instead of fallback values.
-    /// Recommended for integration testing to catch actual failures.
-    pub strict_mode: bool,
-
-    /// When true, API failures return Err instead of local calculations.
-    /// Recommended to ensure pipe coverage and detect integration issues.
-    pub require_pipe_response: bool,
-
-    /// Maximum number of fallback usages before forcing error.
-    /// 0 = unlimited (default behavior), >0 = limit per session.
-    pub max_fallback_count: u32,
+    // All fields removed - strict mode is now the only mode.
+    // Kept as empty struct for backward compatibility.
 }
 
 /// Langbase API configuration.
@@ -248,9 +244,7 @@ impl Config {
         };
 
         // Detection pipe config - read from env var (filter empty strings)
-        let detection_pipe_env = env::var("PIPE_DETECTION")
-            .ok()
-            .filter(|s| !s.is_empty());
+        let detection_pipe_env = env::var("PIPE_DETECTION").ok().filter(|s| !s.is_empty());
         debug!(
             pipe_detection_env = ?detection_pipe_env,
             "Loading PIPE_DETECTION from environment"
@@ -291,26 +285,9 @@ impl Config {
             evidence: evidence_config,
         };
 
-        // Error handling configuration
-        let error_handling = ErrorHandlingConfig {
-            strict_mode: env::var("STRICT_MODE")
-                .map(|v| v.to_lowercase() == "true" || v == "1")
-                .unwrap_or(false),
-            require_pipe_response: env::var("REQUIRE_PIPE_RESPONSE")
-                .map(|v| v.to_lowercase() == "true" || v == "1")
-                .unwrap_or(false),
-            max_fallback_count: env::var("MAX_FALLBACK_COUNT")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0),
-        };
-
-        if error_handling.strict_mode {
-            debug!("Strict mode enabled - parse errors will propagate");
-        }
-        if error_handling.require_pipe_response {
-            debug!("Require pipe response enabled - no local calculation fallbacks");
-        }
+        // Error handling configuration (now empty - strict mode is always on)
+        let error_handling = ErrorHandlingConfig::default();
+        debug!("Strict error handling enabled - all parse/API failures propagate as errors");
 
         Ok(Config {
             langbase,
@@ -322,7 +299,6 @@ impl Config {
         })
     }
 }
-
 
 impl Default for RequestConfig {
     fn default() -> Self {
@@ -442,19 +418,13 @@ mod tests {
     #[test]
     fn test_decision_pipe_config_default() {
         let config = DecisionPipeConfig::default();
-        assert_eq!(
-            config.pipe,
-            Some("decision-framework-v1".to_string())
-        );
+        assert_eq!(config.pipe, Some("decision-framework-v1".to_string()));
     }
 
     #[test]
     fn test_evidence_pipe_config_default() {
         let config = EvidencePipeConfig::default();
-        assert_eq!(
-            config.pipe,
-            Some("decision-framework-v1".to_string())
-        );
+        assert_eq!(config.pipe, Some("decision-framework-v1".to_string()));
     }
 
     // Note: Config::from_env() tests are in tests/config_env_test.rs
@@ -812,52 +782,25 @@ mod tests {
         assert_eq!(config.retry_delay_ms, cloned.retry_delay_ms);
     }
 
-    // Tests for ErrorHandlingConfig
+    // Tests for ErrorHandlingConfig (now empty - strict mode is always on)
 
     #[test]
     fn test_error_handling_config_default() {
-        let config = ErrorHandlingConfig::default();
-        assert!(!config.strict_mode);
-        assert!(!config.require_pipe_response);
-        assert_eq!(config.max_fallback_count, 0);
-    }
-
-    #[test]
-    fn test_error_handling_config_struct() {
-        let config = ErrorHandlingConfig {
-            strict_mode: true,
-            require_pipe_response: true,
-            max_fallback_count: 10,
-        };
-        assert!(config.strict_mode);
-        assert!(config.require_pipe_response);
-        assert_eq!(config.max_fallback_count, 10);
+        let _config = ErrorHandlingConfig::default();
+        // Config is now empty - strict mode is the only mode
     }
 
     #[test]
     fn test_error_handling_config_clone() {
-        let config = ErrorHandlingConfig {
-            strict_mode: true,
-            require_pipe_response: false,
-            max_fallback_count: 5,
-        };
-        let cloned = config.clone();
-        assert_eq!(config.strict_mode, cloned.strict_mode);
-        assert_eq!(config.require_pipe_response, cloned.require_pipe_response);
-        assert_eq!(config.max_fallback_count, cloned.max_fallback_count);
+        let config = ErrorHandlingConfig::default();
+        let _cloned = config.clone();
+        // Empty struct can be cloned
     }
 
     #[test]
     fn test_error_handling_config_debug() {
-        let config = ErrorHandlingConfig {
-            strict_mode: true,
-            require_pipe_response: true,
-            max_fallback_count: 3,
-        };
+        let config = ErrorHandlingConfig::default();
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("ErrorHandlingConfig"));
-        assert!(debug_str.contains("strict_mode: true"));
-        assert!(debug_str.contains("require_pipe_response: true"));
-        assert!(debug_str.contains("max_fallback_count: 3"));
     }
 }

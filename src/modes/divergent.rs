@@ -825,7 +825,8 @@ mod tests {
     /// Helper to create a test mode instance
     fn create_test_mode() -> DivergentMode {
         use crate::config::{
-            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig,
+            RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -1250,7 +1251,8 @@ mod tests {
     #[test]
     fn test_divergent_mode_new() {
         use crate::config::{
-            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig,
+            RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -1284,7 +1286,8 @@ mod tests {
     #[test]
     fn test_divergent_mode_new_with_custom_pipe() {
         use crate::config::{
-            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig,
+            RequestConfig,
         };
         use std::path::PathBuf;
 

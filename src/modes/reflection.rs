@@ -1511,7 +1511,10 @@ mod tests {
     // ============================================================================
 
     fn create_test_config() -> Config {
-        use crate::config::{DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig};
+        use crate::config::{
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig,
+            PipeConfig,
+        };
         use std::path::PathBuf;
 
         Config {

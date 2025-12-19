@@ -112,10 +112,7 @@ async fn run_metrics_command(config: &Config, action: MetricsAction) -> anyhow::
                     summary.success_count,
                     summary.failure_count
                 );
-                println!(
-                    "   Avg Latency:    {:.2}ms",
-                    summary.avg_latency_ms
-                );
+                println!("   Avg Latency:    {:.2}ms", summary.avg_latency_ms);
                 if let (Some(min), Some(max)) = (summary.min_latency_ms, summary.max_latency_ms) {
                     println!("   Latency Range:  {}ms - {}ms", min, max);
                 }
@@ -131,40 +128,37 @@ async fn run_metrics_command(config: &Config, action: MetricsAction) -> anyhow::
             }
         }
 
-        MetricsAction::Pipe { name } => {
-            match storage.get_pipe_summary(&name).await? {
-                Some(summary) => {
-                    println!("\n{:=<80}", "");
-                    println!("METRICS FOR PIPE: {}", summary.pipe_name);
-                    println!("{:=<80}\n", "");
+        MetricsAction::Pipe { name } => match storage.get_pipe_summary(&name).await? {
+            Some(summary) => {
+                println!("\n{:=<80}", "");
+                println!("METRICS FOR PIPE: {}", summary.pipe_name);
+                println!("{:=<80}\n", "");
 
-                    println!("Total Calls:    {}", summary.total_calls);
-                    println!(
-                        "Success Rate:   {:.1}% ({} success / {} failed)",
-                        summary.success_rate * 100.0,
-                        summary.success_count,
-                        summary.failure_count
-                    );
-                    println!("Avg Latency:    {:.2}ms", summary.avg_latency_ms);
-                    if let (Some(min), Some(max)) = (summary.min_latency_ms, summary.max_latency_ms)
-                    {
-                        println!("Latency Range:  {}ms - {}ms", min, max);
-                    }
-                    println!(
-                        "First Call:     {}",
-                        summary.first_call.format("%Y-%m-%d %H:%M:%S UTC")
-                    );
-                    println!(
-                        "Last Call:      {}",
-                        summary.last_call.format("%Y-%m-%d %H:%M:%S UTC")
-                    );
-                    println!();
+                println!("Total Calls:    {}", summary.total_calls);
+                println!(
+                    "Success Rate:   {:.1}% ({} success / {} failed)",
+                    summary.success_rate * 100.0,
+                    summary.success_count,
+                    summary.failure_count
+                );
+                println!("Avg Latency:    {:.2}ms", summary.avg_latency_ms);
+                if let (Some(min), Some(max)) = (summary.min_latency_ms, summary.max_latency_ms) {
+                    println!("Latency Range:  {}ms - {}ms", min, max);
                 }
-                None => {
-                    println!("No data found for pipe: {}", name);
-                }
+                println!(
+                    "First Call:     {}",
+                    summary.first_call.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!(
+                    "Last Call:      {}",
+                    summary.last_call.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!();
             }
-        }
+            None => {
+                println!("No data found for pipe: {}", name);
+            }
+        },
 
         MetricsAction::Invocations {
             pipe,

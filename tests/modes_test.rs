@@ -10,7 +10,8 @@ use wiremock::{
 };
 
 use mcp_langbase_reasoning::config::{
-    Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
+    Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig,
+    PipeConfig, RequestConfig,
 };
 use mcp_langbase_reasoning::langbase::LangbaseClient;
 use mcp_langbase_reasoning::modes::{

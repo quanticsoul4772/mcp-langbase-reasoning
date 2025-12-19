@@ -8,9 +8,8 @@ use tracing::{info, warn};
 
 use super::{
     Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
-    FallbackMetricsSummary, GraphEdge, GraphNode, Invocation, MetricsFilter,
-    PerspectiveAnalysis, PipeUsageSummary, ProbabilityUpdate, Session, StateSnapshot, Storage,
-    StoredCriterion, Thought,
+    FallbackMetricsSummary, GraphEdge, GraphNode, Invocation, MetricsFilter, PerspectiveAnalysis,
+    PipeUsageSummary, ProbabilityUpdate, Session, StateSnapshot, Storage, StoredCriterion, Thought,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -546,12 +545,10 @@ impl Storage for SqliteStorage {
     async fn get_invocation_count(&self, pipe_name: Option<&str>) -> StorageResult<u64> {
         let count: i64 = match pipe_name {
             Some(name) => {
-                sqlx::query_scalar(
-                    r#"SELECT COUNT(*) FROM invocations WHERE pipe_name = ?"#,
-                )
-                .bind(name)
-                .fetch_one(&self.pool)
-                .await?
+                sqlx::query_scalar(r#"SELECT COUNT(*) FROM invocations WHERE pipe_name = ?"#)
+                    .bind(name)
+                    .fetch_one(&self.pool)
+                    .await?
             }
             None => {
                 sqlx::query_scalar(r#"SELECT COUNT(*) FROM invocations"#)
@@ -3540,7 +3537,10 @@ mod tests {
         let count = storage.get_invocation_count(Some("pipe2")).await.unwrap();
         assert_eq!(count, 2);
 
-        let count = storage.get_invocation_count(Some("nonexistent")).await.unwrap();
+        let count = storage
+            .get_invocation_count(Some("nonexistent"))
+            .await
+            .unwrap();
         assert_eq!(count, 0);
     }
 }

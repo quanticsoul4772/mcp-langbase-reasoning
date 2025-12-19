@@ -2808,32 +2808,30 @@ mod tests {
 
     #[test]
     fn test_invocation_with_fallback() {
-        let inv = Invocation::new("test_tool", serde_json::json!({}))
-            .with_fallback("parse_error");
+        let inv = Invocation::new("test_tool", serde_json::json!({})).with_fallback("parse_error");
         assert!(inv.fallback_used);
         assert_eq!(inv.fallback_type, Some("parse_error".to_string()));
     }
 
     #[test]
     fn test_invocation_with_parse_error_fallback() {
-        let inv = Invocation::new("test_tool", serde_json::json!({}))
-            .with_parse_error_fallback();
+        let inv = Invocation::new("test_tool", serde_json::json!({})).with_parse_error_fallback();
         assert!(inv.fallback_used);
         assert_eq!(inv.fallback_type, Some("parse_error".to_string()));
     }
 
     #[test]
     fn test_invocation_with_api_unavailable_fallback() {
-        let inv = Invocation::new("test_tool", serde_json::json!({}))
-            .with_api_unavailable_fallback();
+        let inv =
+            Invocation::new("test_tool", serde_json::json!({})).with_api_unavailable_fallback();
         assert!(inv.fallback_used);
         assert_eq!(inv.fallback_type, Some("api_unavailable".to_string()));
     }
 
     #[test]
     fn test_invocation_with_local_calculation_fallback() {
-        let inv = Invocation::new("test_tool", serde_json::json!({}))
-            .with_local_calculation_fallback();
+        let inv =
+            Invocation::new("test_tool", serde_json::json!({})).with_local_calculation_fallback();
         assert!(inv.fallback_used);
         assert_eq!(inv.fallback_type, Some("local_calculation".to_string()));
     }

@@ -106,7 +106,10 @@ pub type SharedState = Arc<AppState>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig};
+    use crate::config::{
+        DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+        RequestConfig,
+    };
     use std::path::PathBuf;
 
     fn create_test_config() -> Config {
@@ -150,7 +153,10 @@ mod tests {
         let state1 = AppState::new(config, storage, langbase);
         let state2 = state1.clone();
 
-        assert_eq!(state1.config.langbase.api_key, state2.config.langbase.api_key);
+        assert_eq!(
+            state1.config.langbase.api_key,
+            state2.config.langbase.api_key
+        );
     }
 
     #[tokio::test]

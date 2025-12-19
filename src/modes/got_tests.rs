@@ -275,18 +275,18 @@ fn test_got_get_state_params_new() {
 #[test]
 fn test_generate_response_from_json() {
     let json = r#"{"continuations": [{"thought": "Idea 1", "confidence": 0.9, "novelty": 0.8, "rationale": "Test"}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations.len(), 1);
     assert_eq!(resp.continuations[0].thought, "Idea 1");
     assert_eq!(resp.continuations[0].confidence, 0.9);
 }
 
 #[test]
-fn test_generate_response_from_plain_text() {
+fn test_generate_response_from_plain_text_returns_error() {
     let text = "Plain text response";
-    let resp = GenerateResponse::from_completion(text, false).unwrap();
-    assert_eq!(resp.continuations.len(), 1);
-    assert_eq!(resp.continuations[0].thought, "Plain text response");
+    // Non-JSON input returns error
+    let result = GenerateResponse::from_completion(text);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -298,7 +298,7 @@ fn test_generate_response_multiple_continuations() {
             {"thought": "Idea 3", "confidence": 0.8, "novelty": 0.6, "rationale": "Third approach"}
         ]
     }"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations.len(), 3);
     assert_eq!(resp.continuations[1].thought, "Idea 2");
     assert_eq!(resp.continuations[2].novelty, 0.6);
@@ -310,7 +310,7 @@ fn test_generate_response_with_metadata() {
         "continuations": [{"thought": "Test", "confidence": 0.8, "novelty": 0.5, "rationale": "Reason"}],
         "metadata": {"source": "test", "version": 1}
     }"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert!(resp.metadata.is_some());
     assert_eq!(resp.continuations.len(), 1);
 }
@@ -318,7 +318,7 @@ fn test_generate_response_with_metadata() {
 #[test]
 fn test_generate_response_with_defaults() {
     let json = r#"{"continuations": [{"thought": "Minimal"}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations[0].confidence, 0.7); // default
     assert_eq!(resp.continuations[0].novelty, 0.0); // default
 }
@@ -326,7 +326,7 @@ fn test_generate_response_with_defaults() {
 #[test]
 fn test_generate_response_empty_continuations() {
     let json = r#"{"continuations": []}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert!(resp.continuations.is_empty());
 }
 
@@ -337,18 +337,18 @@ fn test_generate_response_empty_continuations() {
 #[test]
 fn test_score_response_from_json() {
     let json = r#"{"overall_score": 0.85, "breakdown": {"relevance": 0.9, "validity": 0.8, "depth": 0.7, "novelty": 0.6}, "is_terminal_candidate": true, "rationale": "Good"}"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     assert_eq!(resp.overall_score, 0.85);
     assert!(resp.is_terminal_candidate);
     assert_eq!(resp.breakdown.relevance, 0.9);
 }
 
 #[test]
-fn test_score_response_from_plain_text() {
+fn test_score_response_from_plain_text_returns_error() {
     let text = "Invalid";
-    let resp = ScoreResponse::from_completion(text, false).unwrap();
-    assert_eq!(resp.overall_score, 0.5);
-    assert!(!resp.is_terminal_candidate);
+    // Non-JSON input returns error
+    let result = ScoreResponse::from_completion(text);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn test_score_response_partial_breakdown() {
         "is_terminal_candidate": false,
         "rationale": "Partial"
     }"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     assert_eq!(resp.overall_score, 0.75);
     assert_eq!(resp.breakdown.relevance, 0.8);
     assert_eq!(resp.breakdown.validity, 0.5); // default from default_score()
@@ -372,17 +372,17 @@ fn test_score_response_partial_breakdown() {
 #[test]
 fn test_aggregate_response_from_json() {
     let json = r#"{"aggregated_thought": "Combined insight", "confidence": 0.88, "synthesis_approach": "Merge"}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert_eq!(resp.aggregated_thought, "Combined insight");
     assert_eq!(resp.confidence, 0.88);
 }
 
 #[test]
-fn test_aggregate_response_plain_text() {
+fn test_aggregate_response_plain_text_returns_error() {
     let text = "Non-JSON aggregate response";
-    let resp = AggregateResponse::from_completion(text, false).unwrap();
-    assert_eq!(resp.aggregated_thought, text);
-    assert_eq!(resp.confidence, 0.7); // default
+    // Non-JSON input returns error
+    let result = AggregateResponse::from_completion(text);
+    assert!(result.is_err());
 }
 
 // ============================================================================
@@ -392,20 +392,18 @@ fn test_aggregate_response_plain_text() {
 #[test]
 fn test_refine_response_from_json() {
     let json = r#"{"refined_thought": "Improved", "confidence": 0.9, "improvements_made": ["Clarity"], "quality_delta": 0.15}"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.refined_thought, "Improved");
     assert_eq!(resp.quality_delta, 0.15);
     assert_eq!(resp.improvements_made.len(), 1);
 }
 
 #[test]
-fn test_refine_response_plain_text() {
+fn test_refine_response_plain_text_returns_error() {
     let text = "Improved thought content";
-    let resp = RefineResponse::from_completion(text, false).unwrap();
-    assert_eq!(resp.refined_thought, text);
-    // Fallback includes a default improvement
-    assert_eq!(resp.improvements_made.len(), 1);
-    assert!(resp.improvements_made[0].contains("fallback"));
+    // Non-JSON input returns error
+    let result = RefineResponse::from_completion(text);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -416,7 +414,7 @@ fn test_refine_response_with_all_fields() {
         "improvements_made": ["Clarity", "Structure", "Evidence"],
         "quality_delta": 0.25
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.refined_thought, "Better version");
     assert_eq!(resp.confidence, 0.95);
     assert_eq!(resp.improvements_made.len(), 3);
@@ -886,35 +884,34 @@ fn test_init_params_deserialize_minimal() {
 // ============================================================================
 
 #[test]
-fn test_generate_response_malformed_json() {
+fn test_generate_response_malformed_json_returns_error() {
     let json = r#"{"continuations": [{"thought": "incomplete""#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
-    // Should fallback to plain text
-    assert_eq!(resp.continuations.len(), 1);
-    assert!(resp.continuations[0].thought.contains("continuations"));
+    // Malformed JSON returns error
+    let result = GenerateResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_generate_response_missing_thought_field() {
+fn test_generate_response_missing_thought_field_returns_error() {
     let json = r#"{"continuations": [{"confidence": 0.8}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
-    // Should fallback to plain text on parse error
-    assert_eq!(resp.continuations.len(), 1);
+    // Missing required field returns error
+    let result = GenerateResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_generate_response_empty_string() {
-    let resp = GenerateResponse::from_completion("", false).unwrap();
-    assert_eq!(resp.continuations.len(), 1);
-    assert_eq!(resp.continuations[0].thought, "");
+fn test_generate_response_empty_string_returns_error() {
+    // Empty string returns error
+    let result = GenerateResponse::from_completion("");
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_generate_response_long_text() {
+fn test_generate_response_long_text_returns_error() {
     let long_text = "a".repeat(300);
-    let resp = GenerateResponse::from_completion(&long_text, false).unwrap();
-    assert_eq!(resp.continuations.len(), 1);
-    assert_eq!(resp.continuations[0].thought.len(), 300);
+    // Non-JSON text returns error
+    let result = GenerateResponse::from_completion(&long_text);
+    assert!(result.is_err());
 }
 
 // ============================================================================
@@ -922,27 +919,26 @@ fn test_generate_response_long_text() {
 // ============================================================================
 
 #[test]
-fn test_score_response_malformed_json() {
+fn test_score_response_malformed_json_returns_error() {
     let json = r#"{"overall_score": 0.8"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
-    // Should fallback
-    assert_eq!(resp.overall_score, 0.5);
+    // Malformed JSON returns error
+    let result = ScoreResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_score_response_missing_breakdown() {
-    // Missing breakdown field triggers fallback since breakdown is required
+fn test_score_response_missing_breakdown_returns_error() {
+    // Missing breakdown field returns error
     let json = r#"{"overall_score": 0.75}"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
-    // Falls back to default 0.5 because parse fails without breakdown
-    assert_eq!(resp.overall_score, 0.5);
+    let result = ScoreResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_score_response_empty_string() {
-    let resp = ScoreResponse::from_completion("", false).unwrap();
-    assert_eq!(resp.overall_score, 0.5);
-    assert_eq!(resp.breakdown.relevance, 0.5);
+fn test_score_response_empty_string_returns_error() {
+    // Empty string returns error
+    let result = ScoreResponse::from_completion("");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -954,14 +950,14 @@ fn test_score_response_with_metadata() {
         "rationale": "Good",
         "metadata": {"timestamp": "2024-01-01"}
     }"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     assert!(resp.metadata.is_some());
 }
 
 #[test]
 fn test_score_breakdown_defaults() {
     let json = r#"{"overall_score": 0.8, "breakdown": {}}"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     // All breakdown fields should use defaults
     assert_eq!(resp.breakdown.relevance, 0.5);
     assert_eq!(resp.breakdown.validity, 0.5);
@@ -974,18 +970,18 @@ fn test_score_breakdown_defaults() {
 // ============================================================================
 
 #[test]
-fn test_aggregate_response_malformed_json() {
+fn test_aggregate_response_malformed_json_returns_error() {
     let json = r#"{"aggregated_thought": "test"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
-    // Should fallback to plain text
-    assert!(resp.aggregated_thought.contains("aggregated_thought"));
+    // Malformed JSON returns error
+    let result = AggregateResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_aggregate_response_empty_string() {
-    let resp = AggregateResponse::from_completion("", false).unwrap();
-    assert_eq!(resp.aggregated_thought, "");
-    assert_eq!(resp.confidence, 0.7);
+fn test_aggregate_response_empty_string_returns_error() {
+    // Empty string returns error
+    let result = AggregateResponse::from_completion("");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -998,7 +994,7 @@ fn test_aggregate_response_with_all_fields() {
         "conflicts_resolved": ["c1"],
         "metadata": {"test": true}
     }"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert_eq!(resp.aggregated_thought, "Combined");
     assert_eq!(resp.confidence, 0.9);
     assert_eq!(resp.sources_used.len(), 2);
@@ -1014,7 +1010,7 @@ fn test_aggregate_response_empty_arrays() {
         "sources_used": [],
         "conflicts_resolved": []
     }"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert!(resp.sources_used.is_empty());
     assert!(resp.conflicts_resolved.is_empty());
 }
@@ -1024,18 +1020,18 @@ fn test_aggregate_response_empty_arrays() {
 // ============================================================================
 
 #[test]
-fn test_refine_response_malformed_json() {
+fn test_refine_response_malformed_json_returns_error() {
     let json = r#"{"refined_thought": "test"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
-    // Should fallback to plain text
-    assert!(resp.refined_thought.contains("refined_thought"));
+    // Malformed JSON returns error
+    let result = RefineResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_refine_response_empty_string() {
-    let resp = RefineResponse::from_completion("", false).unwrap();
-    assert_eq!(resp.refined_thought, "");
-    assert_eq!(resp.confidence, 0.75);
+fn test_refine_response_empty_string_returns_error() {
+    // Empty string returns error
+    let result = RefineResponse::from_completion("");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -1044,7 +1040,7 @@ fn test_refine_response_negative_quality_delta() {
         "refined_thought": "Worse",
         "quality_delta": -0.2
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.quality_delta, -0.2);
 }
 
@@ -1054,7 +1050,7 @@ fn test_refine_response_empty_improvements() {
         "refined_thought": "Test",
         "improvements_made": []
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert!(resp.improvements_made.is_empty());
 }
 
@@ -1064,7 +1060,7 @@ fn test_refine_response_many_improvements() {
         "refined_thought": "Better",
         "improvements_made": ["Clarity", "Depth", "Structure", "Evidence", "Logic"]
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.improvements_made.len(), 5);
 }
 
@@ -1075,7 +1071,7 @@ fn test_refine_response_with_aspects_unchanged() {
         "improvements_made": ["Clarity"],
         "aspects_unchanged": ["Core argument", "Evidence"]
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.improvements_made.len(), 1);
     assert_eq!(resp.aspects_unchanged.len(), 2);
 }
@@ -1350,7 +1346,7 @@ fn test_init_params_unicode_content() {
 #[test]
 fn test_generate_response_unicode_thought() {
     let json = r#"{"continuations": [{"thought": "日本語のテキスト", "confidence": 0.9}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations[0].thought, "日本語のテキスト");
 }
 
@@ -1365,7 +1361,7 @@ fn test_score_params_unicode_problem() {
 #[test]
 fn test_aggregate_response_unicode_synthesis() {
     let json = r#"{"aggregated_thought": "综合分析结果", "synthesis_approach": "合并方法"}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert_eq!(resp.aggregated_thought, "综合分析结果");
     assert_eq!(resp.synthesis_approach, "合并方法");
 }
@@ -1376,7 +1372,7 @@ fn test_refine_response_unicode_improvements() {
         "refined_thought": "Verbesserte Gedanken",
         "improvements_made": ["Klarheit verbessert", "Tiefe hinzugefügt"]
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.refined_thought, "Verbesserte Gedanken");
     assert_eq!(resp.improvements_made.len(), 2);
 }
@@ -1418,14 +1414,14 @@ fn test_aggregate_params_unicode_node_ids() {
 #[test]
 fn test_generate_response_very_high_confidence() {
     let json = r#"{"continuations": [{"thought": "Test", "confidence": 0.99999999}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert!((resp.continuations[0].confidence - 0.99999999).abs() < 1e-6);
 }
 
 #[test]
 fn test_generate_response_very_low_confidence() {
     let json = r#"{"continuations": [{"thought": "Test", "confidence": 0.00000001}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert!((resp.continuations[0].confidence - 0.00000001).abs() < 1e-6);
 }
 
@@ -1440,7 +1436,7 @@ fn test_score_response_extreme_scores() {
             "novelty": 0.0
         }
     }"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     assert!((resp.overall_score - 0.999).abs() < 1e-6);
     assert!((resp.breakdown.relevance - 0.001).abs() < 1e-6);
 }
@@ -1448,7 +1444,7 @@ fn test_score_response_extreme_scores() {
 #[test]
 fn test_aggregate_response_very_low_confidence() {
     let json = r#"{"aggregated_thought": "Test", "confidence": 0.01}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert!((resp.confidence - 0.01).abs() < 1e-6);
 }
 
@@ -1458,7 +1454,7 @@ fn test_refine_response_large_quality_delta() {
         "refined_thought": "Test",
         "quality_delta": 0.9
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert!((resp.quality_delta - 0.9).abs() < 1e-6);
 }
 
@@ -1468,7 +1464,7 @@ fn test_refine_response_very_negative_quality_delta() {
         "refined_thought": "Test",
         "quality_delta": -0.9
     }"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert!((resp.quality_delta + 0.9).abs() < 1e-6);
 }
 
@@ -1491,14 +1487,14 @@ fn test_prune_params_threshold_above_one() {
 #[test]
 fn test_generate_response_empty_thought() {
     let json = r#"{"continuations": [{"thought": "", "confidence": 0.8}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations[0].thought, "");
 }
 
 #[test]
 fn test_generate_response_empty_rationale() {
     let json = r#"{"continuations": [{"thought": "Test", "rationale": ""}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations[0].rationale, "");
 }
 
@@ -1509,21 +1505,21 @@ fn test_score_response_empty_rationale() {
         "breakdown": {"relevance": 0.8, "validity": 0.8, "depth": 0.8, "novelty": 0.8},
         "rationale": ""
     }"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
+    let resp = ScoreResponse::from_completion(json).unwrap();
     assert_eq!(resp.rationale, "");
 }
 
 #[test]
 fn test_aggregate_response_empty_synthesis_approach() {
     let json = r#"{"aggregated_thought": "Test", "synthesis_approach": ""}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert_eq!(resp.synthesis_approach, "");
 }
 
 #[test]
 fn test_aggregate_response_missing_optional_fields() {
     let json = r#"{"aggregated_thought": "Test"}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert_eq!(resp.aggregated_thought, "Test");
     assert_eq!(resp.confidence, 0.7); // default
     assert!(resp.sources_used.is_empty());
@@ -1534,7 +1530,7 @@ fn test_aggregate_response_missing_optional_fields() {
 #[test]
 fn test_refine_response_missing_optional_fields() {
     let json = r#"{"refined_thought": "Test"}"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
+    let resp = RefineResponse::from_completion(json).unwrap();
     assert_eq!(resp.refined_thought, "Test");
     assert_eq!(resp.confidence, 0.7); // default
     assert!(resp.improvements_made.is_empty());
@@ -1546,35 +1542,35 @@ fn test_refine_response_missing_optional_fields() {
 // ============================================================================
 
 #[test]
-fn test_generate_response_null_continuations() {
+fn test_generate_response_null_continuations_returns_error() {
     let json = r#"{"continuations": null}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
-    // Should fallback to plain text
-    assert_eq!(resp.continuations.len(), 1);
+    // Null for required field returns error
+    let result = GenerateResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_score_response_null_breakdown() {
+fn test_score_response_null_breakdown_returns_error() {
     let json = r#"{"overall_score": 0.8, "breakdown": null}"#;
-    let resp = ScoreResponse::from_completion(json, false).unwrap();
-    // Should fallback
-    assert_eq!(resp.overall_score, 0.5);
+    // Null for required field returns error
+    let result = ScoreResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_aggregate_response_wrong_type_confidence() {
+fn test_aggregate_response_wrong_type_confidence_returns_error() {
     let json = r#"{"aggregated_thought": "Test", "confidence": "high"}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
-    // Should fallback
-    assert!(resp.aggregated_thought.contains("aggregated_thought"));
+    // Wrong type for field returns error
+    let result = AggregateResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn test_refine_response_improvements_as_string() {
+fn test_refine_response_improvements_as_string_returns_error() {
     let json = r#"{"refined_thought": "Test", "improvements_made": "many"}"#;
-    let resp = RefineResponse::from_completion(json, false).unwrap();
-    // Should fallback
-    assert!(resp.refined_thought.contains("refined_thought"));
+    // Wrong type for field returns error
+    let result = RefineResponse::from_completion(json);
+    assert!(result.is_err());
 }
 
 // ============================================================================
@@ -1672,7 +1668,7 @@ fn test_generate_response_very_long_thought() {
         r#"{{"continuations": [{{"thought": "{}"}}]}}"#,
         long_thought
     );
-    let resp = GenerateResponse::from_completion(&json, false).unwrap();
+    let resp = GenerateResponse::from_completion(&json).unwrap();
     assert_eq!(resp.continuations[0].thought.len(), 5000);
 }
 
@@ -1712,7 +1708,7 @@ fn test_refine_response_many_improvements_long_text() {
         r#"{{"refined_thought": "Test", "improvements_made": [{}]}}"#,
         json_improvements
     );
-    let resp = RefineResponse::from_completion(&json, false).unwrap();
+    let resp = RefineResponse::from_completion(&json).unwrap();
     assert_eq!(resp.improvements_made.len(), 50);
 }
 
@@ -1734,7 +1730,7 @@ fn test_init_params_special_chars() {
 #[test]
 fn test_generate_response_newlines_in_thought() {
     let json = r#"{"continuations": [{"thought": "Line 1\nLine 2\nLine 3"}]}"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert!(resp.continuations[0].thought.contains("\n"));
 }
 
@@ -1750,7 +1746,7 @@ fn test_score_params_backslashes() {
 #[test]
 fn test_aggregate_response_control_characters() {
     let json = r#"{"aggregated_thought": "Test\u0000\u0001\u0002"}"#;
-    let resp = AggregateResponse::from_completion(json, false).unwrap();
+    let resp = AggregateResponse::from_completion(json).unwrap();
     assert!(resp.aggregated_thought.contains("Test"));
 }
 
@@ -1769,7 +1765,7 @@ fn test_generate_response_mixed_confidence_values() {
             {"thought": "T5", "confidence": 0.6666}
         ]
     }"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations.len(), 5);
     assert_eq!(resp.continuations[0].confidence, 0.0);
     assert_eq!(resp.continuations[2].confidence, 1.0);
@@ -1784,7 +1780,7 @@ fn test_generate_response_mixed_novelty_values() {
             {"thought": "T3"}
         ]
     }"#;
-    let resp = GenerateResponse::from_completion(json, false).unwrap();
+    let resp = GenerateResponse::from_completion(json).unwrap();
     assert_eq!(resp.continuations[0].novelty, 0.1);
     assert_eq!(resp.continuations[1].novelty, 0.9);
     assert_eq!(resp.continuations[2].novelty, 0.0); // default

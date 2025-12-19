@@ -178,8 +178,8 @@ fn default_confidence() -> f64 {
 }
 
 impl GenerateResponse {
-    /// Strict parsing that returns an error on parse failure
-    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+    /// Parse completion - returns error on parse failure (no fallbacks).
+    fn from_completion(completion: &str) -> Result<Self, ToolError> {
         serde_json::from_str::<GenerateResponse>(completion).map_err(|e| {
             let preview: String = completion.chars().take(200).collect();
             ToolError::ParseFailed {
@@ -187,40 +187,6 @@ impl GenerateResponse {
                 message: format!("JSON parse error: {} | Response preview: {}", e, preview),
             }
         })
-    }
-
-    /// Legacy parsing that falls back to defaults on parse failure (DEPRECATED)
-    fn from_completion_legacy(completion: &str) -> Self {
-        match serde_json::from_str::<GenerateResponse>(completion) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse GoT generate response, using fallback (DEPRECATED - enable STRICT_MODE)"
-                );
-                // Fallback - create a single continuation from plain text
-                Self {
-                    continuations: vec![ContinuationItem {
-                        thought: completion.to_string(),
-                        confidence: 0.7,
-                        novelty: 0.5,
-                        rationale: "Generated from plain text response (parse fallback)"
-                            .to_string(),
-                    }],
-                    metadata: None,
-                }
-            }
-        }
-    }
-
-    /// Parse completion with strict mode control
-    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
-        if strict_mode {
-            Self::from_completion_strict(completion)
-        } else {
-            Ok(Self::from_completion_legacy(completion))
-        }
     }
 }
 
@@ -300,8 +266,8 @@ fn default_score() -> f64 {
 }
 
 impl ScoreResponse {
-    /// Strict parsing that returns an error on parse failure
-    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+    /// Parse completion - returns error on parse failure (no fallbacks).
+    fn from_completion(completion: &str) -> Result<Self, ToolError> {
         serde_json::from_str::<ScoreResponse>(completion).map_err(|e| {
             let preview: String = completion.chars().take(200).collect();
             ToolError::ParseFailed {
@@ -309,42 +275,6 @@ impl ScoreResponse {
                 message: format!("JSON parse error: {} | Response preview: {}", e, preview),
             }
         })
-    }
-
-    /// Legacy parsing that falls back to defaults on parse failure (DEPRECATED)
-    fn from_completion_legacy(completion: &str) -> Self {
-        match serde_json::from_str::<ScoreResponse>(completion) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse GoT score response, using fallback (DEPRECATED - enable STRICT_MODE)"
-                );
-                // Fallback
-                Self {
-                    overall_score: 0.5,
-                    breakdown: ScoreBreakdownResponse {
-                        relevance: 0.5,
-                        validity: 0.5,
-                        depth: 0.5,
-                        novelty: 0.5,
-                    },
-                    is_terminal_candidate: false,
-                    rationale: "Score determined from fallback (parse error)".to_string(),
-                    metadata: None,
-                }
-            }
-        }
-    }
-
-    /// Parse completion with strict mode control
-    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
-        if strict_mode {
-            Self::from_completion_strict(completion)
-        } else {
-            Ok(Self::from_completion_legacy(completion))
-        }
     }
 }
 
@@ -400,8 +330,8 @@ struct AggregateResponse {
 }
 
 impl AggregateResponse {
-    /// Strict parsing that returns an error on parse failure
-    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+    /// Parse completion - returns error on parse failure (no fallbacks).
+    fn from_completion(completion: &str) -> Result<Self, ToolError> {
         serde_json::from_str::<AggregateResponse>(completion).map_err(|e| {
             let preview: String = completion.chars().take(200).collect();
             ToolError::ParseFailed {
@@ -409,38 +339,6 @@ impl AggregateResponse {
                 message: format!("JSON parse error: {} | Response preview: {}", e, preview),
             }
         })
-    }
-
-    /// Legacy parsing that falls back to defaults on parse failure (DEPRECATED)
-    fn from_completion_legacy(completion: &str) -> Self {
-        match serde_json::from_str::<AggregateResponse>(completion) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse GoT aggregate response, using fallback (DEPRECATED - enable STRICT_MODE)"
-                );
-                // Fallback
-                Self {
-                    aggregated_thought: completion.to_string(),
-                    confidence: 0.7,
-                    sources_used: vec![],
-                    synthesis_approach: "Direct synthesis (parse fallback)".to_string(),
-                    conflicts_resolved: vec![],
-                    metadata: None,
-                }
-            }
-        }
-    }
-
-    /// Parse completion with strict mode control
-    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
-        if strict_mode {
-            Self::from_completion_strict(completion)
-        } else {
-            Ok(Self::from_completion_legacy(completion))
-        }
     }
 }
 
@@ -496,8 +394,8 @@ struct RefineResponse {
 }
 
 impl RefineResponse {
-    /// Strict parsing that returns an error on parse failure
-    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+    /// Parse completion - returns error on parse failure (no fallbacks).
+    fn from_completion(completion: &str) -> Result<Self, ToolError> {
         serde_json::from_str::<RefineResponse>(completion).map_err(|e| {
             let preview: String = completion.chars().take(200).collect();
             ToolError::ParseFailed {
@@ -505,38 +403,6 @@ impl RefineResponse {
                 message: format!("JSON parse error: {} | Response preview: {}", e, preview),
             }
         })
-    }
-
-    /// Legacy parsing that falls back to defaults on parse failure (DEPRECATED)
-    fn from_completion_legacy(completion: &str) -> Self {
-        match serde_json::from_str::<RefineResponse>(completion) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse GoT refine response, using fallback (DEPRECATED - enable STRICT_MODE)"
-                );
-                // Fallback
-                Self {
-                    refined_thought: completion.to_string(),
-                    confidence: 0.75,
-                    improvements_made: vec!["Clarity improvement (parse fallback)".to_string()],
-                    aspects_unchanged: vec![],
-                    quality_delta: 0.1,
-                    metadata: None,
-                }
-            }
-        }
-    }
-
-    /// Parse completion with strict mode control
-    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
-        if strict_mode {
-            Self::from_completion_strict(completion)
-        } else {
-            Ok(Self::from_completion_legacy(completion))
-        }
     }
 }
 
@@ -654,8 +520,6 @@ pub struct GotMode {
     got_pipe: String,
     /// Configuration for GoT operations.
     config: GotConfig,
-    /// Whether to use strict mode for response parsing (fails on parse errors instead of using fallbacks).
-    strict_mode: bool,
 }
 
 impl GotMode {
@@ -682,7 +546,6 @@ impl GotMode {
                 .and_then(|g| g.pipe.clone())
                 .unwrap_or_else(|| "got-reasoning-v1".to_string()),
             config: got_config,
-            strict_mode: config.error_handling.strict_mode,
         }
     }
 
@@ -812,7 +675,7 @@ impl GotMode {
         };
 
         // Parse response
-        let gen_response = GenerateResponse::from_completion(&response.completion, self.strict_mode)?;
+        let gen_response = GenerateResponse::from_completion(&response.completion)?;
 
         // Create nodes and edges for each continuation
         let mut continuations = Vec::new();
@@ -930,7 +793,7 @@ impl GotMode {
         };
 
         // Parse response
-        let score_response = ScoreResponse::from_completion(&response.completion, self.strict_mode)?;
+        let score_response = ScoreResponse::from_completion(&response.completion)?;
 
         // Update node with score
         let mut updated_node = node.clone();
@@ -1036,7 +899,7 @@ impl GotMode {
         };
 
         // Parse response
-        let agg_response = AggregateResponse::from_completion(&response.completion, self.strict_mode)?;
+        let agg_response = AggregateResponse::from_completion(&response.completion)?;
 
         // Find max depth of source nodes
         let max_depth = nodes.iter().map(|n| n.depth).max().unwrap_or(0);
@@ -1145,7 +1008,7 @@ impl GotMode {
         };
 
         // Parse response
-        let refine_response = RefineResponse::from_completion(&response.completion, self.strict_mode)?;
+        let refine_response = RefineResponse::from_completion(&response.completion)?;
 
         // Create refined node
         let refined_node = GraphNode::new(&params.session_id, &refine_response.refined_thought)

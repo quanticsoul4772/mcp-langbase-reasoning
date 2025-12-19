@@ -464,8 +464,6 @@ pub struct EvidenceMode {
     core: ModeCore,
     /// Consolidated pipe name for decision framework operations (prompts passed dynamically).
     decision_framework_pipe: String,
-    /// Whether to use strict mode for error handling (fails instead of using fallbacks).
-    strict_mode: bool,
 }
 
 impl EvidenceMode {
@@ -479,7 +477,6 @@ impl EvidenceMode {
                 .as_ref()
                 .and_then(|e| e.pipe.clone())
                 .unwrap_or_else(|| "decision-framework-v1".to_string()),
-            strict_mode: config.error_handling.strict_mode,
         }
     }
 
@@ -672,43 +669,12 @@ impl EvidenceMode {
                 invocation = invocation.failure(e.to_string(), latency);
                 self.core.storage().log_invocation(&invocation).await?;
 
-                // In strict mode, propagate the error instead of falling back
-                if self.strict_mode {
-                    error!(error = %e, "Langbase call failed in strict mode - propagating error");
-                    return Err(ToolError::PipeUnavailable {
-                        pipe: self.decision_framework_pipe.clone(),
-                        reason: e.to_string(),
-                    }
-                    .into());
+                error!(error = %e, "Langbase call failed - propagating error");
+                return Err(ToolError::PipeUnavailable {
+                    pipe: self.decision_framework_pipe.clone(),
+                    reason: e.to_string(),
                 }
-
-                // Legacy fallback: calculate locally (DEPRECATED - enable STRICT_MODE)
-                warn!(error = %e, "Langbase call failed, using local Bayesian calculation (DEPRECATED - enable STRICT_MODE)");
-                let (posterior, steps) = self.calculate_bayesian_update(&params);
-                let entropy_before = self.calculate_entropy(params.prior);
-                let entropy_after = self.calculate_entropy(posterior);
-
-                let update_id = uuid::Uuid::new_v4().to_string();
-                return Ok(ProbabilisticResult {
-                    update_id,
-                    session_id: session.id,
-                    hypothesis: params.hypothesis,
-                    prior: params.prior,
-                    posterior,
-                    confidence_interval: None,
-                    update_steps: steps,
-                    uncertainty: UncertaintyMetrics {
-                        entropy_before,
-                        entropy_after,
-                        information_gained: entropy_before - entropy_after,
-                    },
-                    interpretation: ProbabilityInterpretation {
-                        verbal: self.probability_to_verbal(posterior),
-                        recommendation: "Local calculation used due to API unavailability"
-                            .to_string(),
-                        caveats: vec!["Likelihood ratios may be estimates".to_string()],
-                    },
-                });
+                .into());
             }
         };
 
@@ -920,7 +886,7 @@ impl EvidenceMode {
     fn parse_bayesian_response(
         &self,
         completion: &str,
-        params: &ProbabilisticParams,
+        _params: &ProbabilisticParams,
     ) -> AppResult<BayesianResponse> {
         let json_str = extract_json_from_completion(completion).map_err(|e| {
             warn!(
@@ -933,53 +899,14 @@ impl EvidenceMode {
             }
         })?;
 
-        // In strict mode, propagate parse errors instead of falling back
-        if self.strict_mode {
-            return serde_json::from_str::<BayesianResponse>(json_str).map_err(|e| {
-                let preview: String = json_str.chars().take(200).collect();
-                ToolError::ParseFailed {
-                    mode: "evidence.probabilistic".to_string(),
-                    message: format!("JSON parse error: {} | Response preview: {}", e, preview),
-                }
-                .into()
-            });
-        }
-
-        // Legacy fallback: calculate locally (DEPRECATED - enable STRICT_MODE)
-        serde_json::from_str::<BayesianResponse>(json_str).or_else(|e| {
-            warn!(error = %e, "Failed to parse Bayesian response, using local calculation (DEPRECATED - enable STRICT_MODE)");
-            // Fallback to local calculation
-            let (posterior, steps) = self.calculate_bayesian_update(params);
-            let entropy_before = self.calculate_entropy(params.prior);
-            let entropy_after = self.calculate_entropy(posterior);
-
-            Ok(BayesianResponse {
-                prior: params.prior,
-                posterior,
-                confidence_interval: None,
-                update_steps: steps
-                    .into_iter()
-                    .map(|s| UpdateStepResponse {
-                        evidence: s.evidence,
-                        prior_before: s.prior,
-                        likelihood_ratio: s.likelihood_ratio,
-                        posterior_after: s.posterior,
-                        explanation: String::new(),
-                    })
-                    .collect(),
-                uncertainty_analysis: Some(UncertaintyAnalysis {
-                    entropy_before,
-                    entropy_after,
-                    information_gained: entropy_before - entropy_after,
-                    remaining_uncertainty: "Calculated locally".to_string(),
-                }),
-                sensitivity: None,
-                interpretation: Interpretation {
-                    verbal_probability: self.probability_to_verbal(posterior),
-                    recommendation: "Based on provided likelihood ratios".to_string(),
-                    caveats: vec![],
-                },
-            })
+        // Parse response - returns error on failure (no fallbacks)
+        serde_json::from_str::<BayesianResponse>(json_str).map_err(|e| {
+            let preview: String = json_str.chars().take(200).collect();
+            ToolError::ParseFailed {
+                mode: "evidence.probabilistic".to_string(),
+                message: format!("JSON parse error: {} | Response preview: {}", e, preview),
+            }
+            .into()
         })
     }
 
@@ -990,59 +917,6 @@ impl EvidenceMode {
         }
         let q = 1.0 - p;
         -(p * p.log2() + q * q.log2())
-    }
-
-    /// Perform local Bayesian update calculation.
-    fn calculate_bayesian_update(
-        &self,
-        params: &ProbabilisticParams,
-    ) -> (f64, Vec<BayesianUpdateStep>) {
-        let mut current_prior = params.prior;
-        let mut steps = Vec::new();
-
-        for evidence in &params.evidence {
-            let likelihood_true = evidence.likelihood_if_true.unwrap_or(0.7);
-            let likelihood_false = evidence.likelihood_if_false.unwrap_or(0.3);
-
-            // Avoid division by zero
-            let denominator =
-                likelihood_true * current_prior + likelihood_false * (1.0 - current_prior);
-            let posterior = if denominator > 0.0 {
-                (likelihood_true * current_prior) / denominator
-            } else {
-                current_prior
-            };
-
-            let likelihood_ratio = if likelihood_false > 0.0 {
-                likelihood_true / likelihood_false
-            } else {
-                likelihood_true * 10.0 // High ratio if false likelihood is 0
-            };
-
-            steps.push(BayesianUpdateStep {
-                evidence: evidence.description.clone(),
-                prior: current_prior,
-                posterior,
-                likelihood_ratio,
-            });
-
-            current_prior = posterior;
-        }
-
-        (current_prior, steps)
-    }
-
-    /// Convert probability to verbal description.
-    fn probability_to_verbal(&self, p: f64) -> String {
-        match p {
-            p if p >= 0.95 => "almost_certain".to_string(),
-            p if p >= 0.85 => "highly_likely".to_string(),
-            p if p >= 0.70 => "likely".to_string(),
-            p if p >= 0.50 => "possible".to_string(),
-            p if p >= 0.30 => "unlikely".to_string(),
-            p if p >= 0.15 => "highly_unlikely".to_string(),
-            _ => "almost_impossible".to_string(),
-        }
     }
 }
 

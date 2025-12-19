@@ -221,7 +221,10 @@ fn test_config_from_env_detection_config_default() {
 
     // Detection config is always present (for consolidated pipe support)
     // but pipe field is None to trigger default "detection-v1"
-    let detection = config.pipes.detection.expect("DetectionPipeConfig should be Some");
+    let detection = config
+        .pipes
+        .detection
+        .expect("DetectionPipeConfig should be Some");
     assert!(detection.pipe.is_none());
 }
 

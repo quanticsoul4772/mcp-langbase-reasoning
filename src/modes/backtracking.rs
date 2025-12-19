@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use super::ModeCore;
 use crate::config::Config;
@@ -67,8 +67,8 @@ struct BacktrackingResponse {
 }
 
 impl BacktrackingResponse {
-    /// Strict parsing that returns an error on parse failure
-    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+    /// Parse completion - returns error on parse failure (no fallbacks).
+    fn from_completion(completion: &str) -> Result<Self, ToolError> {
         serde_json::from_str::<BacktrackingResponse>(completion).map_err(|e| {
             let preview: String = completion.chars().take(200).collect();
             ToolError::ParseFailed {
@@ -76,38 +76,6 @@ impl BacktrackingResponse {
                 message: format!("JSON parse error: {} | Response preview: {}", e, preview),
             }
         })
-    }
-
-    /// Legacy parsing that falls back to defaults on parse failure (DEPRECATED)
-    fn from_completion_legacy(completion: &str) -> Self {
-        match serde_json::from_str::<BacktrackingResponse>(completion) {
-            Ok(parsed) => parsed,
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse backtracking response, using fallback (DEPRECATED - enable STRICT_MODE)"
-                );
-                // Fallback
-                Self {
-                    thought: completion.to_string(),
-                    confidence: 0.8,
-                    context_restored: true,
-                    branch_from: None,
-                    new_direction: None,
-                    metadata: None,
-                }
-            }
-        }
-    }
-
-    /// Parse completion with strict mode control
-    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
-        if strict_mode {
-            Self::from_completion_strict(completion)
-        } else {
-            Ok(Self::from_completion_legacy(completion))
-        }
     }
 }
 
@@ -118,8 +86,6 @@ pub struct BacktrackingMode {
     core: ModeCore,
     /// The Langbase pipe name for backtracking.
     pipe_name: String,
-    /// Whether to use strict mode for response parsing (fails on parse errors instead of using fallbacks).
-    strict_mode: bool,
 }
 
 impl BacktrackingMode {
@@ -132,7 +98,6 @@ impl BacktrackingMode {
                 .backtracking
                 .clone()
                 .unwrap_or_else(|| "backtracking-reasoning-v1".to_string()),
-            strict_mode: config.error_handling.strict_mode,
         }
     }
 
@@ -200,7 +165,7 @@ impl BacktrackingMode {
         let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response
-        let backtrack_response = BacktrackingResponse::from_completion(&response.completion, self.strict_mode)?;
+        let backtrack_response = BacktrackingResponse::from_completion(&response.completion)?;
 
         // Create the new thought
         let thought = Thought::new(&session.id, &backtrack_response.thought, "backtracking")
@@ -341,7 +306,10 @@ mod tests {
     // ============================================================================
 
     fn create_test_config() -> Config {
-        use crate::config::{DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig};
+        use crate::config::{
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig,
+            PipeConfig,
+        };
         use std::path::PathBuf;
 
         Config {
@@ -463,19 +431,18 @@ mod tests {
     #[test]
     fn test_backtracking_response_from_json() {
         let json = r#"{"thought": "New approach", "confidence": 0.9, "context_restored": true}"#;
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "New approach");
         assert_eq!(resp.confidence, 0.9);
         assert!(resp.context_restored);
     }
 
     #[test]
-    fn test_backtracking_response_from_plain_text() {
+    fn test_backtracking_response_from_plain_text_returns_error() {
         let text = "Just plain text";
-        let resp = BacktrackingResponse::from_completion(text, false).unwrap();
-        assert_eq!(resp.thought, "Just plain text");
-        assert_eq!(resp.confidence, 0.8);
-        assert!(resp.context_restored);
+        // Non-JSON input returns error
+        let result = BacktrackingResponse::from_completion(text);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -489,7 +456,7 @@ mod tests {
             "metadata": {"key": "value"}
         }"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "Complete response");
         assert_eq!(resp.confidence, 0.95);
         assert!(resp.context_restored);
@@ -502,7 +469,7 @@ mod tests {
     fn test_backtracking_response_defaults() {
         let json = r#"{"thought": "Minimal", "confidence": 0.7}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "Minimal");
         assert_eq!(resp.confidence, 0.7);
         assert!(!resp.context_restored); // default is false
@@ -512,34 +479,23 @@ mod tests {
     }
 
     #[test]
-    fn test_backtracking_response_invalid_json_legacy() {
+    fn test_backtracking_response_invalid_json_returns_error() {
         let invalid = "{ invalid json }";
 
-        // Legacy mode (strict_mode = false) uses fallback
-        let resp = BacktrackingResponse::from_completion(invalid, false).unwrap();
-        assert_eq!(resp.thought, invalid);
-        assert_eq!(resp.confidence, 0.8); // fallback default
-        assert!(resp.context_restored); // fallback sets this to true
-    }
-
-    #[test]
-    fn test_backtracking_response_invalid_json_strict() {
-        let invalid = "{ invalid json }";
-
-        // Strict mode should return error
-        let result = BacktrackingResponse::from_completion(invalid, true);
+        // All parse failures return errors (no fallbacks)
+        let result = BacktrackingResponse::from_completion(invalid);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, ToolError::ParseFailed { mode, .. } if mode == "backtracking"));
     }
 
     #[test]
-    fn test_backtracking_response_empty_string() {
+    fn test_backtracking_response_empty_string_returns_error() {
         let empty = "";
 
-        let resp = BacktrackingResponse::from_completion(empty, false).unwrap();
-        assert_eq!(resp.thought, "");
-        assert_eq!(resp.confidence, 0.8);
+        // Empty string is not valid JSON, returns error
+        let result = BacktrackingResponse::from_completion(empty);
+        assert!(result.is_err());
     }
 
     // ============================================================================
@@ -659,7 +615,7 @@ mod tests {
     fn test_backtracking_response_high_confidence() {
         let json = r#"{"thought": "Very confident", "confidence": 1.0}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.confidence, 1.0);
     }
 
@@ -667,7 +623,7 @@ mod tests {
     fn test_backtracking_response_zero_confidence() {
         let json = r#"{"thought": "No confidence", "confidence": 0.0}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.confidence, 0.0);
     }
 
@@ -683,7 +639,7 @@ mod tests {
             }
         }"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert!(resp.metadata.is_some());
         let meta = resp.metadata.unwrap();
         assert!(meta.get("nested").is_some());
@@ -755,7 +711,7 @@ mod tests {
     fn test_backtracking_response_malformed_but_valid_json() {
         let json = r#"{"thought":"No spaces","confidence":0.5,"context_restored":false}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "No spaces");
         assert_eq!(resp.confidence, 0.5);
         assert!(!resp.context_restored);
@@ -789,7 +745,7 @@ mod tests {
     fn test_backtracking_response_with_null_metadata() {
         let json = r#"{"thought": "Test", "confidence": 0.8, "metadata": null}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "Test");
         assert!(resp.metadata.is_none());
     }
@@ -798,7 +754,7 @@ mod tests {
     fn test_backtracking_response_negative_confidence() {
         let json = r#"{"thought": "Negative", "confidence": -1.0}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.confidence, -1.0);
     }
 
@@ -845,7 +801,7 @@ mod tests {
             "another_field": 123
         }"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "Test");
         assert_eq!(resp.confidence, 0.9);
     }
@@ -866,7 +822,7 @@ mod tests {
     fn test_backtracking_response_unicode_content() {
         let json = r#"{"thought": "思考 🤔 émoji", "confidence": 0.8}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "思考 🤔 émoji");
     }
 
@@ -1145,7 +1101,7 @@ mod tests {
     fn test_backtracking_response_with_escaped_quotes() {
         let json = r#"{"thought": "She said \"hello\"", "confidence": 0.8}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "She said \"hello\"");
     }
 
@@ -1153,7 +1109,7 @@ mod tests {
     fn test_backtracking_response_with_newlines() {
         let json = r#"{"thought": "Line 1\nLine 2\nLine 3", "confidence": 0.8}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.thought, "Line 1\nLine 2\nLine 3");
     }
 
@@ -1189,14 +1145,12 @@ mod tests {
     }
 
     #[test]
-    fn test_backtracking_response_missing_required_fields_legacy() {
-        // Test when required fields are missing - should fallback in legacy mode
+    fn test_backtracking_response_missing_required_fields_returns_error() {
+        // Test when required fields are missing - returns error
         let json = r#"{"confidence": 0.9}"#; // Missing "thought"
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
-        // Should use fallback because parsing will fail
-        assert!(!resp.thought.is_empty()); // Will contain the original JSON
-        assert_eq!(resp.confidence, 0.8); // Fallback default
+        let result = BacktrackingResponse::from_completion(json);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1204,7 +1158,7 @@ mod tests {
         let long_thought = "A".repeat(100000);
         let json = format!(r#"{{"thought": "{}", "confidence": 0.8}}"#, long_thought);
 
-        let resp = BacktrackingResponse::from_completion(&json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(&json).unwrap();
         assert_eq!(resp.thought, long_thought);
     }
 
@@ -1248,7 +1202,7 @@ mod tests {
     #[test]
     fn test_backtracking_response_clone() {
         let json = r#"{"thought": "Clone test", "confidence": 0.9, "context_restored": true}"#;
-        let resp1 = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp1 = BacktrackingResponse::from_completion(json).unwrap();
         let resp2 = resp1.clone();
 
         assert_eq!(resp1.thought, resp2.thought);
@@ -1271,7 +1225,7 @@ mod tests {
     fn test_backtracking_response_scientific_notation() {
         let json = r#"{"thought": "Test", "confidence": 1e-10}"#;
 
-        let resp = BacktrackingResponse::from_completion(json, false).unwrap();
+        let resp = BacktrackingResponse::from_completion(json).unwrap();
         assert_eq!(resp.confidence, 1e-10);
     }
 

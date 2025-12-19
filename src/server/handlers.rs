@@ -644,13 +644,14 @@ async fn handle_metrics_summary(state: &SharedState) -> McpResult<Value> {
 
     info!("Handling metrics summary request");
 
-    let summaries = state
-        .storage
-        .get_pipe_usage_summary()
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: format!("Failed to get metrics: {}", e),
-        })?;
+    let summaries =
+        state
+            .storage
+            .get_pipe_usage_summary()
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Failed to get metrics: {}", e),
+            })?;
 
     // Format the summaries into a more readable response
     let result = serde_json::json!({
@@ -685,10 +686,7 @@ async fn handle_metrics_summary(state: &SharedState) -> McpResult<Value> {
 }
 
 /// Handle reasoning_metrics_by_pipe tool call
-async fn handle_metrics_by_pipe(
-    state: &SharedState,
-    arguments: Option<Value>,
-) -> McpResult<Value> {
+async fn handle_metrics_by_pipe(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
     use crate::storage::Storage;
 
     let params: MetricsByPipeParams = parse_arguments("reasoning_metrics_by_pipe", arguments)?;
@@ -755,13 +753,14 @@ async fn handle_metrics_invocations(
     }
     filter = filter.with_limit(params.limit.unwrap_or(100).min(1000));
 
-    let invocations = state
-        .storage
-        .get_invocations(filter)
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: format!("Failed to get invocations: {}", e),
-        })?;
+    let invocations =
+        state
+            .storage
+            .get_invocations(filter)
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Failed to get invocations: {}", e),
+            })?;
 
     let result = serde_json::json!({
         "count": invocations.len(),
@@ -838,13 +837,14 @@ async fn handle_fallback_metrics(state: &SharedState) -> McpResult<Value> {
 
     info!("Handling fallback metrics request");
 
-    let metrics = state
-        .storage
-        .get_fallback_metrics()
-        .await
-        .map_err(|e| McpError::ExecutionFailed {
-            message: format!("Failed to get fallback metrics: {}", e),
-        })?;
+    let metrics =
+        state
+            .storage
+            .get_fallback_metrics()
+            .await
+            .map_err(|e| McpError::ExecutionFailed {
+                message: format!("Failed to get fallback metrics: {}", e),
+            })?;
 
     Ok(serde_json::json!({
         "total_fallbacks": metrics.total_fallbacks,

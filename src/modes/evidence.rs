@@ -462,10 +462,8 @@ pub struct ProbabilityInterpretation {
 pub struct EvidenceMode {
     /// Core infrastructure (storage and langbase client).
     core: ModeCore,
-    /// The Langbase pipe name for evidence assessment.
-    evidence_pipe: String,
-    /// The Langbase pipe name for Bayesian updates.
-    bayesian_pipe: String,
+    /// Consolidated pipe name for decision framework operations (prompts passed dynamically).
+    decision_framework_pipe: String,
 }
 
 impl EvidenceMode {
@@ -473,18 +471,12 @@ impl EvidenceMode {
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
         Self {
             core: ModeCore::new(storage, langbase),
-            evidence_pipe: config
+            decision_framework_pipe: config
                 .pipes
                 .evidence
                 .as_ref()
-                .and_then(|e| e.evidence_pipe.clone())
-                .unwrap_or_else(|| "evidence-assessor-v1".to_string()),
-            bayesian_pipe: config
-                .pipes
-                .evidence
-                .as_ref()
-                .and_then(|e| e.bayesian_pipe.clone())
-                .unwrap_or_else(|| "bayesian-updater-v1".to_string()),
+                .and_then(|e| e.pipe.clone())
+                .unwrap_or_else(|| "decision-framework-v1".to_string()),
         }
     }
 
@@ -512,10 +504,10 @@ impl EvidenceMode {
             serialize_for_log(&params, "reasoning.assess_evidence input"),
         )
         .with_session(&session.id)
-        .with_pipe(&self.evidence_pipe);
+        .with_pipe(&self.decision_framework_pipe);
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.evidence_pipe, messages);
+        let request = PipeRequest::new(&self.decision_framework_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -666,10 +658,10 @@ impl EvidenceMode {
             serialize_for_log(&params, "reasoning.probabilistic input"),
         )
         .with_session(&session.id)
-        .with_pipe(&self.bayesian_pipe);
+        .with_pipe(&self.decision_framework_pipe);
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.bayesian_pipe, messages);
+        let request = PipeRequest::new(&self.decision_framework_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {

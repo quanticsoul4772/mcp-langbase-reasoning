@@ -6,8 +6,7 @@ use super::types::{CreatePipeRequest, CreatePipeResponse, Message, PipeRequest, 
 use crate::config::{LangbaseConfig, RequestConfig};
 use crate::error::{LangbaseError, LangbaseResult};
 use crate::prompts::{
-    BIAS_DETECTION_PROMPT, DIVERGENT_REASONING_PROMPT, FALLACY_DETECTION_PROMPT,
-    LINEAR_REASONING_PROMPT, REFLECTION_PROMPT, TREE_REASONING_PROMPT,
+    DIVERGENT_REASONING_PROMPT, LINEAR_REASONING_PROMPT, REFLECTION_PROMPT, TREE_REASONING_PROMPT,
 };
 
 /// Client for interacting with Langbase Pipes API
@@ -39,6 +38,13 @@ impl LangbaseClient {
     pub async fn call_pipe(&self, request: PipeRequest) -> LangbaseResult<PipeResponse> {
         let url = format!("{}/v1/pipes/run", self.base_url);
         let pipe_name = request.name.clone();
+
+        info!(
+            pipe = %pipe_name,
+            url = %url,
+            messages_count = request.messages.len(),
+            "Calling Langbase pipe"
+        );
 
         let mut last_error = None;
         let mut retries = 0;
@@ -291,49 +297,111 @@ impl LangbaseClient {
 
     /// Ensure all reasoning pipes exist, creating them if needed
     pub async fn ensure_all_pipes(&self) -> LangbaseResult<()> {
+        // Core reasoning modes (4 pipes)
         self.ensure_linear_pipe("linear-reasoning-v1").await?;
         self.ensure_tree_pipe("tree-reasoning-v1").await?;
         self.ensure_divergent_pipe("divergent-reasoning-v1").await?;
         self.ensure_reflection_pipe("reflection-v1").await?;
-        info!("All reasoning pipes ready");
+        info!("Core reasoning pipes ready (4)");
+
+        // Consolidated GoT mode (1 pipe - prompts passed dynamically)
+        self.ensure_got_pipes().await?;
+
+        // Consolidated detection mode (1 pipe - prompts passed dynamically)
+        self.ensure_detection_pipes().await?;
+
+        // Consolidated decision framework mode (1 pipe - prompts passed dynamically)
+        self.ensure_decision_framework_pipes().await?;
+
+        // Auto mode router (1 pipe)
+        self.ensure_auto_router_pipe().await?;
+
+        info!("All pipes ready (8 total)");
         Ok(())
     }
 
-    /// Ensure the bias detection pipe exists, creating it if needed
-    pub async fn ensure_bias_detection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
-        let request = CreatePipeRequest::new(pipe_name)
-            .with_description("Bias detection mode for identifying cognitive biases")
+    /// Ensure the auto mode router pipe exists
+    pub async fn ensure_auto_router_pipe(&self) -> LangbaseResult<()> {
+        let request = CreatePipeRequest::new("mode-router-v1")
+            .with_description("Auto mode router for intelligent mode selection")
             .with_model("openai:gpt-4o-mini")
             .with_upsert(true)
             .with_json_output(true)
-            .with_temperature(0.5) // Lower for precise analysis
-            .with_max_tokens(3000) // More tokens for detailed analysis
-            .with_messages(vec![Message::system(BIAS_DETECTION_PROMPT)]);
+            .with_temperature(0.5)
+            .with_max_tokens(1000);
 
-        self.ensure_pipe_internal(request, "Bias detection").await
+        self.ensure_pipe_internal(request, "Auto mode router").await
     }
 
-    /// Ensure the fallacy detection pipe exists, creating it if needed
-    pub async fn ensure_fallacy_detection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+    /// Ensure the consolidated detection pipe exists (prompts passed dynamically)
+    pub async fn ensure_consolidated_detection_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        // No system prompt - detection type (bias/fallacy) prompt passed dynamically
         let request = CreatePipeRequest::new(pipe_name)
-            .with_description("Fallacy detection mode for identifying logical fallacies")
+            .with_description("Consolidated detection mode for bias and fallacy analysis")
             .with_model("openai:gpt-4o-mini")
             .with_upsert(true)
             .with_json_output(true)
             .with_temperature(0.5) // Lower for precise analysis
-            .with_max_tokens(3000) // More tokens for detailed analysis
-            .with_messages(vec![Message::system(FALLACY_DETECTION_PROMPT)]);
+            .with_max_tokens(3000);
 
-        self.ensure_pipe_internal(request, "Fallacy detection")
+        self.ensure_pipe_internal(request, "Detection").await
+    }
+
+    /// Ensure the consolidated GoT pipe exists (prompts passed dynamically)
+    pub async fn ensure_consolidated_got_pipe(&self, pipe_name: &str) -> LangbaseResult<()> {
+        // No system prompt - operation type prompt passed dynamically
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description("Consolidated GoT mode for graph-based reasoning operations")
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.7)
+            .with_max_tokens(2500);
+
+        self.ensure_pipe_internal(request, "GoT reasoning").await
+    }
+
+    /// Ensure detection pipe exists
+    pub async fn ensure_detection_pipes(&self) -> LangbaseResult<()> {
+        self.ensure_consolidated_detection_pipe("detection-v1")
+            .await?;
+        info!("Detection pipe ready");
+        Ok(())
+    }
+
+    /// Ensure GoT pipes exist
+    pub async fn ensure_got_pipes(&self) -> LangbaseResult<()> {
+        self.ensure_consolidated_got_pipe("got-reasoning-v1")
+            .await?;
+        info!("GoT reasoning pipe ready");
+        Ok(())
+    }
+
+    /// Ensure the consolidated decision framework pipe exists (prompts passed dynamically)
+    pub async fn ensure_consolidated_decision_framework_pipe(
+        &self,
+        pipe_name: &str,
+    ) -> LangbaseResult<()> {
+        // No system prompt - operation type prompt passed dynamically
+        let request = CreatePipeRequest::new(pipe_name)
+            .with_description(
+                "Consolidated decision framework for decision, perspective, evidence, and Bayesian analysis",
+            )
+            .with_model("openai:gpt-4o-mini")
+            .with_upsert(true)
+            .with_json_output(true)
+            .with_temperature(0.6)
+            .with_max_tokens(4000);
+
+        self.ensure_pipe_internal(request, "Decision framework")
             .await
     }
 
-    /// Ensure all detection pipes exist, creating them if needed
-    pub async fn ensure_detection_pipes(&self) -> LangbaseResult<()> {
-        self.ensure_bias_detection_pipe("detect-biases-v1").await?;
-        self.ensure_fallacy_detection_pipe("detect-fallacies-v1")
+    /// Ensure all decision framework pipes exist, creating them if needed
+    pub async fn ensure_decision_framework_pipes(&self) -> LangbaseResult<()> {
+        self.ensure_consolidated_decision_framework_pipe("decision-framework-v1")
             .await?;
-        info!("All detection pipes ready");
+        info!("Decision framework pipe ready");
         Ok(())
     }
 

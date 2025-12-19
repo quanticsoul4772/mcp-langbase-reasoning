@@ -124,25 +124,22 @@ fn test_config_invalid_number_uses_default() {
 fn test_config_from_env_got_config_partial() {
     setup_required_env();
     // Set only some GoT env vars - should create GotPipeConfig with those values
-    env::set_var("PIPE_GOT_GENERATE", "custom-got-generate");
+    env::set_var("PIPE_GOT", "custom-got-reasoning");
     env::set_var("GOT_MAX_NODES", "50");
 
     let config = Config::from_env().unwrap();
 
     // Should create GotPipeConfig because at least one value is set
     let got = config.pipes.got.expect("GotPipeConfig should be Some");
-    assert_eq!(got.generate_pipe, Some("custom-got-generate".to_string()));
+    assert_eq!(got.pipe, Some("custom-got-reasoning".to_string()));
     assert_eq!(got.max_nodes, Some(50));
     // Other values should be None since not set
-    assert!(got.score_pipe.is_none());
-    assert!(got.aggregate_pipe.is_none());
-    assert!(got.refine_pipe.is_none());
     assert!(got.max_depth.is_none());
     assert!(got.default_k.is_none());
     assert!(got.prune_threshold.is_none());
 
     // Restore defaults
-    env::remove_var("PIPE_GOT_GENERATE");
+    env::remove_var("PIPE_GOT");
     env::remove_var("GOT_MAX_NODES");
 }
 
@@ -150,11 +147,8 @@ fn test_config_from_env_got_config_partial() {
 #[serial]
 fn test_config_from_env_got_config_full() {
     setup_required_env();
-    // Set all GoT env vars
-    env::set_var("PIPE_GOT_GENERATE", "got-gen-v2");
-    env::set_var("PIPE_GOT_SCORE", "got-score-v2");
-    env::set_var("PIPE_GOT_AGGREGATE", "got-agg-v2");
-    env::set_var("PIPE_GOT_REFINE", "got-refine-v2");
+    // Set all GoT env vars (now consolidated to single pipe)
+    env::set_var("PIPE_GOT", "got-reasoning-v2");
     env::set_var("GOT_MAX_NODES", "200");
     env::set_var("GOT_MAX_DEPTH", "20");
     env::set_var("GOT_DEFAULT_K", "5");
@@ -163,20 +157,14 @@ fn test_config_from_env_got_config_full() {
     let config = Config::from_env().unwrap();
 
     let got = config.pipes.got.expect("GotPipeConfig should be Some");
-    assert_eq!(got.generate_pipe, Some("got-gen-v2".to_string()));
-    assert_eq!(got.score_pipe, Some("got-score-v2".to_string()));
-    assert_eq!(got.aggregate_pipe, Some("got-agg-v2".to_string()));
-    assert_eq!(got.refine_pipe, Some("got-refine-v2".to_string()));
+    assert_eq!(got.pipe, Some("got-reasoning-v2".to_string()));
     assert_eq!(got.max_nodes, Some(200));
     assert_eq!(got.max_depth, Some(20));
     assert_eq!(got.default_k, Some(5));
     assert_eq!(got.prune_threshold, Some(0.5));
 
     // Cleanup
-    env::remove_var("PIPE_GOT_GENERATE");
-    env::remove_var("PIPE_GOT_SCORE");
-    env::remove_var("PIPE_GOT_AGGREGATE");
-    env::remove_var("PIPE_GOT_REFINE");
+    env::remove_var("PIPE_GOT");
     env::remove_var("GOT_MAX_NODES");
     env::remove_var("GOT_MAX_DEPTH");
     env::remove_var("GOT_DEFAULT_K");
@@ -236,73 +224,19 @@ fn test_config_from_env_detection_config_none_by_default() {
 
 #[test]
 #[serial]
-fn test_config_from_env_detection_config_bias_only() {
+fn test_config_from_env_detection_config() {
     setup_required_env();
-    env::set_var("PIPE_DETECT_BIASES", "custom-bias-detector-v1");
-    env::remove_var("PIPE_DETECT_FALLACIES");
+    env::set_var("PIPE_DETECTION", "custom-detection-v1");
 
     let config = Config::from_env().unwrap();
 
-    // Should create DetectionPipeConfig with just bias_pipe
+    // Should create DetectionPipeConfig with consolidated pipe
     let detection = config
         .pipes
         .detection
         .expect("DetectionPipeConfig should be Some");
-    assert_eq!(
-        detection.bias_pipe,
-        Some("custom-bias-detector-v1".to_string())
-    );
-    assert!(detection.fallacy_pipe.is_none());
+    assert_eq!(detection.pipe, Some("custom-detection-v1".to_string()));
 
     // Cleanup
-    env::remove_var("PIPE_DETECT_BIASES");
-}
-
-#[test]
-#[serial]
-fn test_config_from_env_detection_config_fallacy_only() {
-    setup_required_env();
-    env::remove_var("PIPE_DETECT_BIASES");
-    env::set_var("PIPE_DETECT_FALLACIES", "custom-fallacy-detector-v1");
-
-    let config = Config::from_env().unwrap();
-
-    // Should create DetectionPipeConfig with just fallacy_pipe
-    let detection = config
-        .pipes
-        .detection
-        .expect("DetectionPipeConfig should be Some");
-    assert!(detection.bias_pipe.is_none());
-    assert_eq!(
-        detection.fallacy_pipe,
-        Some("custom-fallacy-detector-v1".to_string())
-    );
-
-    // Cleanup
-    env::remove_var("PIPE_DETECT_FALLACIES");
-}
-
-#[test]
-#[serial]
-fn test_config_from_env_detection_config_both() {
-    setup_required_env();
-    env::set_var("PIPE_DETECT_BIASES", "bias-detector-v2");
-    env::set_var("PIPE_DETECT_FALLACIES", "fallacy-detector-v2");
-
-    let config = Config::from_env().unwrap();
-
-    // Should create DetectionPipeConfig with both pipes
-    let detection = config
-        .pipes
-        .detection
-        .expect("DetectionPipeConfig should be Some");
-    assert_eq!(detection.bias_pipe, Some("bias-detector-v2".to_string()));
-    assert_eq!(
-        detection.fallacy_pipe,
-        Some("fallacy-detector-v2".to_string())
-    );
-
-    // Cleanup
-    env::remove_var("PIPE_DETECT_BIASES");
-    env::remove_var("PIPE_DETECT_FALLACIES");
+    env::remove_var("PIPE_DETECTION");
 }

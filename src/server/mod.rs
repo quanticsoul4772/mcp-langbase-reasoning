@@ -61,6 +61,14 @@ pub struct AppState {
 impl AppState {
     /// Create new application state
     pub fn new(config: Config, storage: SqliteStorage, langbase: LangbaseClient) -> Self {
+        // Debug: Log pipe configuration
+        tracing::info!(
+            detection_pipe = ?config.pipes.detection.as_ref().and_then(|d| d.pipe.as_ref()),
+            decision_pipe = ?config.pipes.decision.as_ref().and_then(|d| d.pipe.as_ref()),
+            linear_pipe = %config.pipes.linear,
+            "AppState initializing with pipe configuration"
+        );
+
         let linear_mode = LinearMode::new(storage.clone(), langbase.clone(), &config);
         let tree_mode = TreeMode::new(storage.clone(), langbase.clone(), &config);
         let divergent_mode = DivergentMode::new(storage.clone(), langbase.clone(), &config);

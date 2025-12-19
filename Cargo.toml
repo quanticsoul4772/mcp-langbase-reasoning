@@ -39,6 +39,9 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"

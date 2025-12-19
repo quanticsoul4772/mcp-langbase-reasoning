@@ -100,33 +100,29 @@ pub struct DetectFallaciesResult {
 pub struct DetectionMode {
     /// Core infrastructure (storage and langbase client).
     core: ModeCore,
-    /// Pipe name for bias detection.
-    bias_pipe: String,
-    /// Pipe name for fallacy detection.
-    fallacy_pipe: String,
+    /// Consolidated pipe name for all detection operations (prompts passed dynamically).
+    detection_pipe: String,
 }
 
 impl DetectionMode {
     /// Create a new detection mode handler
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
-        let bias_pipe = config
+        let detection_pipe = config
             .pipes
             .detection
             .as_ref()
-            .and_then(|d| d.bias_pipe.clone())
-            .unwrap_or_else(|| "detect-biases-v1".to_string());
+            .and_then(|d| d.pipe.clone())
+            .unwrap_or_else(|| "detection-v1".to_string());
 
-        let fallacy_pipe = config
-            .pipes
-            .detection
-            .as_ref()
-            .and_then(|d| d.fallacy_pipe.clone())
-            .unwrap_or_else(|| "detect-fallacies-v1".to_string());
+        info!(
+            pipe = %detection_pipe,
+            from_env = config.pipes.detection.as_ref().and_then(|d| d.pipe.as_ref()).is_some(),
+            "DetectionMode initialized with pipe"
+        );
 
         Self {
             core: ModeCore::new(storage, langbase),
-            bias_pipe,
-            fallacy_pipe,
+            detection_pipe,
         }
     }
 
@@ -168,7 +164,7 @@ impl DetectionMode {
         }
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.bias_pipe, messages);
+        let request = PipeRequest::new(&self.detection_pipe, messages);
         let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response
@@ -267,7 +263,7 @@ impl DetectionMode {
         )));
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.fallacy_pipe, messages);
+        let request = PipeRequest::new(&self.detection_pipe, messages);
         let response = self.core.langbase().call_pipe(request).await?;
 
         // Parse response

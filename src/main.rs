@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use clap::{Parser, Subcommand};
 use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -7,11 +8,57 @@ use mcp_langbase_reasoning::{
     config::Config,
     langbase::LangbaseClient,
     server::{AppState, McpServer},
-    storage::SqliteStorage,
+    storage::{MetricsFilter, SqliteStorage, Storage},
 };
+
+/// MCP Langbase Reasoning Server
+#[derive(Parser)]
+#[command(name = "mcp-langbase-reasoning")]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Query pipe usage metrics
+    Metrics {
+        #[command(subcommand)]
+        action: MetricsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum MetricsAction {
+    /// Show usage summary for all pipes
+    Summary,
+    /// Show metrics for a specific pipe
+    Pipe {
+        /// Name of the pipe to query
+        name: String,
+    },
+    /// List recent invocations
+    Invocations {
+        /// Filter by pipe name
+        #[arg(short, long)]
+        pipe: Option<String>,
+        /// Filter by session ID
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Maximum number of results
+        #[arg(short, long, default_value = "20")]
+        limit: u32,
+        /// Show only successful invocations
+        #[arg(long)]
+        success_only: bool,
+    },
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
     // Load configuration
     let config = match Config::from_env() {
         Ok(c) => c,
@@ -21,6 +68,167 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    match cli.command {
+        Some(Commands::Metrics { action }) => {
+            // Metrics commands don't need full server initialization
+            run_metrics_command(&config, action).await
+        }
+        None => {
+            // Default: run the MCP server
+            run_server(config).await
+        }
+    }
+}
+
+/// Run metrics CLI commands
+async fn run_metrics_command(config: &Config, action: MetricsAction) -> anyhow::Result<()> {
+    // Initialize storage only (no langbase client needed for metrics)
+    let storage = match SqliteStorage::new(&config.database).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to initialize database: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    match action {
+        MetricsAction::Summary => {
+            let summaries = storage.get_pipe_usage_summary().await?;
+            if summaries.is_empty() {
+                println!("No pipe usage data found.");
+                return Ok(());
+            }
+
+            println!("\n{:=<80}", "");
+            println!("PIPE USAGE SUMMARY");
+            println!("{:=<80}\n", "");
+
+            for summary in summaries {
+                println!("📊 Pipe: {}", summary.pipe_name);
+                println!("   Total Calls:    {}", summary.total_calls);
+                println!(
+                    "   Success Rate:   {:.1}% ({} success / {} failed)",
+                    summary.success_rate * 100.0,
+                    summary.success_count,
+                    summary.failure_count
+                );
+                println!(
+                    "   Avg Latency:    {:.2}ms",
+                    summary.avg_latency_ms
+                );
+                if let (Some(min), Some(max)) = (summary.min_latency_ms, summary.max_latency_ms) {
+                    println!("   Latency Range:  {}ms - {}ms", min, max);
+                }
+                println!(
+                    "   First Call:     {}",
+                    summary.first_call.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!(
+                    "   Last Call:      {}",
+                    summary.last_call.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!();
+            }
+        }
+
+        MetricsAction::Pipe { name } => {
+            match storage.get_pipe_summary(&name).await? {
+                Some(summary) => {
+                    println!("\n{:=<80}", "");
+                    println!("METRICS FOR PIPE: {}", summary.pipe_name);
+                    println!("{:=<80}\n", "");
+
+                    println!("Total Calls:    {}", summary.total_calls);
+                    println!(
+                        "Success Rate:   {:.1}% ({} success / {} failed)",
+                        summary.success_rate * 100.0,
+                        summary.success_count,
+                        summary.failure_count
+                    );
+                    println!("Avg Latency:    {:.2}ms", summary.avg_latency_ms);
+                    if let (Some(min), Some(max)) = (summary.min_latency_ms, summary.max_latency_ms)
+                    {
+                        println!("Latency Range:  {}ms - {}ms", min, max);
+                    }
+                    println!(
+                        "First Call:     {}",
+                        summary.first_call.format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                    println!(
+                        "Last Call:      {}",
+                        summary.last_call.format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                    println!();
+                }
+                None => {
+                    println!("No data found for pipe: {}", name);
+                }
+            }
+        }
+
+        MetricsAction::Invocations {
+            pipe,
+            session,
+            limit,
+            success_only,
+        } => {
+            let filter = MetricsFilter {
+                pipe_name: pipe.clone(),
+                session_id: session,
+                limit: Some(limit),
+                success_only: if success_only { Some(true) } else { None },
+                ..Default::default()
+            };
+
+            let invocations = storage.get_invocations(filter).await?;
+
+            if invocations.is_empty() {
+                println!("No invocations found matching the criteria.");
+                return Ok(());
+            }
+
+            println!("\n{:=<80}", "");
+            println!(
+                "RECENT INVOCATIONS{}",
+                pipe.map(|p| format!(" (pipe: {})", p)).unwrap_or_default()
+            );
+            println!("{:=<80}\n", "");
+
+            for inv in invocations {
+                let status = if inv.success { "✓" } else { "✗" };
+                let latency = inv
+                    .latency_ms
+                    .map(|l| format!("{}ms", l))
+                    .unwrap_or_else(|| "-".to_string());
+                let pipe_name = inv.pipe_name.as_deref().unwrap_or("-");
+                let session_id = inv.session_id.as_deref().unwrap_or("-");
+
+                println!(
+                    "{} {} | {} | {} | session: {}",
+                    status,
+                    inv.created_at.format("%Y-%m-%d %H:%M:%S"),
+                    pipe_name,
+                    latency,
+                    session_id
+                );
+
+                println!("    Tool: {}", inv.tool_name);
+
+                if !inv.success {
+                    if let Some(err) = &inv.error {
+                        println!("    Error: {}", err);
+                    }
+                }
+            }
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+/// Run the MCP server (default behavior)
+async fn run_server(config: Config) -> anyhow::Result<()> {
     // Initialize logging
     init_logging(&config);
 
@@ -53,10 +261,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Ensure required pipes exist (create if needed)
-    info!("Ensuring required Langbase pipes exist...");
-    if let Err(e) = langbase.ensure_linear_pipe(&config.pipes.linear).await {
-        error!(error = %e, "Failed to ensure linear pipe exists");
+    // Ensure all required pipes exist (create if needed via upsert)
+    info!("Ensuring all required Langbase pipes exist...");
+    if let Err(e) = langbase.ensure_all_pipes().await {
+        error!(error = %e, "Failed to ensure pipes exist");
         return Err(e.into());
     }
 

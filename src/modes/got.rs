@@ -566,14 +566,8 @@ pub struct GotStateResult {
 pub struct GotMode {
     /// Core infrastructure (storage and langbase client).
     core: ModeCore,
-    /// Pipe name for the generate operation.
-    generate_pipe: String,
-    /// Pipe name for the score operation.
-    score_pipe: String,
-    /// Pipe name for the aggregate operation.
-    aggregate_pipe: String,
-    /// Pipe name for the refine operation.
-    refine_pipe: String,
+    /// Consolidated pipe name for all GoT operations (prompts passed dynamically).
+    got_pipe: String,
     /// Configuration for GoT operations.
     config: GotConfig,
 }
@@ -595,30 +589,12 @@ impl GotMode {
 
         Self {
             core: ModeCore::new(storage, langbase),
-            generate_pipe: config
+            got_pipe: config
                 .pipes
                 .got
                 .as_ref()
-                .and_then(|g| g.generate_pipe.clone())
-                .unwrap_or_else(|| "got-generate-v1".to_string()),
-            score_pipe: config
-                .pipes
-                .got
-                .as_ref()
-                .and_then(|g| g.score_pipe.clone())
-                .unwrap_or_else(|| "got-score-v1".to_string()),
-            aggregate_pipe: config
-                .pipes
-                .got
-                .as_ref()
-                .and_then(|g| g.aggregate_pipe.clone())
-                .unwrap_or_else(|| "got-aggregate-v1".to_string()),
-            refine_pipe: config
-                .pipes
-                .got
-                .as_ref()
-                .and_then(|g| g.refine_pipe.clone())
-                .unwrap_or_else(|| "got-refine-v1".to_string()),
+                .and_then(|g| g.pipe.clone())
+                .unwrap_or_else(|| "got-reasoning-v1".to_string()),
             config: got_config,
         }
     }
@@ -728,10 +704,10 @@ impl GotMode {
             serialize_for_log(&params, "reasoning.got.generate input"),
         )
         .with_session(&params.session_id)
-        .with_pipe(&self.generate_pipe);
+        .with_pipe(&self.got_pipe);
 
         // Call Langbase
-        let request = PipeRequest::new(&self.generate_pipe, messages);
+        let request = PipeRequest::new(&self.got_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -846,10 +822,10 @@ impl GotMode {
             serialize_for_log(&params, "reasoning.got.score input"),
         )
         .with_session(&params.session_id)
-        .with_pipe(&self.score_pipe);
+        .with_pipe(&self.got_pipe);
 
         // Call Langbase
-        let request = PipeRequest::new(&self.score_pipe, messages);
+        let request = PipeRequest::new(&self.got_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -952,10 +928,10 @@ impl GotMode {
             serialize_for_log(&params, "reasoning.got.aggregate input"),
         )
         .with_session(&params.session_id)
-        .with_pipe(&self.aggregate_pipe);
+        .with_pipe(&self.got_pipe);
 
         // Call Langbase
-        let request = PipeRequest::new(&self.aggregate_pipe, messages);
+        let request = PipeRequest::new(&self.got_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -1061,10 +1037,10 @@ impl GotMode {
             serialize_for_log(&params, "reasoning.got.refine input"),
         )
         .with_session(&params.session_id)
-        .with_pipe(&self.refine_pipe);
+        .with_pipe(&self.got_pipe);
 
         // Call Langbase
-        let request = PipeRequest::new(&self.refine_pipe, messages);
+        let request = PipeRequest::new(&self.got_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {

@@ -117,6 +117,11 @@ pub async fn handle_tool_call(
         "reasoning_analyze_perspectives" => handle_analyze_perspectives(state, arguments).await,
         "reasoning_assess_evidence" => handle_assess_evidence(state, arguments).await,
         "reasoning_probabilistic" => handle_probabilistic(state, arguments).await,
+        // Metrics tools
+        "reasoning_metrics_summary" => handle_metrics_summary(state).await,
+        "reasoning_metrics_by_pipe" => handle_metrics_by_pipe(state, arguments).await,
+        "reasoning_metrics_invocations" => handle_metrics_invocations(state, arguments).await,
+        "reasoning_debug_config" => handle_debug_config(state).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
@@ -599,6 +604,231 @@ async fn handle_probabilistic(state: &SharedState, arguments: Option<Value>) -> 
         |params: ProbabilisticParams| state.evidence_mode.update_probability(params),
     )
     .await
+}
+
+// ============================================================================
+// Metrics Handlers
+// ============================================================================
+
+/// Parameters for metrics by pipe query
+#[derive(Debug, Clone, Deserialize)]
+pub struct MetricsByPipeParams {
+    /// Name of the pipe to get metrics for
+    pub pipe_name: String,
+}
+
+/// Parameters for metrics invocations query
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MetricsInvocationsParams {
+    /// Filter by pipe name
+    #[serde(default)]
+    pub pipe_name: Option<String>,
+    /// Filter by tool name
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    /// Filter by session ID
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// If true, only successful calls; if false, only failed calls
+    #[serde(default)]
+    pub success_only: Option<bool>,
+    /// Maximum number of results to return
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Handle reasoning_metrics_summary tool call
+async fn handle_metrics_summary(state: &SharedState) -> McpResult<Value> {
+    use crate::storage::Storage;
+
+    info!("Handling metrics summary request");
+
+    let summaries = state
+        .storage
+        .get_pipe_usage_summary()
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: format!("Failed to get metrics: {}", e),
+        })?;
+
+    // Format the summaries into a more readable response
+    let result = serde_json::json!({
+        "total_pipes": summaries.len(),
+        "pipes": summaries.iter().map(|s| serde_json::json!({
+            "pipe_name": s.pipe_name,
+            "total_calls": s.total_calls,
+            "success_count": s.success_count,
+            "failure_count": s.failure_count,
+            "success_rate": format!("{:.1}%", s.success_rate * 100.0),
+            "avg_latency_ms": format!("{:.0}", s.avg_latency_ms),
+            "min_latency_ms": s.min_latency_ms,
+            "max_latency_ms": s.max_latency_ms,
+            "first_call": s.first_call.to_rfc3339(),
+            "last_call": s.last_call.to_rfc3339(),
+        })).collect::<Vec<_>>(),
+        "summary": if summaries.is_empty() {
+            "No pipe invocations recorded yet.".to_string()
+        } else {
+            let total_calls: u64 = summaries.iter().map(|s| s.total_calls).sum();
+            let total_success: u64 = summaries.iter().map(|s| s.success_count).sum();
+            format!(
+                "{} pipes, {} total calls, {:.1}% overall success rate",
+                summaries.len(),
+                total_calls,
+                if total_calls > 0 { (total_success as f64 / total_calls as f64) * 100.0 } else { 0.0 }
+            )
+        }
+    });
+
+    Ok(result)
+}
+
+/// Handle reasoning_metrics_by_pipe tool call
+async fn handle_metrics_by_pipe(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    use crate::storage::Storage;
+
+    let params: MetricsByPipeParams = parse_arguments("reasoning_metrics_by_pipe", arguments)?;
+    info!(pipe = %params.pipe_name, "Handling metrics by pipe request");
+
+    let summary = state
+        .storage
+        .get_pipe_summary(&params.pipe_name)
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: format!("Failed to get pipe metrics: {}", e),
+        })?;
+
+    match summary {
+        Some(s) => Ok(serde_json::json!({
+            "found": true,
+            "pipe_name": s.pipe_name,
+            "total_calls": s.total_calls,
+            "success_count": s.success_count,
+            "failure_count": s.failure_count,
+            "success_rate": format!("{:.1}%", s.success_rate * 100.0),
+            "avg_latency_ms": format!("{:.0}", s.avg_latency_ms),
+            "min_latency_ms": s.min_latency_ms,
+            "max_latency_ms": s.max_latency_ms,
+            "first_call": s.first_call.to_rfc3339(),
+            "last_call": s.last_call.to_rfc3339(),
+        })),
+        None => Ok(serde_json::json!({
+            "found": false,
+            "pipe_name": params.pipe_name,
+            "message": format!("No invocations found for pipe '{}'", params.pipe_name)
+        })),
+    }
+}
+
+/// Handle reasoning_metrics_invocations tool call
+async fn handle_metrics_invocations(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    use crate::storage::{MetricsFilter, Storage};
+
+    let params: MetricsInvocationsParams = parse_arguments_or_default(arguments)?;
+    info!("Handling metrics invocations request");
+
+    // Build filter from params
+    let mut filter = MetricsFilter::new();
+
+    if let Some(pipe_name) = params.pipe_name {
+        filter = filter.with_pipe(pipe_name);
+    }
+    if let Some(tool_name) = params.tool_name {
+        filter = filter.with_tool(tool_name);
+    }
+    if let Some(session_id) = params.session_id {
+        filter = filter.with_session(session_id);
+    }
+    if let Some(success_only) = params.success_only {
+        if success_only {
+            filter = filter.successful_only();
+        } else {
+            filter = filter.failed_only();
+        }
+    }
+    filter = filter.with_limit(params.limit.unwrap_or(100).min(1000));
+
+    let invocations = state
+        .storage
+        .get_invocations(filter)
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: format!("Failed to get invocations: {}", e),
+        })?;
+
+    let result = serde_json::json!({
+        "count": invocations.len(),
+        "invocations": invocations.iter().map(|inv| serde_json::json!({
+            "id": inv.id,
+            "tool_name": inv.tool_name,
+            "pipe_name": inv.pipe_name,
+            "session_id": inv.session_id,
+            "success": inv.success,
+            "error": inv.error,
+            "latency_ms": inv.latency_ms,
+            "created_at": inv.created_at.to_rfc3339(),
+        })).collect::<Vec<_>>()
+    });
+
+    Ok(result)
+}
+
+/// Handle reasoning_debug_config tool call - returns current pipe configuration
+async fn handle_debug_config(state: &SharedState) -> McpResult<Value> {
+    info!("Handling debug config request");
+
+    let config = &state.config;
+    let pipes = &config.pipes;
+
+    // Extract pipe names from optional configs
+    let detection_pipe = pipes
+        .detection
+        .as_ref()
+        .and_then(|d| d.pipe.clone())
+        .unwrap_or_else(|| "<fallback: detection-v1>".to_string());
+
+    let decision_pipe = pipes
+        .decision
+        .as_ref()
+        .and_then(|d| d.pipe.clone())
+        .unwrap_or_else(|| "<fallback: decision-framework-v1>".to_string());
+
+    let got_pipe = pipes
+        .got
+        .as_ref()
+        .and_then(|g| g.pipe.clone())
+        .unwrap_or_else(|| "<fallback: got-reasoning-v1>".to_string());
+
+    let evidence_pipe = pipes
+        .evidence
+        .as_ref()
+        .and_then(|e| e.pipe.clone())
+        .unwrap_or_else(|| "<fallback: decision-framework-v1>".to_string());
+
+    Ok(serde_json::json!({
+        "debug_info": "Current pipe configuration",
+        "pipes": {
+            "linear": pipes.linear,
+            "tree": pipes.tree,
+            "divergent": pipes.divergent,
+            "reflection": pipes.reflection,
+            "auto_router": pipes.auto_router,
+            "got": got_pipe,
+            "detection": detection_pipe,
+            "decision": decision_pipe,
+            "evidence": evidence_pipe,
+        },
+        "detection_config_present": pipes.detection.is_some(),
+        "decision_config_present": pipes.decision.is_some(),
+        "got_config_present": pipes.got.is_some(),
+        "evidence_config_present": pipes.evidence.is_some(),
+    }))
 }
 
 #[cfg(test)]

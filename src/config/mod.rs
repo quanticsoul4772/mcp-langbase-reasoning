@@ -102,23 +102,15 @@ pub struct PipeConfig {
 /// Detection pipe configuration for bias and fallacy analysis.
 #[derive(Debug, Clone)]
 pub struct DetectionPipeConfig {
-    /// Pipe name for bias detection.
-    pub bias_pipe: Option<String>,
-    /// Pipe name for fallacy detection.
-    pub fallacy_pipe: Option<String>,
+    /// Consolidated pipe name for all detection operations (prompts passed dynamically).
+    pub pipe: Option<String>,
 }
 
 /// Graph-of-Thoughts pipe configuration.
 #[derive(Debug, Clone)]
 pub struct GotPipeConfig {
-    /// Pipe name for generating new nodes.
-    pub generate_pipe: Option<String>,
-    /// Pipe name for scoring nodes.
-    pub score_pipe: Option<String>,
-    /// Pipe name for aggregating nodes.
-    pub aggregate_pipe: Option<String>,
-    /// Pipe name for refining nodes.
-    pub refine_pipe: Option<String>,
+    /// Consolidated pipe name for all GoT operations (prompts passed dynamically).
+    pub pipe: Option<String>,
     /// Maximum number of nodes in the graph.
     pub max_nodes: Option<usize>,
     /// Maximum depth of the graph.
@@ -129,22 +121,18 @@ pub struct GotPipeConfig {
     pub prune_threshold: Option<f64>,
 }
 
-/// Decision framework pipe configuration.
+/// Decision framework pipe configuration (consolidated - prompts passed dynamically).
 #[derive(Debug, Clone)]
 pub struct DecisionPipeConfig {
-    /// Pipe name for multi-criteria decision analysis.
-    pub decision_pipe: Option<String>,
-    /// Pipe name for stakeholder perspective analysis.
-    pub perspective_pipe: Option<String>,
+    /// Consolidated pipe name for decision analysis operations.
+    pub pipe: Option<String>,
 }
 
-/// Evidence assessment pipe configuration.
+/// Evidence assessment pipe configuration (consolidated - prompts passed dynamically).
 #[derive(Debug, Clone)]
 pub struct EvidencePipeConfig {
-    /// Pipe name for evidence evaluation.
-    pub evidence_pipe: Option<String>,
-    /// Pipe name for Bayesian probability updates.
-    pub bayesian_pipe: Option<String>,
+    /// Consolidated pipe name for evidence assessment operations.
+    pub pipe: Option<String>,
 }
 
 impl Config {
@@ -214,10 +202,7 @@ impl Config {
 
         // Build GoT pipe config if any GoT env vars are set
         let got_config = {
-            let generate = env::var("PIPE_GOT_GENERATE").ok();
-            let score = env::var("PIPE_GOT_SCORE").ok();
-            let aggregate = env::var("PIPE_GOT_AGGREGATE").ok();
-            let refine = env::var("PIPE_GOT_REFINE").ok();
+            let pipe = env::var("PIPE_GOT").ok();
             let max_nodes = env::var("GOT_MAX_NODES").ok().and_then(|s| s.parse().ok());
             let max_depth = env::var("GOT_MAX_DEPTH").ok().and_then(|s| s.parse().ok());
             let default_k = env::var("GOT_DEFAULT_K").ok().and_then(|s| s.parse().ok());
@@ -226,20 +211,14 @@ impl Config {
                 .and_then(|s| s.parse().ok());
 
             // Only create config if any value is set
-            if generate.is_some()
-                || score.is_some()
-                || aggregate.is_some()
-                || refine.is_some()
+            if pipe.is_some()
                 || max_nodes.is_some()
                 || max_depth.is_some()
                 || default_k.is_some()
                 || prune_threshold.is_some()
             {
                 Some(GotPipeConfig {
-                    generate_pipe: generate,
-                    score_pipe: score,
-                    aggregate_pipe: aggregate,
-                    refine_pipe: refine,
+                    pipe,
                     max_nodes,
                     max_depth,
                     default_k,
@@ -250,51 +229,34 @@ impl Config {
             }
         };
 
-        // Build detection pipe config if any detection env vars are set
-        let detection_config = {
-            let bias_pipe = env::var("PIPE_DETECT_BIASES").ok();
-            let fallacy_pipe = env::var("PIPE_DETECT_FALLACIES").ok();
+        // Detection pipe config - read from env var (filter empty strings)
+        let detection_pipe_env = env::var("PIPE_DETECTION")
+            .ok()
+            .filter(|s| !s.is_empty());
+        debug!(
+            pipe_detection_env = ?detection_pipe_env,
+            "Loading PIPE_DETECTION from environment"
+        );
+        let detection_config = Some(DetectionPipeConfig {
+            pipe: detection_pipe_env,
+        });
 
-            // Only create config if any value is set
-            if bias_pipe.is_some() || fallacy_pipe.is_some() {
-                Some(DetectionPipeConfig {
-                    bias_pipe,
-                    fallacy_pipe,
-                })
-            } else {
-                None
-            }
-        };
+        // Decision pipe config - read from env var (filter empty strings)
+        let decision_pipe_env = env::var("PIPE_DECISION_FRAMEWORK")
+            .ok()
+            .filter(|s| !s.is_empty());
+        debug!(
+            pipe_decision_env = ?decision_pipe_env,
+            "Loading PIPE_DECISION_FRAMEWORK from environment"
+        );
+        let decision_config = Some(DecisionPipeConfig {
+            pipe: decision_pipe_env.clone(),
+        });
 
-        // Build decision pipe config if any decision env vars are set
-        let decision_config = {
-            let decision_pipe = env::var("PIPE_DECISION").ok();
-            let perspective_pipe = env::var("PIPE_PERSPECTIVE").ok();
-
-            if decision_pipe.is_some() || perspective_pipe.is_some() {
-                Some(DecisionPipeConfig {
-                    decision_pipe,
-                    perspective_pipe,
-                })
-            } else {
-                None
-            }
-        };
-
-        // Build evidence pipe config if any evidence env vars are set
-        let evidence_config = {
-            let evidence_pipe = env::var("PIPE_EVIDENCE").ok();
-            let bayesian_pipe = env::var("PIPE_BAYESIAN").ok();
-
-            if evidence_pipe.is_some() || bayesian_pipe.is_some() {
-                Some(EvidencePipeConfig {
-                    evidence_pipe,
-                    bayesian_pipe,
-                })
-            } else {
-                None
-            }
-        };
+        // Evidence pipe config - uses same env var as decision
+        let evidence_config = Some(EvidencePipeConfig {
+            pipe: decision_pipe_env,
+        });
 
         let pipes = PipeConfig {
             linear: env::var("PIPE_LINEAR").unwrap_or_else(|_| "linear-reasoning-v1".to_string()),
@@ -352,8 +314,7 @@ impl Default for PipeConfig {
 impl Default for DetectionPipeConfig {
     fn default() -> Self {
         Self {
-            bias_pipe: Some("detect-biases-v1".to_string()),
-            fallacy_pipe: Some("detect-fallacies-v1".to_string()),
+            pipe: Some("detection-v1".to_string()),
         }
     }
 }
@@ -361,10 +322,7 @@ impl Default for DetectionPipeConfig {
 impl Default for GotPipeConfig {
     fn default() -> Self {
         Self {
-            generate_pipe: Some("got-generate-v1".to_string()),
-            score_pipe: Some("got-score-v1".to_string()),
-            aggregate_pipe: Some("got-aggregate-v1".to_string()),
-            refine_pipe: Some("got-refine-v1".to_string()),
+            pipe: Some("got-reasoning-v1".to_string()),
             max_nodes: Some(100),
             max_depth: Some(10),
             default_k: Some(3),
@@ -376,8 +334,7 @@ impl Default for GotPipeConfig {
 impl Default for DecisionPipeConfig {
     fn default() -> Self {
         Self {
-            decision_pipe: Some("decision-maker-v1".to_string()),
-            perspective_pipe: Some("perspective-analyzer-v1".to_string()),
+            pipe: Some("decision-framework-v1".to_string()),
         }
     }
 }
@@ -385,8 +342,7 @@ impl Default for DecisionPipeConfig {
 impl Default for EvidencePipeConfig {
     fn default() -> Self {
         Self {
-            evidence_pipe: Some("evidence-assessor-v1".to_string()),
-            bayesian_pipe: Some("bayesian-updater-v1".to_string()),
+            pipe: Some("decision-framework-v1".to_string()),
         }
     }
 }
@@ -422,17 +378,13 @@ mod tests {
     #[test]
     fn test_detection_pipe_config_default() {
         let config = DetectionPipeConfig::default();
-        assert_eq!(config.bias_pipe, Some("detect-biases-v1".to_string()));
-        assert_eq!(config.fallacy_pipe, Some("detect-fallacies-v1".to_string()));
+        assert_eq!(config.pipe, Some("detection-v1".to_string()));
     }
 
     #[test]
     fn test_got_pipe_config_default() {
         let config = GotPipeConfig::default();
-        assert_eq!(config.generate_pipe, Some("got-generate-v1".to_string()));
-        assert_eq!(config.score_pipe, Some("got-score-v1".to_string()));
-        assert_eq!(config.aggregate_pipe, Some("got-aggregate-v1".to_string()));
-        assert_eq!(config.refine_pipe, Some("got-refine-v1".to_string()));
+        assert_eq!(config.pipe, Some("got-reasoning-v1".to_string()));
         assert_eq!(config.max_nodes, Some(100));
         assert_eq!(config.max_depth, Some(10));
         assert_eq!(config.default_k, Some(3));
@@ -449,10 +401,9 @@ mod tests {
     #[test]
     fn test_decision_pipe_config_default() {
         let config = DecisionPipeConfig::default();
-        assert_eq!(config.decision_pipe, Some("decision-maker-v1".to_string()));
         assert_eq!(
-            config.perspective_pipe,
-            Some("perspective-analyzer-v1".to_string())
+            config.pipe,
+            Some("decision-framework-v1".to_string())
         );
     }
 
@@ -460,12 +411,8 @@ mod tests {
     fn test_evidence_pipe_config_default() {
         let config = EvidencePipeConfig::default();
         assert_eq!(
-            config.evidence_pipe,
-            Some("evidence-assessor-v1".to_string())
-        );
-        assert_eq!(
-            config.bayesian_pipe,
-            Some("bayesian-updater-v1".to_string())
+            config.pipe,
+            Some("decision-framework-v1".to_string())
         );
     }
 
@@ -554,40 +501,28 @@ mod tests {
     #[test]
     fn test_detection_pipe_config_struct() {
         let config = DetectionPipeConfig {
-            bias_pipe: Some("bias-v1".to_string()),
-            fallacy_pipe: Some("fallacy-v1".to_string()),
+            pipe: Some("detection-v1".to_string()),
         };
-        assert_eq!(config.bias_pipe, Some("bias-v1".to_string()));
-        assert_eq!(config.fallacy_pipe, Some("fallacy-v1".to_string()));
+        assert_eq!(config.pipe, Some("detection-v1".to_string()));
     }
 
     #[test]
     fn test_detection_pipe_config_none_values() {
-        let config = DetectionPipeConfig {
-            bias_pipe: None,
-            fallacy_pipe: None,
-        };
-        assert!(config.bias_pipe.is_none());
-        assert!(config.fallacy_pipe.is_none());
+        let config = DetectionPipeConfig { pipe: None };
+        assert!(config.pipe.is_none());
     }
 
     #[test]
     fn test_got_pipe_config_struct_all_fields() {
         let config = GotPipeConfig {
-            generate_pipe: Some("generate-v1".to_string()),
-            score_pipe: Some("score-v1".to_string()),
-            aggregate_pipe: Some("aggregate-v1".to_string()),
-            refine_pipe: Some("refine-v1".to_string()),
+            pipe: Some("got-reasoning-v1".to_string()),
             max_nodes: Some(50),
             max_depth: Some(5),
             default_k: Some(2),
             prune_threshold: Some(0.5),
         };
 
-        assert_eq!(config.generate_pipe, Some("generate-v1".to_string()));
-        assert_eq!(config.score_pipe, Some("score-v1".to_string()));
-        assert_eq!(config.aggregate_pipe, Some("aggregate-v1".to_string()));
-        assert_eq!(config.refine_pipe, Some("refine-v1".to_string()));
+        assert_eq!(config.pipe, Some("got-reasoning-v1".to_string()));
         assert_eq!(config.max_nodes, Some(50));
         assert_eq!(config.max_depth, Some(5));
         assert_eq!(config.default_k, Some(2));
@@ -597,20 +532,14 @@ mod tests {
     #[test]
     fn test_got_pipe_config_none_values() {
         let config = GotPipeConfig {
-            generate_pipe: None,
-            score_pipe: None,
-            aggregate_pipe: None,
-            refine_pipe: None,
+            pipe: None,
             max_nodes: None,
             max_depth: None,
             default_k: None,
             prune_threshold: None,
         };
 
-        assert!(config.generate_pipe.is_none());
-        assert!(config.score_pipe.is_none());
-        assert!(config.aggregate_pipe.is_none());
-        assert!(config.refine_pipe.is_none());
+        assert!(config.pipe.is_none());
         assert!(config.max_nodes.is_none());
         assert!(config.max_depth.is_none());
         assert!(config.default_k.is_none());
@@ -620,41 +549,29 @@ mod tests {
     #[test]
     fn test_decision_pipe_config_struct() {
         let config = DecisionPipeConfig {
-            decision_pipe: Some("decision-v1".to_string()),
-            perspective_pipe: Some("perspective-v1".to_string()),
+            pipe: Some("decision-framework-v1".to_string()),
         };
-        assert_eq!(config.decision_pipe, Some("decision-v1".to_string()));
-        assert_eq!(config.perspective_pipe, Some("perspective-v1".to_string()));
+        assert_eq!(config.pipe, Some("decision-framework-v1".to_string()));
     }
 
     #[test]
     fn test_decision_pipe_config_none_values() {
-        let config = DecisionPipeConfig {
-            decision_pipe: None,
-            perspective_pipe: None,
-        };
-        assert!(config.decision_pipe.is_none());
-        assert!(config.perspective_pipe.is_none());
+        let config = DecisionPipeConfig { pipe: None };
+        assert!(config.pipe.is_none());
     }
 
     #[test]
     fn test_evidence_pipe_config_struct() {
         let config = EvidencePipeConfig {
-            evidence_pipe: Some("evidence-v1".to_string()),
-            bayesian_pipe: Some("bayesian-v1".to_string()),
+            pipe: Some("decision-framework-v1".to_string()),
         };
-        assert_eq!(config.evidence_pipe, Some("evidence-v1".to_string()));
-        assert_eq!(config.bayesian_pipe, Some("bayesian-v1".to_string()));
+        assert_eq!(config.pipe, Some("decision-framework-v1".to_string()));
     }
 
     #[test]
     fn test_evidence_pipe_config_none_values() {
-        let config = EvidencePipeConfig {
-            evidence_pipe: None,
-            bayesian_pipe: None,
-        };
-        assert!(config.evidence_pipe.is_none());
-        assert!(config.bayesian_pipe.is_none());
+        let config = EvidencePipeConfig { pipe: None };
+        assert!(config.pipe.is_none());
     }
 
     #[test]
@@ -709,11 +626,8 @@ mod tests {
     fn test_got_pipe_config_default_values() {
         let config = GotPipeConfig::default();
 
-        // Verify all string fields have expected default values
-        assert_eq!(config.generate_pipe.as_deref(), Some("got-generate-v1"));
-        assert_eq!(config.score_pipe.as_deref(), Some("got-score-v1"));
-        assert_eq!(config.aggregate_pipe.as_deref(), Some("got-aggregate-v1"));
-        assert_eq!(config.refine_pipe.as_deref(), Some("got-refine-v1"));
+        // Verify consolidated pipe has expected default value
+        assert_eq!(config.pipe.as_deref(), Some("got-reasoning-v1"));
 
         // Verify all numeric fields have expected default values
         assert_eq!(config.max_nodes, Some(100));
@@ -725,31 +639,19 @@ mod tests {
     #[test]
     fn test_detection_pipe_config_default_values() {
         let config = DetectionPipeConfig::default();
-
-        assert_eq!(config.bias_pipe.as_deref(), Some("detect-biases-v1"));
-        assert_eq!(config.fallacy_pipe.as_deref(), Some("detect-fallacies-v1"));
+        assert_eq!(config.pipe.as_deref(), Some("detection-v1"));
     }
 
     #[test]
     fn test_decision_pipe_config_default_values() {
         let config = DecisionPipeConfig::default();
-
-        assert_eq!(config.decision_pipe.as_deref(), Some("decision-maker-v1"));
-        assert_eq!(
-            config.perspective_pipe.as_deref(),
-            Some("perspective-analyzer-v1")
-        );
+        assert_eq!(config.pipe.as_deref(), Some("decision-framework-v1"));
     }
 
     #[test]
     fn test_evidence_pipe_config_default_values() {
         let config = EvidencePipeConfig::default();
-
-        assert_eq!(
-            config.evidence_pipe.as_deref(),
-            Some("evidence-assessor-v1")
-        );
-        assert_eq!(config.bayesian_pipe.as_deref(), Some("bayesian-updater-v1"));
+        assert_eq!(config.pipe.as_deref(), Some("decision-framework-v1"));
     }
 
     #[test]
@@ -797,16 +699,14 @@ mod tests {
     fn test_detection_pipe_config_clone() {
         let config = DetectionPipeConfig::default();
         let cloned = config.clone();
-        assert_eq!(config.bias_pipe, cloned.bias_pipe);
-        assert_eq!(config.fallacy_pipe, cloned.fallacy_pipe);
+        assert_eq!(config.pipe, cloned.pipe);
     }
 
     #[test]
     fn test_got_pipe_config_clone() {
         let config = GotPipeConfig::default();
         let cloned = config.clone();
-        assert_eq!(config.generate_pipe, cloned.generate_pipe);
-        assert_eq!(config.score_pipe, cloned.score_pipe);
+        assert_eq!(config.pipe, cloned.pipe);
         assert_eq!(config.max_nodes, cloned.max_nodes);
         assert_eq!(config.prune_threshold, cloned.prune_threshold);
     }
@@ -815,16 +715,14 @@ mod tests {
     fn test_decision_pipe_config_clone() {
         let config = DecisionPipeConfig::default();
         let cloned = config.clone();
-        assert_eq!(config.decision_pipe, cloned.decision_pipe);
-        assert_eq!(config.perspective_pipe, cloned.perspective_pipe);
+        assert_eq!(config.pipe, cloned.pipe);
     }
 
     #[test]
     fn test_evidence_pipe_config_clone() {
         let config = EvidencePipeConfig::default();
         let cloned = config.clone();
-        assert_eq!(config.evidence_pipe, cloned.evidence_pipe);
-        assert_eq!(config.bayesian_pipe, cloned.bayesian_pipe);
+        assert_eq!(config.pipe, cloned.pipe);
     }
 
     #[test]

@@ -334,6 +334,12 @@ impl McpServer {
             get_analyze_perspectives_tool(),
             get_assess_evidence_tool(),
             get_probabilistic_tool(),
+            // Metrics tools
+            get_metrics_summary_tool(),
+            get_metrics_by_pipe_tool(),
+            get_metrics_invocations_tool(),
+            // Debug tools
+            get_debug_config_tool(),
         ];
 
         JsonRpcResponse::success(
@@ -1133,7 +1139,7 @@ fn get_make_decision_tool() -> Tool {
                     "type": "string",
                     "description": "The decision question to analyze"
                 },
-                "alternatives": {
+                "options": {
                     "type": "array",
                     "items": { "type": "string" },
                     "minItems": 2,
@@ -1166,7 +1172,7 @@ fn get_make_decision_tool() -> Tool {
                     "description": "Additional context for the decision"
                 }
             },
-            "required": ["question", "alternatives"],
+            "required": ["question", "options"],
             "additionalProperties": false
         }),
     }
@@ -1322,6 +1328,88 @@ fn get_probabilistic_tool() -> Tool {
                 }
             },
             "required": ["hypothesis", "prior", "evidence"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+// ============================================================================
+// Metrics Tools
+// ============================================================================
+
+fn get_metrics_summary_tool() -> Tool {
+    Tool {
+        name: "reasoning_metrics_summary".to_string(),
+        description: "Get aggregated usage statistics for all Langbase pipes. Returns call counts, success rates, and latency statistics for each pipe that has been invoked.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn get_metrics_by_pipe_tool() -> Tool {
+    Tool {
+        name: "reasoning_metrics_by_pipe".to_string(),
+        description: "Get detailed usage statistics for a specific Langbase pipe. Returns call counts, success/failure counts, success rate, and latency statistics (avg, min, max).".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pipe_name": {
+                    "type": "string",
+                    "description": "Name of the pipe to get metrics for"
+                }
+            },
+            "required": ["pipe_name"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn get_metrics_invocations_tool() -> Tool {
+    Tool {
+        name: "reasoning_metrics_invocations".to_string(),
+        description: "Query invocation history with optional filtering. Returns detailed logs of pipe calls including inputs, outputs, latency, and success status.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pipe_name": {
+                    "type": "string",
+                    "description": "Filter by pipe name"
+                },
+                "tool_name": {
+                    "type": "string",
+                    "description": "Filter by MCP tool name"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Filter by session ID"
+                },
+                "success_only": {
+                    "type": "boolean",
+                    "description": "If true, only successful calls; if false, only failed calls"
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 100,
+                    "description": "Maximum number of results to return"
+                }
+            },
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn get_debug_config_tool() -> Tool {
+    Tool {
+        name: "reasoning_debug_config".to_string(),
+        description: "Debug tool to inspect the current pipe configuration. Returns the actual pipe names being used by the server.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {},
             "additionalProperties": false
         }),
     }

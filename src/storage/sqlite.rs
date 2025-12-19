@@ -1,13 +1,15 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
+use sqlx::Row;
 use std::str::FromStr;
 use tracing::{info, warn};
 
 use super::{
     Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
-    GraphEdge, GraphNode, Invocation, PerspectiveAnalysis, ProbabilityUpdate, Session,
-    StateSnapshot, Storage, StoredCriterion, Thought,
+    GraphEdge, GraphNode, Invocation, MetricsFilter, PerspectiveAnalysis, PipeUsageSummary,
+    ProbabilityUpdate, Session, StateSnapshot, Storage, StoredCriterion, Thought,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -307,6 +309,249 @@ impl Storage for SqliteStorage {
         .await?;
 
         Ok(())
+    }
+
+    async fn get_pipe_usage_summary(&self) -> StorageResult<Vec<PipeUsageSummary>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                pipe_name,
+                COUNT(*) as total_calls,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failure_count,
+                AVG(latency_ms) as avg_latency_ms,
+                MIN(latency_ms) as min_latency_ms,
+                MAX(latency_ms) as max_latency_ms,
+                MIN(created_at) as first_call,
+                MAX(created_at) as last_call
+            FROM invocations
+            WHERE pipe_name IS NOT NULL
+            GROUP BY pipe_name
+            ORDER BY total_calls DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let summaries = rows
+            .into_iter()
+            .filter_map(|row| {
+                let pipe_name: String = row.get("pipe_name");
+                let total_calls: i64 = row.get("total_calls");
+                let success_count: i64 = row.get("success_count");
+                let failure_count: i64 = row.get("failure_count");
+                let avg_latency_ms: Option<f64> = row.get("avg_latency_ms");
+                let min_latency_ms: Option<i64> = row.get("min_latency_ms");
+                let max_latency_ms: Option<i64> = row.get("max_latency_ms");
+                let first_call: String = row.get("first_call");
+                let last_call: String = row.get("last_call");
+
+                let first_call_dt = DateTime::parse_from_rfc3339(&first_call)
+                    .ok()?
+                    .with_timezone(&Utc);
+                let last_call_dt = DateTime::parse_from_rfc3339(&last_call)
+                    .ok()?
+                    .with_timezone(&Utc);
+
+                let success_rate = if total_calls > 0 {
+                    success_count as f64 / total_calls as f64
+                } else {
+                    0.0
+                };
+
+                Some(PipeUsageSummary {
+                    pipe_name,
+                    total_calls: total_calls as u64,
+                    success_count: success_count as u64,
+                    failure_count: failure_count as u64,
+                    success_rate,
+                    avg_latency_ms: avg_latency_ms.unwrap_or(0.0),
+                    min_latency_ms,
+                    max_latency_ms,
+                    first_call: first_call_dt,
+                    last_call: last_call_dt,
+                })
+            })
+            .collect();
+
+        Ok(summaries)
+    }
+
+    async fn get_pipe_summary(&self, pipe_name: &str) -> StorageResult<Option<PipeUsageSummary>> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                pipe_name,
+                COUNT(*) as total_calls,
+                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failure_count,
+                AVG(latency_ms) as avg_latency_ms,
+                MIN(latency_ms) as min_latency_ms,
+                MAX(latency_ms) as max_latency_ms,
+                MIN(created_at) as first_call,
+                MAX(created_at) as last_call
+            FROM invocations
+            WHERE pipe_name = ?
+            GROUP BY pipe_name
+            "#,
+        )
+        .bind(pipe_name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let summary = row.and_then(|row| {
+            let pipe_name: String = row.get("pipe_name");
+            let total_calls: i64 = row.get("total_calls");
+            let success_count: i64 = row.get("success_count");
+            let failure_count: i64 = row.get("failure_count");
+            let avg_latency_ms: Option<f64> = row.get("avg_latency_ms");
+            let min_latency_ms: Option<i64> = row.get("min_latency_ms");
+            let max_latency_ms: Option<i64> = row.get("max_latency_ms");
+            let first_call: String = row.get("first_call");
+            let last_call: String = row.get("last_call");
+
+            let first_call_dt = DateTime::parse_from_rfc3339(&first_call)
+                .ok()?
+                .with_timezone(&Utc);
+            let last_call_dt = DateTime::parse_from_rfc3339(&last_call)
+                .ok()?
+                .with_timezone(&Utc);
+
+            let success_rate = if total_calls > 0 {
+                success_count as f64 / total_calls as f64
+            } else {
+                0.0
+            };
+
+            Some(PipeUsageSummary {
+                pipe_name,
+                total_calls: total_calls as u64,
+                success_count: success_count as u64,
+                failure_count: failure_count as u64,
+                success_rate,
+                avg_latency_ms: avg_latency_ms.unwrap_or(0.0),
+                min_latency_ms,
+                max_latency_ms,
+                first_call: first_call_dt,
+                last_call: last_call_dt,
+            })
+        });
+
+        Ok(summary)
+    }
+
+    async fn get_invocations(&self, filter: MetricsFilter) -> StorageResult<Vec<Invocation>> {
+        // Build dynamic query with filters
+        let mut query = String::from(
+            r#"
+            SELECT id, session_id, tool_name, input, output, pipe_name, latency_ms, success, error, created_at
+            FROM invocations
+            WHERE 1=1
+            "#,
+        );
+        let mut bindings: Vec<String> = Vec::new();
+
+        if let Some(ref pipe_name) = filter.pipe_name {
+            query.push_str(" AND pipe_name = ?");
+            bindings.push(pipe_name.clone());
+        }
+
+        if let Some(ref session_id) = filter.session_id {
+            query.push_str(" AND session_id = ?");
+            bindings.push(session_id.clone());
+        }
+
+        if let Some(ref tool_name) = filter.tool_name {
+            query.push_str(" AND tool_name = ?");
+            bindings.push(tool_name.clone());
+        }
+
+        if let Some(ref after) = filter.after {
+            query.push_str(" AND created_at > ?");
+            bindings.push(after.to_rfc3339());
+        }
+
+        if let Some(ref before) = filter.before {
+            query.push_str(" AND created_at < ?");
+            bindings.push(before.to_rfc3339());
+        }
+
+        if let Some(success_only) = filter.success_only {
+            query.push_str(" AND success = ?");
+            bindings.push(if success_only { "1" } else { "0" }.to_string());
+        }
+
+        query.push_str(" ORDER BY created_at DESC");
+
+        if let Some(limit) = filter.limit {
+            query.push_str(&format!(" LIMIT {}", limit));
+        }
+
+        // Execute with dynamic bindings
+        let mut sql_query = sqlx::query(&query);
+        for binding in &bindings {
+            sql_query = sql_query.bind(binding);
+        }
+
+        let rows = sql_query.fetch_all(&self.pool).await?;
+
+        let invocations = rows
+            .into_iter()
+            .filter_map(|row| {
+                let id: String = row.get("id");
+                let session_id: Option<String> = row.get("session_id");
+                let tool_name: String = row.get("tool_name");
+                let input_str: String = row.get("input");
+                let output_str: Option<String> = row.get("output");
+                let pipe_name: Option<String> = row.get("pipe_name");
+                let latency_ms: Option<i64> = row.get("latency_ms");
+                let success: bool = row.get("success");
+                let error: Option<String> = row.get("error");
+                let created_at_str: String = row.get("created_at");
+
+                let input: serde_json::Value = serde_json::from_str(&input_str).ok()?;
+                let output: Option<serde_json::Value> =
+                    output_str.and_then(|s| serde_json::from_str(&s).ok());
+                let created_at = DateTime::parse_from_rfc3339(&created_at_str)
+                    .ok()?
+                    .with_timezone(&Utc);
+
+                Some(Invocation {
+                    id,
+                    session_id,
+                    tool_name,
+                    input,
+                    output,
+                    pipe_name,
+                    latency_ms,
+                    success,
+                    error,
+                    created_at,
+                })
+            })
+            .collect();
+
+        Ok(invocations)
+    }
+
+    async fn get_invocation_count(&self, pipe_name: Option<&str>) -> StorageResult<u64> {
+        let count: i64 = match pipe_name {
+            Some(name) => {
+                sqlx::query_scalar(
+                    r#"SELECT COUNT(*) FROM invocations WHERE pipe_name = ?"#,
+                )
+                .bind(name)
+                .fetch_one(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query_scalar(r#"SELECT COUNT(*) FROM invocations"#)
+                    .fetch_one(&self.pool)
+                    .await?
+            }
+        };
+
+        Ok(count as u64)
     }
 
     // Branch operations
@@ -2956,5 +3201,246 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "null");
+    }
+
+    // ========================================================================
+    // Pipe Metrics Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_get_pipe_usage_summary_empty() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let summary = storage.get_pipe_usage_summary().await.unwrap();
+        assert!(summary.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_pipe_usage_summary_single_pipe() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        // Log some invocations for a single pipe
+        let inv1 = Invocation::new("reasoning.linear", serde_json::json!({"content": "test1"}))
+            .with_pipe("linear-v1")
+            .with_latency(100)
+            .mark_success();
+        let inv2 = Invocation::new("reasoning.linear", serde_json::json!({"content": "test2"}))
+            .with_pipe("linear-v1")
+            .with_latency(150)
+            .mark_success();
+        let inv3 = Invocation::new("reasoning.linear", serde_json::json!({"content": "test3"}))
+            .with_pipe("linear-v1")
+            .with_latency(200)
+            .mark_failed("Connection timeout");
+
+        storage.log_invocation(&inv1).await.unwrap();
+        storage.log_invocation(&inv2).await.unwrap();
+        storage.log_invocation(&inv3).await.unwrap();
+
+        let summary = storage.get_pipe_usage_summary().await.unwrap();
+        assert_eq!(summary.len(), 1);
+
+        let pipe_summary = &summary[0];
+        assert_eq!(pipe_summary.pipe_name, "linear-v1");
+        assert_eq!(pipe_summary.total_calls, 3);
+        assert_eq!(pipe_summary.success_count, 2);
+        assert_eq!(pipe_summary.failure_count, 1);
+        assert!((pipe_summary.success_rate - 0.6666).abs() < 0.01);
+        assert!((pipe_summary.avg_latency_ms - 150.0).abs() < 0.01);
+        assert_eq!(pipe_summary.min_latency_ms, Some(100));
+        assert_eq!(pipe_summary.max_latency_ms, Some(200));
+    }
+
+    #[tokio::test]
+    async fn test_get_pipe_usage_summary_multiple_pipes() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        // Log invocations for multiple pipes
+        for _ in 0..5 {
+            let inv = Invocation::new("reasoning.linear", serde_json::json!({}))
+                .with_pipe("linear-v1")
+                .with_latency(100)
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        for _ in 0..3 {
+            let inv = Invocation::new("reasoning.tree", serde_json::json!({}))
+                .with_pipe("tree-v1")
+                .with_latency(200)
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        let summary = storage.get_pipe_usage_summary().await.unwrap();
+        assert_eq!(summary.len(), 2);
+
+        // Should be ordered by total_calls descending
+        assert_eq!(summary[0].pipe_name, "linear-v1");
+        assert_eq!(summary[0].total_calls, 5);
+        assert_eq!(summary[1].pipe_name, "tree-v1");
+        assert_eq!(summary[1].total_calls, 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_pipe_summary_existing() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let inv = Invocation::new("reasoning.linear", serde_json::json!({}))
+            .with_pipe("linear-v1")
+            .with_latency(100)
+            .mark_success();
+        storage.log_invocation(&inv).await.unwrap();
+
+        let summary = storage.get_pipe_summary("linear-v1").await.unwrap();
+        assert!(summary.is_some());
+        assert_eq!(summary.unwrap().total_calls, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_pipe_summary_nonexistent() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let summary = storage.get_pipe_summary("nonexistent-pipe").await.unwrap();
+        assert!(summary.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_invocations_no_filter() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let inv1 = Invocation::new("tool1", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_success();
+        let inv2 = Invocation::new("tool2", serde_json::json!({}))
+            .with_pipe("pipe2")
+            .mark_success();
+        storage.log_invocation(&inv1).await.unwrap();
+        storage.log_invocation(&inv2).await.unwrap();
+
+        let filter = super::super::MetricsFilter::new();
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_invocations_filter_by_pipe() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let inv1 = Invocation::new("tool1", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_success();
+        let inv2 = Invocation::new("tool2", serde_json::json!({}))
+            .with_pipe("pipe2")
+            .mark_success();
+        storage.log_invocation(&inv1).await.unwrap();
+        storage.log_invocation(&inv2).await.unwrap();
+
+        let filter = super::super::MetricsFilter::new().with_pipe("pipe1");
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 1);
+        assert_eq!(invocations[0].pipe_name, Some("pipe1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_invocations_filter_by_success() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let inv1 = Invocation::new("tool1", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_success();
+        let inv2 = Invocation::new("tool2", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_failed("error");
+        storage.log_invocation(&inv1).await.unwrap();
+        storage.log_invocation(&inv2).await.unwrap();
+
+        let filter = super::super::MetricsFilter::new().successful_only();
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 1);
+        assert!(invocations[0].success);
+
+        let filter = super::super::MetricsFilter::new().failed_only();
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 1);
+        assert!(!invocations[0].success);
+    }
+
+    #[tokio::test]
+    async fn test_get_invocations_filter_by_tool() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        let inv1 = Invocation::new("reasoning.linear", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_success();
+        let inv2 = Invocation::new("reasoning.tree", serde_json::json!({}))
+            .with_pipe("pipe1")
+            .mark_success();
+        storage.log_invocation(&inv1).await.unwrap();
+        storage.log_invocation(&inv2).await.unwrap();
+
+        let filter = super::super::MetricsFilter::new().with_tool("reasoning.linear");
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 1);
+        assert_eq!(invocations[0].tool_name, "reasoning.linear");
+    }
+
+    #[tokio::test]
+    async fn test_get_invocations_with_limit() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        for i in 0..10 {
+            let inv = Invocation::new(format!("tool{}", i), serde_json::json!({}))
+                .with_pipe("pipe1")
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        let filter = super::super::MetricsFilter::new().with_limit(5);
+        let invocations = storage.get_invocations(filter).await.unwrap();
+        assert_eq!(invocations.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_get_invocation_count_all() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        for _ in 0..5 {
+            let inv = Invocation::new("tool", serde_json::json!({}))
+                .with_pipe("pipe1")
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        let count = storage.get_invocation_count(None).await.unwrap();
+        assert_eq!(count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_get_invocation_count_by_pipe() {
+        let storage = SqliteStorage::new_in_memory().await.unwrap();
+
+        for _ in 0..3 {
+            let inv = Invocation::new("tool", serde_json::json!({}))
+                .with_pipe("pipe1")
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        for _ in 0..2 {
+            let inv = Invocation::new("tool", serde_json::json!({}))
+                .with_pipe("pipe2")
+                .mark_success();
+            storage.log_invocation(&inv).await.unwrap();
+        }
+
+        let count = storage.get_invocation_count(Some("pipe1")).await.unwrap();
+        assert_eq!(count, 3);
+
+        let count = storage.get_invocation_count(Some("pipe2")).await.unwrap();
+        assert_eq!(count, 2);
+
+        let count = storage.get_invocation_count(Some("nonexistent")).await.unwrap();
+        assert_eq!(count, 0);
     }
 }

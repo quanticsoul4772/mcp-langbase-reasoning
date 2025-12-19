@@ -378,29 +378,29 @@ pub struct Synthesis {
 pub struct DecisionMode {
     /// Core infrastructure (storage and langbase client).
     core: ModeCore,
-    /// The Langbase pipe name for decision analysis.
-    decision_pipe: String,
-    /// The Langbase pipe name for perspective analysis.
-    perspective_pipe: String,
+    /// Consolidated pipe name for decision framework operations (prompts passed dynamically).
+    decision_framework_pipe: String,
 }
 
 impl DecisionMode {
     /// Create a new decision mode handler.
     pub fn new(storage: SqliteStorage, langbase: LangbaseClient, config: &Config) -> Self {
+        let decision_framework_pipe = config
+            .pipes
+            .decision
+            .as_ref()
+            .and_then(|d| d.pipe.clone())
+            .unwrap_or_else(|| "decision-framework-v1".to_string());
+
+        info!(
+            pipe = %decision_framework_pipe,
+            from_env = config.pipes.decision.as_ref().and_then(|d| d.pipe.as_ref()).is_some(),
+            "DecisionMode initialized with pipe"
+        );
+
         Self {
             core: ModeCore::new(storage, langbase),
-            decision_pipe: config
-                .pipes
-                .decision
-                .as_ref()
-                .and_then(|d| d.decision_pipe.clone())
-                .unwrap_or_else(|| "decision-maker-v1".to_string()),
-            perspective_pipe: config
-                .pipes
-                .decision
-                .as_ref()
-                .and_then(|d| d.perspective_pipe.clone())
-                .unwrap_or_else(|| "perspective-analyzer-v1".to_string()),
+            decision_framework_pipe,
         }
     }
 
@@ -428,10 +428,10 @@ impl DecisionMode {
             serialize_for_log(&params, "reasoning.make_decision input"),
         )
         .with_session(&session.id)
-        .with_pipe(&self.decision_pipe);
+        .with_pipe(&self.decision_framework_pipe);
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.decision_pipe, messages);
+        let request = PipeRequest::new(&self.decision_framework_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -561,10 +561,10 @@ impl DecisionMode {
             serialize_for_log(&params, "reasoning.analyze_perspectives input"),
         )
         .with_session(&session.id)
-        .with_pipe(&self.perspective_pipe);
+        .with_pipe(&self.decision_framework_pipe);
 
         // Call Langbase pipe
-        let request = PipeRequest::new(&self.perspective_pipe, messages);
+        let request = PipeRequest::new(&self.decision_framework_pipe, messages);
         let response = match self.core.langbase().call_pipe(request).await {
             Ok(resp) => resp,
             Err(e) => {

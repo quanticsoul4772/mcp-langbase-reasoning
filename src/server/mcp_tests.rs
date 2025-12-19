@@ -637,9 +637,9 @@ fn test_make_decision_tool_definition() {
     assert_eq!(schema["type"], "object");
     assert!(schema["properties"]["question"].is_object());
     assert_eq!(schema["properties"]["question"]["type"], "string");
-    assert!(schema["properties"]["alternatives"].is_object());
-    assert_eq!(schema["properties"]["alternatives"]["type"], "array");
-    assert_eq!(schema["properties"]["alternatives"]["minItems"], 2);
+    assert!(schema["properties"]["options"].is_object());
+    assert_eq!(schema["properties"]["options"]["type"], "array");
+    assert_eq!(schema["properties"]["options"]["minItems"], 2);
     assert!(schema["properties"]["criteria"].is_object());
     assert_eq!(schema["properties"]["criteria"]["type"], "array");
     assert!(schema["properties"]["method"].is_object());
@@ -666,7 +666,7 @@ fn test_make_decision_tool_definition() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert!(required.contains(&"question"));
-    assert!(required.contains(&"alternatives"));
+    assert!(required.contains(&"options"));
 }
 
 #[test]

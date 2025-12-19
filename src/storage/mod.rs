@@ -612,6 +612,121 @@ pub struct Invocation {
     pub created_at: DateTime<Utc>,
 }
 
+// ============================================================================
+// Pipe Usage Metrics Types
+// ============================================================================
+
+/// Summary of pipe usage statistics.
+///
+/// Provides aggregated metrics for a single Langbase pipe including
+/// call counts, success rates, and latency statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipeUsageSummary {
+    /// Name of the Langbase pipe.
+    pub pipe_name: String,
+    /// Total number of invocations.
+    pub total_calls: u64,
+    /// Number of successful calls.
+    pub success_count: u64,
+    /// Number of failed calls.
+    pub failure_count: u64,
+    /// Success rate (0.0-1.0).
+    pub success_rate: f64,
+    /// Average latency in milliseconds.
+    pub avg_latency_ms: f64,
+    /// Minimum latency in milliseconds.
+    pub min_latency_ms: Option<i64>,
+    /// Maximum latency in milliseconds.
+    pub max_latency_ms: Option<i64>,
+    /// First invocation timestamp.
+    pub first_call: DateTime<Utc>,
+    /// Most recent invocation timestamp.
+    pub last_call: DateTime<Utc>,
+}
+
+/// Filter options for metrics queries.
+///
+/// Allows filtering invocations by various criteria for targeted analysis.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MetricsFilter {
+    /// Filter by pipe name (exact match).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pipe_name: Option<String>,
+    /// Filter by session ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Filter by tool name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    /// Filter calls after this time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<DateTime<Utc>>,
+    /// Filter calls before this time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<DateTime<Utc>>,
+    /// Only include successful (true) or failed (false) calls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_only: Option<bool>,
+    /// Limit number of results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl MetricsFilter {
+    /// Create a new empty filter.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by pipe name.
+    pub fn with_pipe(mut self, pipe_name: impl Into<String>) -> Self {
+        self.pipe_name = Some(pipe_name.into());
+        self
+    }
+
+    /// Filter by session ID.
+    pub fn with_session(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Filter by tool name.
+    pub fn with_tool(mut self, tool_name: impl Into<String>) -> Self {
+        self.tool_name = Some(tool_name.into());
+        self
+    }
+
+    /// Filter calls after this time.
+    pub fn after(mut self, time: DateTime<Utc>) -> Self {
+        self.after = Some(time);
+        self
+    }
+
+    /// Filter calls before this time.
+    pub fn before(mut self, time: DateTime<Utc>) -> Self {
+        self.before = Some(time);
+        self
+    }
+
+    /// Only include successful calls.
+    pub fn successful_only(mut self) -> Self {
+        self.success_only = Some(true);
+        self
+    }
+
+    /// Only include failed calls.
+    pub fn failed_only(mut self) -> Self {
+        self.success_only = Some(false);
+        self
+    }
+
+    /// Limit number of results.
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+}
+
 impl Session {
     /// Create a new session with the given mode
     pub fn new(mode: impl Into<String>) -> Self {
@@ -831,6 +946,25 @@ impl Invocation {
         self.success = false;
         self.error = Some(error.into());
         self.latency_ms = Some(latency_ms);
+        self
+    }
+
+    /// Set latency separately
+    pub fn with_latency(mut self, latency_ms: i64) -> Self {
+        self.latency_ms = Some(latency_ms);
+        self
+    }
+
+    /// Mark as successful (simple version without output)
+    pub fn mark_success(mut self) -> Self {
+        self.success = true;
+        self
+    }
+
+    /// Mark as failed (simple version)
+    pub fn mark_failed(mut self, error: impl Into<String>) -> Self {
+        self.success = false;
+        self.error = Some(error.into());
         self
     }
 }
@@ -1351,10 +1485,31 @@ pub trait Storage: Send + Sync {
     /// Delete a checkpoint by ID.
     async fn delete_checkpoint(&self, id: &str) -> StorageResult<()>;
 
-    // Invocation logging
+    // Invocation logging and metrics
 
     /// Log a tool invocation for debugging.
     async fn log_invocation(&self, invocation: &Invocation) -> StorageResult<()>;
+
+    /// Get aggregated usage summary for all pipes.
+    ///
+    /// Returns metrics for each pipe that has been invoked, ordered by total calls descending.
+    async fn get_pipe_usage_summary(&self) -> StorageResult<Vec<PipeUsageSummary>>;
+
+    /// Get usage summary for a specific pipe.
+    ///
+    /// Returns None if the pipe has never been invoked.
+    async fn get_pipe_summary(&self, pipe_name: &str) -> StorageResult<Option<PipeUsageSummary>>;
+
+    /// Get invocations with optional filtering.
+    ///
+    /// Supports filtering by pipe name, session, tool, time range, and success status.
+    /// Results are ordered by created_at descending (most recent first).
+    async fn get_invocations(&self, filter: MetricsFilter) -> StorageResult<Vec<Invocation>>;
+
+    /// Get total invocation count.
+    ///
+    /// Optionally filter by pipe name.
+    async fn get_invocation_count(&self, pipe_name: Option<&str>) -> StorageResult<u64>;
 
     // Graph node operations (GoT mode)
 

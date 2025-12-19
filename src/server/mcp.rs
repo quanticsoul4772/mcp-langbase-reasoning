@@ -338,6 +338,7 @@ impl McpServer {
             get_metrics_summary_tool(),
             get_metrics_by_pipe_tool(),
             get_metrics_invocations_tool(),
+            get_fallback_metrics_tool(),
             // Debug tools
             get_debug_config_tool(),
         ];
@@ -1407,6 +1408,18 @@ fn get_debug_config_tool() -> Tool {
     Tool {
         name: "reasoning_debug_config".to_string(),
         description: "Debug tool to inspect the current pipe configuration. Returns the actual pipe names being used by the server.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+    }
+}
+
+fn get_fallback_metrics_tool() -> Tool {
+    Tool {
+        name: "reasoning_fallback_metrics".to_string(),
+        description: "Get metrics about fallback usage across invocations. Returns total fallbacks, breakdown by type (parse_error, api_unavailable, local_calculation) and by pipe, plus recommendations for enabling strict mode.".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {},

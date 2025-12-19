@@ -8,8 +8,9 @@ use tracing::{info, warn};
 
 use super::{
     Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
-    GraphEdge, GraphNode, Invocation, MetricsFilter, PerspectiveAnalysis, PipeUsageSummary,
-    ProbabilityUpdate, Session, StateSnapshot, Storage, StoredCriterion, Thought,
+    FallbackMetricsSummary, GraphEdge, GraphNode, Invocation, MetricsFilter,
+    PerspectiveAnalysis, PipeUsageSummary, ProbabilityUpdate, Session, StateSnapshot, Storage,
+    StoredCriterion, Thought,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -291,8 +292,8 @@ impl Storage for SqliteStorage {
 
         sqlx::query(
             r#"
-            INSERT INTO invocations (id, session_id, tool_name, input, output, pipe_name, latency_ms, success, error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO invocations (id, session_id, tool_name, input, output, pipe_name, latency_ms, success, error, created_at, fallback_used, fallback_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&invocation.id)
@@ -305,6 +306,8 @@ impl Storage for SqliteStorage {
         .bind(invocation.success)
         .bind(&invocation.error)
         .bind(invocation.created_at.to_rfc3339())
+        .bind(invocation.fallback_used)
+        .bind(&invocation.fallback_type)
         .execute(&self.pool)
         .await?;
 
@@ -516,6 +519,10 @@ impl Storage for SqliteStorage {
                     .ok()?
                     .with_timezone(&Utc);
 
+                // Get fallback fields (with defaults for old data)
+                let fallback_used: bool = row.try_get("fallback_used").unwrap_or(false);
+                let fallback_type: Option<String> = row.try_get("fallback_type").ok().flatten();
+
                 Some(Invocation {
                     id,
                     session_id,
@@ -527,6 +534,8 @@ impl Storage for SqliteStorage {
                     success,
                     error,
                     created_at,
+                    fallback_used,
+                    fallback_type,
                 })
             })
             .collect();
@@ -552,6 +561,97 @@ impl Storage for SqliteStorage {
         };
 
         Ok(count as u64)
+    }
+
+    async fn get_fallback_metrics(&self) -> StorageResult<FallbackMetricsSummary> {
+        use std::collections::HashMap;
+
+        // Get total invocations and total fallbacks
+        let totals: (i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                COUNT(*) as total_invocations,
+                SUM(CASE WHEN fallback_used = 1 THEN 1 ELSE 0 END) as total_fallbacks
+            FROM invocations
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        let total_invocations = totals.0 as u64;
+        let total_fallbacks = totals.1 as u64;
+
+        // Get fallbacks by type
+        let by_type_rows: Vec<(String, i64)> = sqlx::query_as(
+            r#"
+            SELECT fallback_type, COUNT(*) as count
+            FROM invocations
+            WHERE fallback_used = 1 AND fallback_type IS NOT NULL
+            GROUP BY fallback_type
+            ORDER BY count DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut fallbacks_by_type = HashMap::new();
+        for (fallback_type, count) in by_type_rows {
+            fallbacks_by_type.insert(fallback_type, count as u64);
+        }
+
+        // Get fallbacks by pipe
+        let by_pipe_rows: Vec<(String, i64)> = sqlx::query_as(
+            r#"
+            SELECT pipe_name, COUNT(*) as count
+            FROM invocations
+            WHERE fallback_used = 1 AND pipe_name IS NOT NULL
+            GROUP BY pipe_name
+            ORDER BY count DESC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut fallbacks_by_pipe = HashMap::new();
+        for (pipe_name, count) in by_pipe_rows {
+            fallbacks_by_pipe.insert(pipe_name, count as u64);
+        }
+
+        // Calculate fallback rate
+        let fallback_rate = if total_invocations > 0 {
+            total_fallbacks as f64 / total_invocations as f64
+        } else {
+            0.0
+        };
+
+        // Generate recommendation
+        let recommendation = if total_fallbacks == 0 {
+            "No fallbacks detected. Pipes are working correctly.".to_string()
+        } else if fallback_rate > 0.1 {
+            format!(
+                "High fallback rate ({:.1}%). Consider enabling STRICT_MODE=true to surface actual failures and fix pipe issues.",
+                fallback_rate * 100.0
+            )
+        } else if fallback_rate > 0.01 {
+            format!(
+                "Moderate fallback rate ({:.1}%). Monitor pipe reliability and consider enabling STRICT_MODE for testing.",
+                fallback_rate * 100.0
+            )
+        } else {
+            format!(
+                "Low fallback rate ({:.2}%). Consider enabling STRICT_MODE=true to eliminate fallbacks entirely.",
+                fallback_rate * 100.0
+            )
+        };
+
+        Ok(FallbackMetricsSummary {
+            total_fallbacks,
+            fallbacks_by_type,
+            fallbacks_by_pipe,
+            total_invocations,
+            fallback_rate,
+            recommendation,
+        })
     }
 
     // Branch operations

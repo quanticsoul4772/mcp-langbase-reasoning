@@ -121,6 +121,7 @@ pub async fn handle_tool_call(
         "reasoning_metrics_summary" => handle_metrics_summary(state).await,
         "reasoning_metrics_by_pipe" => handle_metrics_by_pipe(state, arguments).await,
         "reasoning_metrics_invocations" => handle_metrics_invocations(state, arguments).await,
+        "reasoning_fallback_metrics" => handle_fallback_metrics(state).await,
         "reasoning_debug_config" => handle_debug_config(state).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
@@ -828,6 +829,30 @@ async fn handle_debug_config(state: &SharedState) -> McpResult<Value> {
         "decision_config_present": pipes.decision.is_some(),
         "got_config_present": pipes.got.is_some(),
         "evidence_config_present": pipes.evidence.is_some(),
+    }))
+}
+
+/// Handle reasoning_fallback_metrics tool call - returns fallback usage statistics
+async fn handle_fallback_metrics(state: &SharedState) -> McpResult<Value> {
+    use crate::storage::Storage;
+
+    info!("Handling fallback metrics request");
+
+    let metrics = state
+        .storage
+        .get_fallback_metrics()
+        .await
+        .map_err(|e| McpError::ExecutionFailed {
+            message: format!("Failed to get fallback metrics: {}", e),
+        })?;
+
+    Ok(serde_json::json!({
+        "total_fallbacks": metrics.total_fallbacks,
+        "fallbacks_by_type": metrics.fallbacks_by_type,
+        "fallbacks_by_pipe": metrics.fallbacks_by_pipe,
+        "total_invocations": metrics.total_invocations,
+        "fallback_rate": metrics.fallback_rate,
+        "recommendation": metrics.recommendation
     }))
 }
 

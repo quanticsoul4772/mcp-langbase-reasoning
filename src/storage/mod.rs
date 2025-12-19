@@ -610,6 +610,10 @@ pub struct Invocation {
     pub error: Option<String>,
     /// When the invocation occurred.
     pub created_at: DateTime<Utc>,
+    /// Whether a fallback was used for this invocation.
+    pub fallback_used: bool,
+    /// Type of fallback if used (parse_error, api_unavailable, local_calculation).
+    pub fallback_type: Option<String>,
 }
 
 // ============================================================================
@@ -642,6 +646,26 @@ pub struct PipeUsageSummary {
     pub first_call: DateTime<Utc>,
     /// Most recent invocation timestamp.
     pub last_call: DateTime<Utc>,
+}
+
+/// Summary of fallback usage across invocations.
+///
+/// Provides metrics for tracking how often fallbacks are used,
+/// which is critical for measuring actual pipe reliability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FallbackMetricsSummary {
+    /// Total number of fallbacks used.
+    pub total_fallbacks: u64,
+    /// Breakdown by fallback type.
+    pub fallbacks_by_type: std::collections::HashMap<String, u64>,
+    /// Breakdown by pipe name.
+    pub fallbacks_by_pipe: std::collections::HashMap<String, u64>,
+    /// Total invocations analyzed.
+    pub total_invocations: u64,
+    /// Fallback rate (0.0-1.0).
+    pub fallback_rate: f64,
+    /// Recommendation based on fallback usage.
+    pub recommendation: String,
 }
 
 /// Filter options for metrics queries.
@@ -918,6 +942,8 @@ impl Invocation {
             success: true,
             error: None,
             created_at: Utc::now(),
+            fallback_used: false,
+            fallback_type: None,
         }
     }
 
@@ -966,6 +992,28 @@ impl Invocation {
         self.success = false;
         self.error = Some(error.into());
         self
+    }
+
+    /// Mark that a fallback was used
+    pub fn with_fallback(mut self, fallback_type: impl Into<String>) -> Self {
+        self.fallback_used = true;
+        self.fallback_type = Some(fallback_type.into());
+        self
+    }
+
+    /// Mark fallback with specific type constants
+    pub fn with_parse_error_fallback(self) -> Self {
+        self.with_fallback("parse_error")
+    }
+
+    /// Mark fallback due to API unavailability
+    pub fn with_api_unavailable_fallback(self) -> Self {
+        self.with_fallback("api_unavailable")
+    }
+
+    /// Mark fallback due to local calculation
+    pub fn with_local_calculation_fallback(self) -> Self {
+        self.with_fallback("local_calculation")
     }
 }
 
@@ -1510,6 +1558,12 @@ pub trait Storage: Send + Sync {
     ///
     /// Optionally filter by pipe name.
     async fn get_invocation_count(&self, pipe_name: Option<&str>) -> StorageResult<u64>;
+
+    /// Get fallback usage metrics.
+    ///
+    /// Returns aggregated statistics about fallback usage across all invocations,
+    /// including breakdown by type and pipe.
+    async fn get_fallback_metrics(&self) -> StorageResult<FallbackMetricsSummary>;
 
     // Graph node operations (GoT mode)
 
@@ -2739,5 +2793,102 @@ mod tests {
         assert_eq!(update.confidence_lower, Some(1.0));
         assert_eq!(update.confidence_upper, Some(0.0));
         assert_eq!(update.confidence_level, Some(1.0));
+    }
+
+    // ========================================================================
+    // Invocation fallback tracking tests
+    // ========================================================================
+
+    #[test]
+    fn test_invocation_new_defaults_no_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({"key": "value"}));
+        assert!(!inv.fallback_used);
+        assert!(inv.fallback_type.is_none());
+    }
+
+    #[test]
+    fn test_invocation_with_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({}))
+            .with_fallback("parse_error");
+        assert!(inv.fallback_used);
+        assert_eq!(inv.fallback_type, Some("parse_error".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_with_parse_error_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({}))
+            .with_parse_error_fallback();
+        assert!(inv.fallback_used);
+        assert_eq!(inv.fallback_type, Some("parse_error".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_with_api_unavailable_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({}))
+            .with_api_unavailable_fallback();
+        assert!(inv.fallback_used);
+        assert_eq!(inv.fallback_type, Some("api_unavailable".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_with_local_calculation_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({}))
+            .with_local_calculation_fallback();
+        assert!(inv.fallback_used);
+        assert_eq!(inv.fallback_type, Some("local_calculation".to_string()));
+    }
+
+    #[test]
+    fn test_invocation_builder_chain_with_fallback() {
+        let inv = Invocation::new("test_tool", serde_json::json!({"test": true}))
+            .with_session("session-123")
+            .with_pipe("test-pipe-v1")
+            .with_fallback("api_unavailable")
+            .success(serde_json::json!({"result": "ok"}), 150);
+
+        assert_eq!(inv.session_id, Some("session-123".to_string()));
+        assert_eq!(inv.pipe_name, Some("test-pipe-v1".to_string()));
+        assert!(inv.fallback_used);
+        assert_eq!(inv.fallback_type, Some("api_unavailable".to_string()));
+        assert!(inv.success);
+        assert_eq!(inv.latency_ms, Some(150));
+    }
+
+    // ========================================================================
+    // FallbackMetricsSummary tests
+    // ========================================================================
+
+    #[test]
+    fn test_fallback_metrics_summary_serialization() {
+        use std::collections::HashMap;
+
+        let mut by_type = HashMap::new();
+        by_type.insert("parse_error".to_string(), 5);
+        by_type.insert("api_unavailable".to_string(), 3);
+
+        let mut by_pipe = HashMap::new();
+        by_pipe.insert("linear-reasoning-v1".to_string(), 4);
+        by_pipe.insert("tree-reasoning-v1".to_string(), 4);
+
+        let summary = FallbackMetricsSummary {
+            total_fallbacks: 8,
+            fallbacks_by_type: by_type,
+            fallbacks_by_pipe: by_pipe,
+            total_invocations: 100,
+            fallback_rate: 0.08,
+            recommendation: "Test recommendation".to_string(),
+        };
+
+        // Test serialization
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("\"total_fallbacks\":8"));
+        assert!(json.contains("\"fallback_rate\":0.08"));
+        assert!(json.contains("\"recommendation\":\"Test recommendation\""));
+
+        // Test deserialization
+        let deserialized: FallbackMetricsSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.total_fallbacks, 8);
+        assert_eq!(deserialized.total_invocations, 100);
+        assert_eq!(deserialized.fallback_rate, 0.08);
     }
 }

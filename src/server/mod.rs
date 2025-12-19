@@ -106,7 +106,7 @@ pub type SharedState = Arc<AppState>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig};
+    use crate::config::{DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig};
     use std::path::PathBuf;
 
     fn create_test_config() -> Config {
@@ -125,6 +125,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes: PipeConfig::default(),
+            error_handling: ErrorHandlingConfig::default(),
         }
     }
 

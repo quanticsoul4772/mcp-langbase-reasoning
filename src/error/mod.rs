@@ -127,6 +127,24 @@ pub enum LangbaseError {
     /// Underlying HTTP error.
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
+
+    /// Pipe response parsing failed - no fallback available in strict mode.
+    #[error("Response parse failed for pipe '{pipe}': {message}")]
+    ResponseParseFailed {
+        /// Name of the pipe that returned unparseable response.
+        pipe: String,
+        /// Description of the parse failure.
+        message: String,
+        /// Raw response content (truncated for logging).
+        raw_response: String,
+    },
+
+    /// Pipe not found (404 error).
+    #[error("Pipe not found: {pipe} (verify pipe exists on Langbase)")]
+    PipeNotFound {
+        /// Name of the missing pipe.
+        pipe: String,
+    },
 }
 
 /// MCP protocol errors for request handling.
@@ -188,6 +206,24 @@ pub enum ToolError {
     Reasoning {
         /// Description of the reasoning failure.
         message: String,
+    },
+
+    /// Response parsing failed (strict mode - no fallback).
+    #[error("Parse error in {mode} mode: {message}")]
+    ParseFailed {
+        /// Reasoning mode that failed.
+        mode: String,
+        /// Description of parse failure.
+        message: String,
+    },
+
+    /// Pipe unavailable and no fallback allowed.
+    #[error("Pipe unavailable: {pipe} - {reason}")]
+    PipeUnavailable {
+        /// Name of the unavailable pipe.
+        pipe: String,
+        /// Reason for unavailability.
+        reason: String,
     },
 }
 
@@ -732,5 +768,98 @@ mod tests {
         let mcp_err = McpError::Json(json_err);
 
         assert!(mcp_err.source().is_some());
+    }
+
+    // Tests for new strict mode error types
+
+    #[test]
+    fn test_langbase_error_response_parse_failed() {
+        let err = LangbaseError::ResponseParseFailed {
+            pipe: "linear-reasoning-v1".to_string(),
+            message: "expected object, found array".to_string(),
+            raw_response: "[1, 2, 3]".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("Response parse failed"));
+        assert!(display.contains("linear-reasoning-v1"));
+        assert!(display.contains("expected object, found array"));
+    }
+
+    #[test]
+    fn test_langbase_error_pipe_not_found() {
+        let err = LangbaseError::PipeNotFound {
+            pipe: "nonexistent-pipe-v1".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("Pipe not found"));
+        assert!(display.contains("nonexistent-pipe-v1"));
+        assert!(display.contains("verify pipe exists on Langbase"));
+    }
+
+    #[test]
+    fn test_tool_error_parse_failed() {
+        let err = ToolError::ParseFailed {
+            mode: "auto".to_string(),
+            message: "JSON syntax error at line 1".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("Parse error in auto mode"));
+        assert!(display.contains("JSON syntax error"));
+    }
+
+    #[test]
+    fn test_tool_error_pipe_unavailable() {
+        let err = ToolError::PipeUnavailable {
+            pipe: "decision-framework-v1".to_string(),
+            reason: "API returned 503 Service Unavailable".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("Pipe unavailable"));
+        assert!(display.contains("decision-framework-v1"));
+        assert!(display.contains("503"));
+    }
+
+    #[test]
+    fn test_tool_error_parse_failed_conversion_to_app_error() {
+        let tool_err = ToolError::ParseFailed {
+            mode: "got_generate".to_string(),
+            message: "missing required field 'continuations'".to_string(),
+        };
+        let app_err: AppError = tool_err.into();
+        assert!(matches!(app_err, AppError::Internal { .. }));
+        assert!(app_err.to_string().contains("Parse error"));
+    }
+
+    #[test]
+    fn test_tool_error_pipe_unavailable_conversion_to_app_error() {
+        let tool_err = ToolError::PipeUnavailable {
+            pipe: "test-pipe".to_string(),
+            reason: "connection refused".to_string(),
+        };
+        let app_err: AppError = tool_err.into();
+        assert!(matches!(app_err, AppError::Internal { .. }));
+        assert!(app_err.to_string().contains("Pipe unavailable"));
+    }
+
+    #[test]
+    fn test_langbase_error_response_parse_failed_debug() {
+        let err = LangbaseError::ResponseParseFailed {
+            pipe: "test".to_string(),
+            message: "error".to_string(),
+            raw_response: "raw".to_string(),
+        };
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("ResponseParseFailed"));
+        assert!(debug_str.contains("test"));
+    }
+
+    #[test]
+    fn test_langbase_error_pipe_not_found_debug() {
+        let err = LangbaseError::PipeNotFound {
+            pipe: "missing-pipe".to_string(),
+        };
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("PipeNotFound"));
+        assert!(debug_str.contains("missing-pipe"));
     }
 }

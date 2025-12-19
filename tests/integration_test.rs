@@ -11,7 +11,7 @@ use wiremock::{
 };
 
 use mcp_langbase_reasoning::config::{
-    Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
+    Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
 };
 use mcp_langbase_reasoning::langbase::LangbaseClient;
 use mcp_langbase_reasoning::modes::{
@@ -53,6 +53,7 @@ fn create_test_config(mock_url: &str, db_path: std::path::PathBuf) -> Config {
             decision: None,
             evidence: None,
         },
+        error_handling: ErrorHandlingConfig::default(),
     }
 }
 

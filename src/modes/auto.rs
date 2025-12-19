@@ -6,7 +6,7 @@ use tracing::{debug, info, warn};
 
 use super::{serialize_for_log, ModeCore};
 use crate::config::Config;
-use crate::error::AppResult;
+use crate::error::{AppResult, ToolError};
 use crate::langbase::{LangbaseClient, Message, PipeRequest};
 use crate::modes::ReasoningMode;
 use crate::prompts::AUTO_ROUTER_PROMPT;
@@ -68,14 +68,26 @@ fn default_complexity() -> f64 {
 }
 
 impl AutoResponse {
-    fn from_completion(completion: &str) -> Self {
+    /// Parse completion in strict mode - returns error on parse failure.
+    fn from_completion_strict(completion: &str) -> Result<Self, ToolError> {
+        serde_json::from_str::<AutoResponse>(completion).map_err(|e| {
+            let preview: String = completion.chars().take(200).collect();
+            ToolError::ParseFailed {
+                mode: "auto".to_string(),
+                message: format!("JSON parse error: {} | Response preview: {}", e, preview),
+            }
+        })
+    }
+
+    /// Parse completion with fallback (legacy mode) - always returns a value.
+    fn from_completion_legacy(completion: &str) -> Self {
         match serde_json::from_str::<AutoResponse>(completion) {
             Ok(parsed) => parsed,
             Err(e) => {
                 warn!(
                     error = %e,
                     completion_preview = %completion.chars().take(200).collect::<String>(),
-                    "Failed to parse auto router response, using fallback"
+                    "Failed to parse auto router response, using fallback (DEPRECATED - enable STRICT_MODE)"
                 );
                 // Fallback - use heuristics
                 Self {
@@ -88,6 +100,15 @@ impl AutoResponse {
             }
         }
     }
+
+    /// Parse completion respecting strict mode setting.
+    fn from_completion(completion: &str, strict_mode: bool) -> Result<Self, ToolError> {
+        if strict_mode {
+            Self::from_completion_strict(completion)
+        } else {
+            Ok(Self::from_completion_legacy(completion))
+        }
+    }
 }
 
 /// Auto mode router
@@ -97,6 +118,8 @@ pub struct AutoMode {
     core: ModeCore,
     /// The Langbase pipe name for auto routing.
     pipe_name: String,
+    /// Whether to use strict mode (no fallbacks).
+    strict_mode: bool,
 }
 
 impl AutoMode {
@@ -109,6 +132,7 @@ impl AutoMode {
                 .auto
                 .clone()
                 .unwrap_or_else(|| "mode-router-v1".to_string()),
+            strict_mode: config.error_handling.strict_mode,
         }
     }
 
@@ -162,7 +186,7 @@ impl AutoMode {
         };
 
         // Parse response
-        let auto_response = AutoResponse::from_completion(&response.completion);
+        let auto_response = AutoResponse::from_completion(&response.completion, self.strict_mode)?;
 
         // Convert mode string to enum
         let recommended_mode = auto_response.recommended_mode.parse().unwrap_or_else(|_| {
@@ -462,18 +486,30 @@ mod tests {
     #[test]
     fn test_auto_response_from_json() {
         let json = r#"{"recommended_mode": "tree", "confidence": 0.9, "rationale": "Multiple paths", "complexity": 0.6}"#;
-        let resp = AutoResponse::from_completion(json);
+        // Test legacy mode (no strict)
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "tree");
         assert_eq!(resp.confidence, 0.9);
         assert_eq!(resp.complexity, 0.6);
     }
 
     #[test]
-    fn test_auto_response_from_plain_text() {
+    fn test_auto_response_from_plain_text_legacy() {
         let text = "Invalid JSON";
-        let resp = AutoResponse::from_completion(text);
+        // Legacy mode: falls back to default
+        let resp = AutoResponse::from_completion(text, false).unwrap();
         assert_eq!(resp.recommended_mode, "linear");
         assert_eq!(resp.confidence, 0.7);
+    }
+
+    #[test]
+    fn test_auto_response_from_plain_text_strict() {
+        let text = "Invalid JSON";
+        // Strict mode: returns error
+        let result = AutoResponse::from_completion(text, true);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::ToolError::ParseFailed { .. }));
     }
 
     #[test]
@@ -485,7 +521,7 @@ mod tests {
             "complexity": 0.7,
             "metadata": {"source": "test"}
         }"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "divergent");
         assert!(resp.metadata.is_some());
     }
@@ -493,7 +529,7 @@ mod tests {
     #[test]
     fn test_auto_response_default_complexity() {
         let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.complexity, 0.5); // default
     }
 
@@ -512,9 +548,29 @@ mod tests {
                 r#"{{"recommended_mode": "{}", "confidence": 0.8, "rationale": "Test"}}"#,
                 mode_str
             );
-            let resp = AutoResponse::from_completion(&json);
+            let resp = AutoResponse::from_completion(&json, false).unwrap();
             assert_eq!(resp.recommended_mode, mode_str);
         }
+    }
+
+    #[test]
+    fn test_auto_response_strict_mode_valid_json() {
+        let json = r#"{"recommended_mode": "tree", "confidence": 0.9, "rationale": "Test"}"#;
+        // Strict mode with valid JSON should succeed
+        let result = AutoResponse::from_completion(json, true);
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp.recommended_mode, "tree");
+    }
+
+    #[test]
+    fn test_auto_response_strict_mode_error_message() {
+        let invalid_json = "{ broken json";
+        let result = AutoResponse::from_completion(invalid_json, true);
+        assert!(result.is_err());
+        let err_str = result.unwrap_err().to_string();
+        assert!(err_str.contains("Parse error in auto mode"));
+        assert!(err_str.contains("broken json"));
     }
 
     // ============================================================================
@@ -686,7 +742,7 @@ mod tests {
     fn test_auto_response_zero_confidence() {
         let json =
             r#"{"recommended_mode": "linear", "confidence": 0.0, "rationale": "No confidence"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.confidence, 0.0);
     }
 
@@ -694,7 +750,7 @@ mod tests {
     fn test_auto_response_max_confidence() {
         let json =
             r#"{"recommended_mode": "linear", "confidence": 1.0, "rationale": "Full confidence"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.confidence, 1.0);
     }
 
@@ -1156,7 +1212,7 @@ mod tests {
     #[test]
     fn test_auto_mode_new_with_custom_pipe() {
         use crate::config::{
-            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
             RequestConfig,
         };
         use std::path::PathBuf;
@@ -1181,6 +1237,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes,
+            error_handling: ErrorHandlingConfig::default(),
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1194,7 +1251,7 @@ mod tests {
     #[test]
     fn test_auto_mode_new_without_custom_pipe_uses_default() {
         use crate::config::{
-            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
             RequestConfig,
         };
         use std::path::PathBuf;
@@ -1219,6 +1276,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes,
+            error_handling: crate::config::ErrorHandlingConfig::default(),
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1236,7 +1294,7 @@ mod tests {
     #[test]
     fn test_auto_response_from_empty_json() {
         let json = "{}";
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         // Should fallback to linear with defaults
         assert_eq!(resp.recommended_mode, "linear");
         assert_eq!(resp.confidence, 0.7);
@@ -1245,7 +1303,7 @@ mod tests {
     #[test]
     fn test_auto_response_from_json_missing_rationale() {
         let json = r#"{"recommended_mode": "tree", "confidence": 0.8}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         // Should fallback because rationale is missing
         assert_eq!(resp.recommended_mode, "linear");
     }
@@ -1259,7 +1317,7 @@ mod tests {
             "complexity": 0.5,
             "metadata": null
         }"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "reflection");
         assert!(resp.metadata.is_none());
     }
@@ -1267,7 +1325,7 @@ mod tests {
     #[test]
     fn test_auto_response_from_json_empty_string_mode() {
         let json = r#"{"recommended_mode": "", "confidence": 0.8, "rationale": "Test"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "");
     }
 
@@ -1275,42 +1333,42 @@ mod tests {
     fn test_auto_response_from_json_invalid_mode_string() {
         let json =
             r#"{"recommended_mode": "invalid_mode", "confidence": 0.8, "rationale": "Test"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "invalid_mode");
     }
 
     #[test]
     fn test_auto_response_from_json_negative_confidence() {
         let json = r#"{"recommended_mode": "linear", "confidence": -0.5, "rationale": "Test"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.confidence, -0.5); // No clamping in AutoResponse
     }
 
     #[test]
     fn test_auto_response_from_json_over_one_confidence() {
         let json = r#"{"recommended_mode": "linear", "confidence": 1.5, "rationale": "Test"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.confidence, 1.5); // No clamping in AutoResponse
     }
 
     #[test]
     fn test_auto_response_from_json_negative_complexity() {
         let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test", "complexity": -0.3}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.complexity, -0.3);
     }
 
     #[test]
     fn test_auto_response_from_json_over_one_complexity() {
         let json = r#"{"recommended_mode": "linear", "confidence": 0.8, "rationale": "Test", "complexity": 1.5}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.complexity, 1.5);
     }
 
     #[test]
     fn test_auto_response_from_long_preview_text() {
         let long_text = "Not JSON: ".to_owned() + &"a".repeat(300);
-        let resp = AutoResponse::from_completion(&long_text);
+        let resp = AutoResponse::from_completion(&long_text, false).unwrap();
         // Should fallback to linear
         assert_eq!(resp.recommended_mode, "linear");
         assert_eq!(resp.confidence, 0.7);
@@ -1319,7 +1377,7 @@ mod tests {
     #[test]
     fn test_auto_response_from_backtracking_mode() {
         let json = r#"{"recommended_mode": "backtracking", "confidence": 0.85, "rationale": "Needs backtracking"}"#;
-        let resp = AutoResponse::from_completion(json);
+        let resp = AutoResponse::from_completion(json, false).unwrap();
         assert_eq!(resp.recommended_mode, "backtracking");
     }
 
@@ -1698,7 +1756,7 @@ mod tests {
 
     fn create_test_mode() -> AutoMode {
         use crate::config::{
-            Config, DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
+            Config, DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig,
             RequestConfig,
         };
         use std::path::PathBuf;
@@ -1720,6 +1778,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes: PipeConfig::default(),
+            error_handling: ErrorHandlingConfig::default(),
         };
 
         // Use a runtime for async operations in tests

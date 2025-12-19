@@ -642,7 +642,7 @@ mod tests {
 
     fn create_test_config() -> Config {
         use crate::config::{
-            DatabaseConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LogFormat, LoggingConfig, PipeConfig, RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -661,6 +661,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes: PipeConfig::default(),
+            error_handling: ErrorHandlingConfig::default(),
         }
     }
 

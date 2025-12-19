@@ -825,7 +825,7 @@ mod tests {
     /// Helper to create a test mode instance
     fn create_test_mode() -> DivergentMode {
         use crate::config::{
-            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -844,6 +844,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes: PipeConfig::default(),
+            error_handling: ErrorHandlingConfig::default(),
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1249,7 +1250,7 @@ mod tests {
     #[test]
     fn test_divergent_mode_new() {
         use crate::config::{
-            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -1268,6 +1269,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes: PipeConfig::default(),
+            error_handling: ErrorHandlingConfig::default(),
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -1282,7 +1284,7 @@ mod tests {
     #[test]
     fn test_divergent_mode_new_with_custom_pipe() {
         use crate::config::{
-            DatabaseConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
+            DatabaseConfig, ErrorHandlingConfig, LangbaseConfig, LoggingConfig, PipeConfig, RequestConfig,
         };
         use std::path::PathBuf;
 
@@ -1304,6 +1306,7 @@ mod tests {
             },
             request: RequestConfig::default(),
             pipes,
+            error_handling: ErrorHandlingConfig::default(),
         };
 
         let rt = tokio::runtime::Runtime::new().unwrap();

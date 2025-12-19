@@ -464,6 +464,8 @@ pub struct EvidenceMode {
     core: ModeCore,
     /// Consolidated pipe name for decision framework operations (prompts passed dynamically).
     decision_framework_pipe: String,
+    /// Whether to use strict mode for error handling (fails instead of using fallbacks).
+    strict_mode: bool,
 }
 
 impl EvidenceMode {
@@ -477,6 +479,7 @@ impl EvidenceMode {
                 .as_ref()
                 .and_then(|e| e.pipe.clone())
                 .unwrap_or_else(|| "decision-framework-v1".to_string()),
+            strict_mode: config.error_handling.strict_mode,
         }
     }
 
@@ -669,8 +672,18 @@ impl EvidenceMode {
                 invocation = invocation.failure(e.to_string(), latency);
                 self.core.storage().log_invocation(&invocation).await?;
 
-                // Fallback: calculate locally
-                warn!(error = %e, "Langbase call failed, using local Bayesian calculation");
+                // In strict mode, propagate the error instead of falling back
+                if self.strict_mode {
+                    error!(error = %e, "Langbase call failed in strict mode - propagating error");
+                    return Err(ToolError::PipeUnavailable {
+                        pipe: self.decision_framework_pipe.clone(),
+                        reason: e.to_string(),
+                    }
+                    .into());
+                }
+
+                // Legacy fallback: calculate locally (DEPRECATED - enable STRICT_MODE)
+                warn!(error = %e, "Langbase call failed, using local Bayesian calculation (DEPRECATED - enable STRICT_MODE)");
                 let (posterior, steps) = self.calculate_bayesian_update(&params);
                 let entropy_before = self.calculate_entropy(params.prior);
                 let entropy_after = self.calculate_entropy(posterior);
@@ -920,8 +933,21 @@ impl EvidenceMode {
             }
         })?;
 
+        // In strict mode, propagate parse errors instead of falling back
+        if self.strict_mode {
+            return serde_json::from_str::<BayesianResponse>(json_str).map_err(|e| {
+                let preview: String = json_str.chars().take(200).collect();
+                ToolError::ParseFailed {
+                    mode: "evidence.probabilistic".to_string(),
+                    message: format!("JSON parse error: {} | Response preview: {}", e, preview),
+                }
+                .into()
+            });
+        }
+
+        // Legacy fallback: calculate locally (DEPRECATED - enable STRICT_MODE)
         serde_json::from_str::<BayesianResponse>(json_str).or_else(|e| {
-            warn!(error = %e, "Failed to parse Bayesian response, using local calculation");
+            warn!(error = %e, "Failed to parse Bayesian response, using local calculation (DEPRECATED - enable STRICT_MODE)");
             // Fallback to local calculation
             let (posterior, steps) = self.calculate_bayesian_update(params);
             let entropy_before = self.calculate_entropy(params.prior);

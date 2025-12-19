@@ -23,6 +23,24 @@ pub struct Config {
     pub request: RequestConfig,
     /// Langbase pipe name configuration.
     pub pipes: PipeConfig,
+    /// Error handling behavior configuration.
+    pub error_handling: ErrorHandlingConfig,
+}
+
+/// Error handling behavior configuration for strict mode.
+#[derive(Debug, Clone)]
+pub struct ErrorHandlingConfig {
+    /// When true, parsing errors return Err instead of fallback values.
+    /// Recommended for integration testing to catch actual failures.
+    pub strict_mode: bool,
+
+    /// When true, API failures return Err instead of local calculations.
+    /// Recommended to ensure pipe coverage and detect integration issues.
+    pub require_pipe_response: bool,
+
+    /// Maximum number of fallback usages before forcing error.
+    /// 0 = unlimited (default behavior), >0 = limit per session.
+    pub max_fallback_count: u32,
 }
 
 /// Langbase API configuration.
@@ -273,13 +291,45 @@ impl Config {
             evidence: evidence_config,
         };
 
+        // Error handling configuration
+        let error_handling = ErrorHandlingConfig {
+            strict_mode: env::var("STRICT_MODE")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
+            require_pipe_response: env::var("REQUIRE_PIPE_RESPONSE")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
+            max_fallback_count: env::var("MAX_FALLBACK_COUNT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
+        };
+
+        if error_handling.strict_mode {
+            debug!("Strict mode enabled - parse errors will propagate");
+        }
+        if error_handling.require_pipe_response {
+            debug!("Require pipe response enabled - no local calculation fallbacks");
+        }
+
         Ok(Config {
             langbase,
             database,
             logging,
             request,
             pipes,
+            error_handling,
         })
+    }
+}
+
+impl Default for ErrorHandlingConfig {
+    fn default() -> Self {
+        Self {
+            strict_mode: false,
+            require_pipe_response: false,
+            max_fallback_count: 0,
+        }
     }
 }
 
@@ -769,5 +819,54 @@ mod tests {
         assert_eq!(config.timeout_ms, cloned.timeout_ms);
         assert_eq!(config.max_retries, cloned.max_retries);
         assert_eq!(config.retry_delay_ms, cloned.retry_delay_ms);
+    }
+
+    // Tests for ErrorHandlingConfig
+
+    #[test]
+    fn test_error_handling_config_default() {
+        let config = ErrorHandlingConfig::default();
+        assert!(!config.strict_mode);
+        assert!(!config.require_pipe_response);
+        assert_eq!(config.max_fallback_count, 0);
+    }
+
+    #[test]
+    fn test_error_handling_config_struct() {
+        let config = ErrorHandlingConfig {
+            strict_mode: true,
+            require_pipe_response: true,
+            max_fallback_count: 10,
+        };
+        assert!(config.strict_mode);
+        assert!(config.require_pipe_response);
+        assert_eq!(config.max_fallback_count, 10);
+    }
+
+    #[test]
+    fn test_error_handling_config_clone() {
+        let config = ErrorHandlingConfig {
+            strict_mode: true,
+            require_pipe_response: false,
+            max_fallback_count: 5,
+        };
+        let cloned = config.clone();
+        assert_eq!(config.strict_mode, cloned.strict_mode);
+        assert_eq!(config.require_pipe_response, cloned.require_pipe_response);
+        assert_eq!(config.max_fallback_count, cloned.max_fallback_count);
+    }
+
+    #[test]
+    fn test_error_handling_config_debug() {
+        let config = ErrorHandlingConfig {
+            strict_mode: true,
+            require_pipe_response: true,
+            max_fallback_count: 3,
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("ErrorHandlingConfig"));
+        assert!(debug_str.contains("strict_mode: true"));
+        assert!(debug_str.contains("require_pipe_response: true"));
+        assert!(debug_str.contains("max_fallback_count: 3"));
     }
 }

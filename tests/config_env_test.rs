@@ -210,16 +210,19 @@ fn test_config_from_env_log_level() {
 
 #[test]
 #[serial]
-fn test_config_from_env_detection_config_none_by_default() {
+fn test_config_from_env_detection_config_default() {
     setup_required_env();
     // Don't set any detection env vars
     env::remove_var("PIPE_DETECT_BIASES");
     env::remove_var("PIPE_DETECT_FALLACIES");
+    env::remove_var("PIPE_DETECTION");
 
     let config = Config::from_env().unwrap();
 
-    // Detection should be None when no env vars are set
-    assert!(config.pipes.detection.is_none());
+    // Detection config is always present (for consolidated pipe support)
+    // but pipe field is None to trigger default "detection-v1"
+    let detection = config.pipes.detection.expect("DetectionPipeConfig should be Some");
+    assert!(detection.pipe.is_none());
 }
 
 #[test]

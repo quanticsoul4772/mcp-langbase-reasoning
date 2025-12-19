@@ -47,17 +47,18 @@ Technical architecture documentation for mcp-langbase-reasoning.
                                                  +-------------------------+
                                                  |     Langbase API        |
                                                  |                         |
-                                                 |  +-------------------+  |
-                                                 |  | linear-reason-v1  |  |
-                                                 |  | tree-reasoning-v1 |  |
-                                                 |  | divergent-v1      |  |
-                                                 |  | reflection-v1     |  |
-                                                 |  | got-generate-v1   |  |
-                                                 |  | got-score-v1      |  |
-                                                 |  | got-aggregate-v1  |  |
-                                                 |  | got-refine-v1     |  |
-                                                 |  +-------------------+  |
-                                                 +-------------------------+
+                                                 |  +---------------------+  |
+                                                 |  | linear-reasoning-v1 |  |
+                                                 |  | tree-reasoning-v1   |  |
+                                                 |  | divergent-v1        |  |
+                                                 |  | reflection-v1       |  |
+                                                 |  | mode-router-v1      |  |
+                                                 |  | got-reasoning-v1    |  |
+                                                 |  | detection-v1        |  |
+                                                 |  | decision-framework  |  |
+                                                 |  +---------------------+  |
+                                                 |    (8 consolidated pipes) |
+                                                 +---------------------------+
 ```
 
 ## Module Structure

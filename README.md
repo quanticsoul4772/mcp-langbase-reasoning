@@ -165,21 +165,18 @@ Run the code-review preset on this function to check for issues.
 
 ### Pipe Names
 
-Override default Langbase pipe names:
+Override default Langbase pipe names (8 consolidated pipes):
 
-| Variable | Default |
-|----------|---------|
-| `PIPE_LINEAR` | `linear-reasoning-v1` |
-| `PIPE_TREE` | `tree-reasoning-v1` |
-| `PIPE_DIVERGENT` | `divergent-reasoning-v1` |
-| `PIPE_REFLECTION` | `reflection-v1` |
-| `PIPE_AUTO` | `mode-router-v1` |
-| `PIPE_BACKTRACKING` | `backtracking-reasoning-v1` |
-| `PIPE_GOT_*` | `got-{operation}-v1` |
-| `PIPE_DECISION` | `decision-maker-v1` |
-| `PIPE_PERSPECTIVE` | `perspective-analyzer-v1` |
-| `PIPE_EVIDENCE` | `evidence-assessor-v1` |
-| `PIPE_BAYESIAN` | `bayesian-updater-v1` |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIPE_LINEAR` | `linear-reasoning-v1` | Linear reasoning |
+| `PIPE_TREE` | `tree-reasoning-v1` | Tree/branching reasoning |
+| `PIPE_DIVERGENT` | `divergent-reasoning-v1` | Divergent/creative reasoning |
+| `PIPE_REFLECTION` | `reflection-v1` | Meta-cognitive reflection |
+| `PIPE_AUTO` | `mode-router-v1` | Automatic mode selection |
+| `PIPE_GOT` | `got-reasoning-v1` | Graph-of-Thoughts (all operations) |
+| `PIPE_DETECTION` | `detection-v1` | Bias and fallacy detection |
+| `PIPE_DECISION_FRAMEWORK` | `decision-framework-v1` | Decision, perspective, evidence, Bayesian |
 
 ## Architecture
 

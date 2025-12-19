@@ -1807,6 +1807,8 @@ If the pipe returns non-JSON, the entire response is treated as the thought cont
 
 ### Pipe Names
 
+Consolidated pipes (8 total, fits Langbase free tier):
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIPE_LINEAR` | `linear-reasoning-v1` | Linear reasoning pipe |
@@ -1814,12 +1816,6 @@ If the pipe returns non-JSON, the entire response is treated as the thought cont
 | `PIPE_DIVERGENT` | `divergent-reasoning-v1` | Divergent reasoning pipe |
 | `PIPE_REFLECTION` | `reflection-v1` | Reflection pipe |
 | `PIPE_AUTO` | `mode-router-v1` | Auto mode router pipe |
-| `PIPE_BACKTRACKING` | `backtracking-reasoning-v1` | Backtracking pipe |
-| `PIPE_GOT_GENERATE` | `got-generate-v1` | GoT generate pipe |
-| `PIPE_GOT_SCORE` | `got-score-v1` | GoT score pipe |
-| `PIPE_GOT_AGGREGATE` | `got-aggregate-v1` | GoT aggregate pipe |
-| `PIPE_GOT_REFINE` | `got-refine-v1` | GoT refine pipe |
-| `PIPE_DECISION` | `decision-maker-v1` | Decision framework pipe |
-| `PIPE_PERSPECTIVE` | `perspective-analyzer-v1` | Stakeholder perspective pipe |
-| `PIPE_EVIDENCE` | `evidence-assessor-v1` | Evidence assessment pipe |
-| `PIPE_BAYESIAN` | `bayesian-updater-v1` | Bayesian probability pipe |
+| `PIPE_GOT` | `got-reasoning-v1` | Graph-of-Thoughts (all operations) |
+| `PIPE_DETECTION` | `detection-v1` | Bias and fallacy detection |
+| `PIPE_DECISION_FRAMEWORK` | `decision-framework-v1` | Decision, perspective, evidence, Bayesian |

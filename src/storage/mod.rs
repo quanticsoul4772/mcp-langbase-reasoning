@@ -9,7 +9,9 @@ mod sqlite;
 #[path = "types_tests.rs"]
 mod types_tests;
 
-pub use sqlite::SqliteStorage;
+pub use sqlite::{
+    get_timestamp_reconstruction_count, reset_timestamp_reconstruction_count, SqliteStorage,
+};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -666,6 +668,9 @@ pub struct FallbackMetricsSummary {
     pub fallback_rate: f64,
     /// Recommendation based on fallback usage.
     pub recommendation: String,
+    /// Number of timestamps that were reconstructed due to parse failures.
+    /// This indicates data integrity issues in the database.
+    pub timestamp_reconstructions: u64,
 }
 
 /// Filter options for metrics queries.
@@ -2875,6 +2880,7 @@ mod tests {
             total_invocations: 100,
             fallback_rate: 0.08,
             recommendation: "Test recommendation".to_string(),
+            timestamp_reconstructions: 0,
         };
 
         // Test serialization

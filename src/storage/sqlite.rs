@@ -4,7 +4,26 @@ use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{info, warn};
+
+// ============================================================================
+// Timestamp Reconstruction Tracking
+// ============================================================================
+
+/// Global counter for timestamp reconstructions due to parse failures.
+/// This tracks data integrity issues where corrupted timestamps were replaced with current time.
+static TIMESTAMP_RECONSTRUCTION_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Get the current count of timestamp reconstructions.
+pub fn get_timestamp_reconstruction_count() -> u64 {
+    TIMESTAMP_RECONSTRUCTION_COUNT.load(Ordering::Relaxed)
+}
+
+/// Reset the timestamp reconstruction counter and return the previous value.
+pub fn reset_timestamp_reconstruction_count() -> u64 {
+    TIMESTAMP_RECONSTRUCTION_COUNT.swap(0, Ordering::Relaxed)
+}
 
 use super::{
     Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
@@ -648,6 +667,7 @@ impl Storage for SqliteStorage {
             total_invocations,
             fallback_rate,
             recommendation,
+            timestamp_reconstructions: get_timestamp_reconstruction_count(),
         })
     }
 
@@ -1761,17 +1781,28 @@ fn parse_metadata_with_logging(json_str: &str, context: &str) -> Option<serde_js
     }
 }
 
-/// Parse timestamp with warning on failure
+/// Parse timestamp with warning on failure and reconstruction tracking.
+///
+/// When a timestamp cannot be parsed, this function:
+/// 1. Increments the global reconstruction counter
+/// 2. Logs a warning with "TIMESTAMP CORRUPTION" prefix for easy searching
+/// 3. Returns the current time as a fallback
+///
+/// Use `get_timestamp_reconstruction_count()` to check for data integrity issues.
 fn parse_timestamp_with_logging(ts_str: &str, context: &str) -> chrono::DateTime<chrono::Utc> {
     use chrono::DateTime;
     match DateTime::parse_from_rfc3339(ts_str) {
         Ok(dt) => dt.with_timezone(&chrono::Utc),
         Err(e) => {
+            // Increment reconstruction counter for metrics tracking
+            let count = TIMESTAMP_RECONSTRUCTION_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+
             warn!(
                 error = %e,
                 timestamp = ts_str,
                 context = context,
-                "Failed to parse timestamp, using current time as fallback"
+                total_reconstructions = count,
+                "TIMESTAMP CORRUPTION: Failed to parse timestamp, using current time as fallback"
             );
             chrono::Utc::now()
         }
@@ -2496,6 +2527,52 @@ mod tests {
 
         assert!(result >= before);
         assert!(result <= after);
+    }
+
+    // ============================================================================
+    // Timestamp Reconstruction Counter Tests
+    // ============================================================================
+
+    #[test]
+    fn test_timestamp_reconstruction_counter_increments() {
+        // Reset counter to known state
+        reset_timestamp_reconstruction_count();
+        assert_eq!(get_timestamp_reconstruction_count(), 0);
+
+        // Parse invalid timestamp - should increment counter
+        let _ = parse_timestamp_with_logging("invalid-timestamp", "test");
+        assert_eq!(get_timestamp_reconstruction_count(), 1);
+
+        // Parse another invalid timestamp - should increment again
+        let _ = parse_timestamp_with_logging("also-invalid", "test");
+        assert_eq!(get_timestamp_reconstruction_count(), 2);
+    }
+
+    #[test]
+    fn test_valid_timestamp_does_not_increment_counter() {
+        reset_timestamp_reconstruction_count();
+        assert_eq!(get_timestamp_reconstruction_count(), 0);
+
+        // Parse valid timestamp - should NOT increment counter
+        let _ = parse_timestamp_with_logging("2024-01-15T10:30:00Z", "test");
+        assert_eq!(get_timestamp_reconstruction_count(), 0);
+    }
+
+    #[test]
+    fn test_reset_timestamp_reconstruction_count_returns_previous() {
+        reset_timestamp_reconstruction_count();
+
+        // Trigger some reconstructions
+        let _ = parse_timestamp_with_logging("bad1", "test");
+        let _ = parse_timestamp_with_logging("bad2", "test");
+        let _ = parse_timestamp_with_logging("bad3", "test");
+
+        // Reset should return previous value
+        let previous = reset_timestamp_reconstruction_count();
+        assert_eq!(previous, 3);
+
+        // Counter should now be 0
+        assert_eq!(get_timestamp_reconstruction_count(), 0);
     }
 
     #[test]

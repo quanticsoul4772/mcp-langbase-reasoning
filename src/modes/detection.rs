@@ -1015,7 +1015,7 @@ mod tests {
 
     #[test]
     fn test_default_true_is_consistent() {
-        assert_eq!(default_true(), true);
+        assert!(default_true());
         assert_eq!(default_true(), default_true());
     }
 

@@ -671,7 +671,7 @@ mod tests {
 
         for mode in modes {
             let rec = ModeRecommendation {
-                mode: mode.clone(),
+                mode,
                 confidence: 0.5,
                 rationale: "Test".to_string(),
             };
@@ -1222,8 +1222,10 @@ mod tests {
             base_url: "https://api.langbase.com".to_string(),
         };
 
-        let mut pipes = PipeConfig::default();
-        pipes.auto = Some("custom-auto-pipe".to_string());
+        let pipes = PipeConfig {
+            auto: Some("custom-auto-pipe".to_string()),
+            ..Default::default()
+        };
 
         let config = Config {
             langbase: langbase_config.clone(),
@@ -1261,8 +1263,10 @@ mod tests {
             base_url: "https://api.langbase.com".to_string(),
         };
 
-        let mut pipes = PipeConfig::default();
-        pipes.auto = None; // Explicitly set to None
+        let pipes = PipeConfig {
+            auto: None, // Explicitly set to None
+            ..Default::default()
+        };
 
         let config = Config {
             langbase: langbase_config.clone(),
@@ -1706,7 +1710,7 @@ mod tests {
 
         for (mode, expected_str) in modes {
             let rec = ModeRecommendation {
-                mode: mode.clone(),
+                mode,
                 confidence: 0.5,
                 rationale: "Test".to_string(),
             };

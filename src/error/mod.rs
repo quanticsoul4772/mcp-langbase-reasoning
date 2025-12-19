@@ -692,7 +692,7 @@ mod tests {
         fn returns_langbase_result() -> LangbaseResult<bool> {
             Ok(true)
         }
-        assert_eq!(returns_langbase_result().unwrap(), true);
+        assert!(returns_langbase_result().unwrap());
     }
 
     #[test]

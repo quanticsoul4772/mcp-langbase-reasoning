@@ -572,6 +572,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::const_is_empty)] // Intentional test that constants are populated
     fn test_prompts_are_not_empty() {
         assert!(!LINEAR_REASONING_PROMPT.is_empty());
         assert!(!TREE_REASONING_PROMPT.is_empty());
@@ -671,6 +672,7 @@ mod tests {
     // ========================================================================
 
     #[test]
+    #[allow(clippy::const_is_empty)] // Intentional test that constants are populated
     fn test_decision_framework_prompts_not_empty() {
         assert!(!DECISION_MAKER_PROMPT.is_empty());
         assert!(!PERSPECTIVE_ANALYZER_PROMPT.is_empty());
@@ -767,6 +769,7 @@ mod tests {
 
     // Test 1: Verify all GoT prompts are non-empty
     #[test]
+    #[allow(clippy::const_is_empty)] // Intentional test that constants are populated
     fn test_got_prompts_not_empty() {
         assert!(!GOT_GENERATE_PROMPT.is_empty());
         assert!(!GOT_SCORE_PROMPT.is_empty());
@@ -776,6 +779,7 @@ mod tests {
 
     // Test 2: Verify backtracking prompt is non-empty
     #[test]
+    #[allow(clippy::const_is_empty)] // Intentional test that constants are populated
     fn test_backtracking_prompt_not_empty() {
         assert!(!BACKTRACKING_PROMPT.is_empty());
     }

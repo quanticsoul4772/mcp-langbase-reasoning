@@ -1788,7 +1788,7 @@ mod tests {
         let tree_mode = TreeMode::new(storage, langbase, &config);
 
         let history: Vec<Thought> = (0..10)
-            .map(|i| Thought::new("sess-1", &format!("Thought {}", i), "tree"))
+            .map(|i| Thought::new("sess-1", format!("Thought {}", i), "tree"))
             .collect();
 
         let messages = tree_mode.build_messages("Current", &history, 3);

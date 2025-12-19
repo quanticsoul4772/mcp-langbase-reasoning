@@ -1429,7 +1429,7 @@ mod tests {
 
     #[test]
     fn test_default_completed_function() {
-        assert_eq!(default_completed(), true);
+        assert!(default_completed());
     }
 
     #[test]

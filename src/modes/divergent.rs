@@ -898,7 +898,7 @@ mod tests {
 
         // Create 10 thoughts
         let thoughts: Vec<Thought> = (0..10)
-            .map(|i| Thought::new("session-1", &format!("Thought {}", i), "divergent"))
+            .map(|i| Thought::new("session-1", format!("Thought {}", i), "divergent"))
             .collect();
 
         let messages = mode.build_messages("New", &thoughts, 3, false, false);
@@ -1288,8 +1288,10 @@ mod tests {
         };
         use std::path::PathBuf;
 
-        let mut pipes = PipeConfig::default();
-        pipes.divergent = "custom-divergent-pipe".to_string();
+        let pipes = PipeConfig {
+            divergent: "custom-divergent-pipe".to_string(),
+            ..Default::default()
+        };
 
         let config = Config {
             database: DatabaseConfig {

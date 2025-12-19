@@ -2108,9 +2108,9 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_source_type_clone() {
+    fn test_source_type_copy() {
         let st1 = SourceType::Primary;
-        let st2 = st1.clone();
+        let st2 = st1; // Copy trait - no clone needed
         assert_eq!(st1, st2);
     }
 

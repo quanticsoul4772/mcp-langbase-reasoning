@@ -1727,7 +1727,7 @@ mod tests {
 
         let mut chain = Vec::new();
         for i in 0..5 {
-            chain.push(Thought::new("sess-1", &format!("Thought {}", i), "linear"));
+            chain.push(Thought::new("sess-1", format!("Thought {}", i), "linear"));
         }
 
         let messages = mode.build_messages("Final", &chain, 0);

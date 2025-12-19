@@ -273,10 +273,10 @@ mod tests {
     }
 
     #[test]
-    fn test_reasoning_mode_clone() {
+    fn test_reasoning_mode_is_copy() {
         let mode = ReasoningMode::Divergent;
-        let cloned = mode.clone();
-        assert_eq!(mode, cloned);
+        let copied = mode; // Copy trait - no clone needed
+        assert_eq!(mode, copied);
     }
 
     #[test]

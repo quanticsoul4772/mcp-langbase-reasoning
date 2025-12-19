@@ -1195,7 +1195,7 @@ mod tests {
 
         let resp = BacktrackingResponse::from_completion(json, false).unwrap();
         // Should use fallback because parsing will fail
-        assert!(resp.thought.len() > 0); // Will contain the original JSON
+        assert!(!resp.thought.is_empty()); // Will contain the original JSON
         assert_eq!(resp.confidence, 0.8); // Fallback default
     }
 

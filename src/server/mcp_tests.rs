@@ -1342,9 +1342,9 @@ fn test_jsonrpc_request_with_negative_id() {
 
 #[test]
 fn test_jsonrpc_request_with_float_id() {
-    let json_str = r#"{"jsonrpc":"2.0","id":3.14,"method":"test"}"#;
+    let json_str = r#"{"jsonrpc":"2.0","id":3.5,"method":"test"}"#;
     let request: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
-    assert_eq!(request.id, Some(json!(3.14)));
+    assert_eq!(request.id, Some(json!(3.5)));
 }
 
 // ============================================================================

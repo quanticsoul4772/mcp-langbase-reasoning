@@ -200,7 +200,7 @@ mod tests {
         assert!(code_presets.iter().all(|p| p.category == "code"));
 
         let arch_presets = registry.list(Some("architecture"));
-        assert!(arch_presets.len() >= 1);
+        assert!(!arch_presets.is_empty());
         assert!(arch_presets.iter().all(|p| p.category == "architecture"));
     }
 
@@ -218,7 +218,7 @@ mod tests {
     fn test_registry_list_by_decision_category() {
         let registry = PresetRegistry::new();
         let decision_presets = registry.list(Some("decision"));
-        assert!(decision_presets.len() >= 1);
+        assert!(!decision_presets.is_empty());
         assert!(decision_presets.iter().all(|p| p.category == "decision"));
     }
 
@@ -226,7 +226,7 @@ mod tests {
     fn test_registry_list_by_research_category() {
         let registry = PresetRegistry::new();
         let research_presets = registry.list(Some("research"));
-        assert!(research_presets.len() >= 1);
+        assert!(!research_presets.is_empty());
         assert!(research_presets.iter().all(|p| p.category == "research"));
     }
 

@@ -2173,9 +2173,9 @@ mod tests {
     }
 
     #[test]
-    fn test_quadrant_clone() {
+    fn test_quadrant_copy() {
         let q1 = Quadrant::KeyPlayer;
-        let q2 = q1.clone();
+        let q2 = q1; // Copy trait - no clone needed
         assert_eq!(q1, q2);
     }
 
@@ -2220,9 +2220,9 @@ mod tests {
     }
 
     #[test]
-    fn test_decision_method_clone() {
+    fn test_decision_method_is_copy() {
         let m1 = DecisionMethod::Topsis;
-        let m2 = m1.clone();
+        let m2 = m1; // Copy trait - no clone needed
         assert_eq!(m1, m2);
     }
 

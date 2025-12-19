@@ -895,7 +895,7 @@ mod tests {
         let mode = LinearMode::new(storage, langbase, &config);
 
         let history: Vec<Thought> = (0..50)
-            .map(|i| Thought::new("sess-1", &format!("Thought {}", i), "linear"))
+            .map(|i| Thought::new("sess-1", format!("Thought {}", i), "linear"))
             .collect();
 
         let messages = mode.build_messages("Final query", &history);

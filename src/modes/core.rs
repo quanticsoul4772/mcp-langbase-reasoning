@@ -105,9 +105,7 @@ mod tests {
         let langbase = create_test_langbase();
 
         let _core = ModeCore::new(storage, langbase);
-
-        // If we got here, construction succeeded
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -119,7 +117,7 @@ mod tests {
 
         // Verify we can access the storage reference
         let _storage_ref = core.storage();
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -131,7 +129,7 @@ mod tests {
 
         // Verify we can access the langbase reference
         let _langbase_ref = core.langbase();
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -188,8 +186,7 @@ mod tests {
         // Verify both can access storage
         let _storage1 = core1.storage();
         let _storage2 = core2.storage();
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -203,8 +200,7 @@ mod tests {
         // Verify both can access langbase
         let _langbase1 = core1.langbase();
         let _langbase2 = core2.langbase();
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -227,8 +223,7 @@ mod tests {
         let _l2 = core2.langbase();
         let _l3 = core3.langbase();
         let _l4 = core4.langbase();
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -245,8 +240,7 @@ mod tests {
             let _s = core.storage();
             let _l = core.langbase();
         }
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[test]
@@ -310,8 +304,7 @@ mod tests {
         // Both should work independently
         let _s1 = core1.storage();
         let _s2 = core2.storage();
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -338,8 +331,7 @@ mod tests {
         // Both should work
         let _l1 = core1.langbase();
         let _l2 = core2.langbase();
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[tokio::test]
@@ -390,8 +382,7 @@ mod tests {
         let _s2 = storage2;
         let _l1 = langbase1;
         let _l2 = langbase2;
-
-        assert!(true);
+        // Test passes if we reach here without panic
     }
 
     #[test]

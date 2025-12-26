@@ -1,185 +1,115 @@
 # Claude Code Instructions for mcp-langbase-reasoning
 
-## Project Context
+## Project Overview
 
-MCP server delegating structured reasoning to Langbase Pipes. Rust implementation with SQLite persistence. Based on unified-thinking architecture at `../unified-thinking`.
+MCP server providing structured reasoning capabilities via Langbase Pipes. Rust implementation with SQLite persistence.
 
-## Key Files
+**Status:** Production-ready with 1913+ tests, 0 clippy warnings
 
-- `IMPLEMENTATION_PLAN.md` - Full technical plan with phases, schemas, tool mappings
-- `ENVIRONMENT_SETUP.md` - Development environment setup instructions
-- `docs/PRD.md` - Original product requirements document
-
-## Architecture Summary
+## Architecture
 
 ```
-MCP Client → MCP Server (Rust) → Langbase Pipes (HTTP)
-                ↓
-            SQLite (State)
+MCP Client → MCP Server (Rust) → Langbase Pipes (HTTPS)
+     ↓              ↓
+  JSON-RPC      SQLite DB
 ```
 
-Components:
-- `src/server/` - MCP protocol handling, JSON-RPC
-- `src/langbase/` - HTTP client, pipe abstractions
-- `src/modes/` - Reasoning mode implementations
-- `src/storage/` - SQLite persistence layer
-- `src/orchestration/` - Context assembly, workflow coordination
-- `src/config/` - Environment and settings
-- `src/error/` - Error types and handling
+**Core Components:**
+- `src/server/` - MCP JSON-RPC protocol handling
+- `src/modes/` - 9 reasoning mode implementations
+- `src/presets/` - Workflow preset system (5 built-in)
+- `src/storage/` - SQLite persistence with compile-time verified queries
+- `src/langbase/` - HTTP client with retry logic
+- `src/self_improvement/` - Autonomous 4-phase improvement loop
 
-## Development Phases
+## Key Documentation
 
-1. **v0.1** - MCP bootstrap + linear mode + SQLite
-2. **v0.2** - Tree + divergent + reflection + checkpoints
-3. **v0.3** - Backtracking + auto + GoT
-4. **v1.0** - Polish, tests, documentation
-
-## Reference Implementation
-
-See `../unified-thinking/internal/modes/` for Go implementations of:
-- linear.go
-- tree.go
-- divergent.go
-- reflection.go
-- backtracking.go
-- auto.go
-- graph.go (GoT)
-
-Translate patterns to Rust, not direct ports.
+| Document | Location | Purpose |
+|----------|----------|---------|
+| API Reference | `docs/API_REFERENCE.md` | Complete tool schemas and responses |
+| Architecture | `docs/ARCHITECTURE.md` | System design and module structure |
+| Langbase API | `docs/LANGBASE_API.md` | Pipe request/response formats |
 
 ## Coding Standards
 
-- Use `thiserror` for error types
-- Use `anyhow` for error propagation in application code
-- All async operations via `tokio`
-- Structured logging with `tracing`
-- SQL via `sqlx` with compile-time verification
-- Tests in `tests/` directory, use `mockall` for mocking
+- **Errors:** `thiserror` for types, `anyhow` for propagation
+- **Async:** All I/O via `tokio`
+- **Logging:** Structured with `tracing`
+- **SQL:** `sqlx` with compile-time verification
+- **Tests:** In `tests/` directory, `mockall` for mocking
+
+## Common Commands
+
+```bash
+cargo build --release    # Build optimized
+cargo test               # Run all tests
+cargo clippy -- -D warnings  # Lint
+cargo run                # Start server (needs LANGBASE_API_KEY)
+```
 
 ## Environment Variables
 
-Required:
+**Required:**
 - `LANGBASE_API_KEY` - Langbase Pipe API key
-- `LANGBASE_BASE_URL` - API endpoint (default: https://api.langbase.com)
 
-Optional:
-- `DATABASE_PATH` - SQLite path (default: ./data/reasoning.db)
-- `LOG_LEVEL` - Logging level (default: info)
+**Optional:**
+- `DATABASE_PATH` - SQLite path (default: `./data/reasoning.db`)
+- `LOG_LEVEL` - Logging level (default: `info`)
+- `REQUEST_TIMEOUT_MS` - HTTP timeout (default: `30000`)
+- `MAX_RETRIES` - API retry attempts (default: `3`)
 
-## Common Tasks
+## Self-Improvement System
 
-### Build
-```bash
-cargo build
-cargo build --release
+The server includes an autonomous self-improvement loop:
+
+```
+Monitor → Analyzer → Executor → Learner → (loop)
 ```
 
-### Test
+**CLI Commands:**
 ```bash
-cargo test
-cargo test --test integration
+cargo run -- self-improve status      # Current status
+cargo run -- self-improve history     # Action history
+cargo run -- self-improve enable      # Enable system
+cargo run -- self-improve disable     # Disable system
+cargo run -- self-improve pause --duration 1h  # Pause
 ```
 
-### Run
-```bash
-cargo run
-```
+## Implementation Patterns
 
-### Lint
-```bash
-cargo fmt --check
-cargo clippy -- -D warnings
-```
-
-## MCP Tool Implementation Pattern
-
+### MCP Tool Handler
 ```rust
-// Each tool follows this pattern:
-pub async fn handle_reasoning_linear(
-    params: LinearParams,
-    state: &AppState,
-) -> Result<ToolResponse, ToolError> {
-    // 1. Validate input
+pub async fn handle_tool(params: Params, state: &AppState) -> Result<Response, ToolError> {
     let validated = validate_params(&params)?;
-    
-    // 2. Load/create session from SQLite
     let session = state.storage.get_or_create_session(&validated.session_id).await?;
-    
-    // 3. Assemble context for Langbase
-    let context = assemble_context(&session, &validated)?;
-    
-    // 4. Call Langbase Pipe
-    let response = state.langbase.call_pipe("linear-reasoning-v1", context).await?;
-    
-    // 5. Parse and validate response
-    let thought = parse_thought_response(response)?;
-    
-    // 6. Persist to SQLite
-    state.storage.save_thought(&session.id, &thought).await?;
-    
-    // 7. Return MCP response
-    Ok(ToolResponse::success(thought))
+    let response = state.langbase.call_pipe("pipe-name", context).await?;
+    state.storage.save_result(&session.id, &response).await?;
+    Ok(Response::success(response))
 }
 ```
 
-## Langbase Pipe Request Format
-
-```rust
-#[derive(Serialize)]
-struct PipeRequest {
-    messages: Vec<Message>,
-    variables: Option<HashMap<String, String>>,
-    #[serde(rename = "threadId")]
-    thread_id: Option<String>,
-}
-
-// POST to: https://api.langbase.com/v1/pipes/run
-// Header: Authorization: Bearer {api_key}
-```
-
-## SQLite Patterns
-
-Use sqlx macros for compile-time verification:
-
-```rust
-let thought = sqlx::query_as!(
-    Thought,
-    r#"
-    SELECT id, session_id, content, confidence, mode, parent_id, created_at, metadata
-    FROM thoughts
-    WHERE session_id = ?
-    ORDER BY created_at DESC
-    LIMIT 1
-    "#,
-    session_id
-)
-.fetch_optional(&state.db)
-.await?;
-```
-
-## Error Handling
-
-Use structured errors for MCP responses:
-
+### Error Types
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
     #[error("Langbase unavailable: {message}")]
     LangbaseUnavailable { message: String, retries: u32 },
-    
     #[error("Invalid input: {field} - {reason}")]
     ValidationError { field: String, reason: String },
-    
     #[error("Session not found: {session_id}")]
     SessionNotFound { session_id: String },
-    
-    #[error("Storage error: {0}")]
-    StorageError(#[from] sqlx::Error),
 }
 ```
 
-## Questions for Development
+## Langbase Pipes (8 consolidated)
 
-1. MCP Rust SDK availability? Use jsonrpc-core for now.
-2. Streaming support from Langbase? Implement after v0.1.
-3. Retry strategy specifics? Exponential backoff, max 3 retries.
+| Pipe | Purpose |
+|------|---------|
+| `linear-reasoning-v1` | Sequential reasoning |
+| `tree-reasoning-v1` | Branching exploration |
+| `divergent-reasoning-v1` | Creative multi-perspective |
+| `reflection-v1` | Meta-cognitive analysis |
+| `mode-router-v1` | Automatic mode selection |
+| `got-reasoning-v1` | Graph-of-Thoughts operations |
+| `detection-v1` | Bias and fallacy detection |
+| `decision-framework-v1` | Decision, perspective, evidence, Bayesian |

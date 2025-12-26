@@ -69,6 +69,7 @@ pub mod allowlist;
 pub mod analyzer;
 pub mod baseline;
 pub mod circuit_breaker;
+pub mod cli;
 pub mod config;
 pub mod executor;
 pub mod learner;
@@ -80,6 +81,7 @@ pub mod types;
 
 // Re-export main types for convenience
 pub use allowlist::{ActionAllowlist, AllowlistError, ParamBounds, ResourceBounds};
+pub use cli::{execute_command, CliResult, SelfImproveCommands};
 pub use analyzer::{AnalysisBlocked, AnalysisResult, Analyzer, AnalyzerStats};
 pub use baseline::{BaselineCalculator, BaselineCollection, MetricBaseline, TriggerLevel};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerSummary, CircuitState};

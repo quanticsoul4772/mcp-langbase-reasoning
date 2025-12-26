@@ -7,6 +7,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use mcp_langbase_reasoning::{
     config::Config,
     langbase::LangbaseClient,
+    self_improvement::{execute_command, SelfImproveCommands},
     server::{AppState, McpServer},
     storage::{MetricsFilter, SqliteStorage, Storage},
 };
@@ -26,6 +27,11 @@ enum Commands {
     Metrics {
         #[command(subcommand)]
         action: MetricsAction,
+    },
+    /// Self-improvement system commands
+    SelfImprove {
+        #[command(subcommand)]
+        action: SelfImproveCommands,
     },
 }
 
@@ -72,6 +78,10 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Metrics { action }) => {
             // Metrics commands don't need full server initialization
             run_metrics_command(&config, action).await
+        }
+        Some(Commands::SelfImprove { action }) => {
+            // Self-improvement commands
+            run_self_improve_command(&config, action).await
         }
         None => {
             // Default: run the MCP server
@@ -216,6 +226,32 @@ async fn run_metrics_command(config: &Config, action: MetricsAction) -> anyhow::
             }
             println!();
         }
+    }
+
+    Ok(())
+}
+
+/// Run self-improvement CLI commands
+async fn run_self_improve_command(
+    config: &Config,
+    action: SelfImproveCommands,
+) -> anyhow::Result<()> {
+    // Initialize storage only (no langbase client needed for CLI commands)
+    let storage = match SqliteStorage::new(&config.database).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to initialize database: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let result = execute_command(action, &storage).await;
+
+    // Print the result message
+    print!("{}", result.message);
+
+    if result.exit_code != 0 {
+        std::process::exit(result.exit_code);
     }
 
     Ok(())

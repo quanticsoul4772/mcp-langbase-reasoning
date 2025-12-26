@@ -24,9 +24,9 @@ use sqlx::Row;
 use tracing::{debug, warn};
 
 use super::{
-    ActionId, ActionOutcome, CircuitBreaker, CircuitBreakerConfig, CircuitState, DiagnosisId,
-    DiagnosisStatus, MetricBaseline, MetricsSnapshot, NormalizedReward, SelfDiagnosis, Severity,
-    SuggestedAction, TriggerMetric,
+    ActionId, ActionOutcome, CircuitBreaker, CircuitBreakerConfig, CircuitBreakerSummary,
+    CircuitState, DiagnosisId, DiagnosisStatus, MetricBaseline, MetricsSnapshot, NormalizedReward,
+    SelfDiagnosis, Severity, SuggestedAction, TriggerMetric,
 };
 use crate::error::{StorageError, StorageResult};
 
@@ -680,6 +680,216 @@ impl SelfImprovementStorage {
 
         Ok(records)
     }
+
+    // ========================================================================
+    // CLI Support Operations
+    // ========================================================================
+
+    /// Health check - verify database connectivity.
+    pub async fn health_check(&self) -> StorageResult<()> {
+        sqlx::query("SELECT 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| StorageError::Connection {
+                message: format!("Health check failed: {}", e),
+            })?;
+        Ok(())
+    }
+
+    /// Get all metric baselines.
+    pub async fn get_all_baselines(&self) -> StorageResult<Vec<MetricBaseline>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id, metric_name, rolling_avg_value, rolling_avg_sample_count,
+                rolling_avg_window_start, ema_value, ema_alpha,
+                warning_threshold, critical_threshold, last_updated, metadata
+            FROM metric_baselines
+            ORDER BY metric_name
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to get all baselines: {}", e),
+        })?;
+
+        let mut baselines = Vec::new();
+        for row in rows {
+            let baseline = MetricBaseline {
+                metric_name: row.get("metric_name"),
+                rolling_avg: row.get("rolling_avg_value"),
+                rolling_sample_count: row.get::<i64, _>("rolling_avg_sample_count") as usize,
+                rolling_window_start: None,
+                ema_value: row.get("ema_value"),
+                ema_alpha: row.get::<Option<f64>, _>("ema_alpha").unwrap_or(0.2),
+                warning_threshold: row.get("warning_threshold"),
+                critical_threshold: row.get("critical_threshold"),
+                last_updated: row
+                    .get::<Option<String>, _>("last_updated")
+                    .map(|s| parse_timestamp(&s))
+                    .unwrap_or_else(Utc::now),
+                is_valid: row.get::<i64, _>("rolling_avg_sample_count") >= 10,
+            };
+            baselines.push(baseline);
+        }
+
+        Ok(baselines)
+    }
+
+    /// Get actions since a given timestamp.
+    pub async fn get_actions_since(
+        &self,
+        since: DateTime<Utc>,
+    ) -> StorageResult<Vec<ActionRecordSummary>> {
+        let since_str = since.to_rfc3339();
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id, diagnosis_id, action_type, action_params,
+                pre_state, post_state, executed_at, outcome,
+                rollback_reason, normalized_reward
+            FROM self_improvement_actions
+            WHERE executed_at >= ?
+            ORDER BY executed_at DESC
+            "#,
+        )
+        .bind(&since_str)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to get actions since: {}", e),
+        })?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            let outcome_str: String = row.get("outcome");
+            let outcome = outcome_str.parse::<ActionOutcome>().ok();
+
+            // Extract resource and values from action_params JSON
+            let action_params: String = row.get("action_params");
+            let params: serde_json::Value =
+                serde_json::from_str(&action_params).unwrap_or(serde_json::Value::Null);
+
+            let resource = params
+                .get("resource")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let old_value = params
+                .get("old_value")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .or_else(|| {
+                    params
+                        .get("current_value")
+                        .and_then(|v| serde_json::to_string(v).ok())
+                });
+            let new_value = params
+                .get("new_value")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .or_else(|| {
+                    params
+                        .get("proposed_value")
+                        .and_then(|v| serde_json::to_string(v).ok())
+                });
+            let scope = params
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            records.push(ActionRecordSummary {
+                id: ActionId(row.get("id")),
+                diagnosis_id: DiagnosisId(row.get("diagnosis_id")),
+                action_type: row.get("action_type"),
+                resource,
+                scope,
+                old_value,
+                new_value,
+                executed_at: parse_timestamp(row.get("executed_at")),
+                outcome,
+                error_message: row.get("rollback_reason"),
+                reward: row.get("normalized_reward"),
+            });
+        }
+
+        Ok(records)
+    }
+
+    /// Load circuit breaker state summary for CLI display.
+    pub async fn load_circuit_breaker_state(&self) -> StorageResult<Option<CircuitBreakerSummary>> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                state, consecutive_failures, consecutive_successes,
+                total_failures, total_successes, last_state_change
+            FROM circuit_breaker_state
+            WHERE id = 'main'
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to load circuit breaker state: {}", e),
+        })?;
+
+        match row {
+            Some(row) => {
+                let state_str: String = row.get("state");
+                let state = match state_str.as_str() {
+                    "open" => CircuitState::Open,
+                    "half_open" => CircuitState::HalfOpen,
+                    _ => CircuitState::Closed,
+                };
+
+                let last_state_change_str: String = row.get("last_state_change");
+                let last_state_change = parse_timestamp(&last_state_change_str);
+
+                Ok(Some(CircuitBreakerSummary {
+                    state,
+                    consecutive_failures: row.get::<i64, _>("consecutive_failures") as u32,
+                    consecutive_successes: row.get::<i64, _>("consecutive_successes") as u32,
+                    total_failures: row.get::<i64, _>("total_failures") as u32,
+                    total_successes: row.get::<i64, _>("total_successes") as u32,
+                    time_until_recovery: None, // Would need recovery_timeout from config
+                    last_state_change,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+// ============================================================================
+// CLI Support Types
+// ============================================================================
+
+/// Simplified action record for CLI display.
+#[derive(Debug, Clone)]
+pub struct ActionRecordSummary {
+    /// Unique action identifier.
+    pub id: ActionId,
+    /// Diagnosis that triggered this action.
+    pub diagnosis_id: DiagnosisId,
+    /// Type of action.
+    pub action_type: String,
+    /// Resource being modified.
+    pub resource: Option<String>,
+    /// Scope of the change.
+    pub scope: Option<String>,
+    /// Old value (before change).
+    pub old_value: Option<String>,
+    /// New value (after change).
+    pub new_value: Option<String>,
+    /// When action was executed.
+    pub executed_at: DateTime<Utc>,
+    /// Action outcome.
+    pub outcome: Option<ActionOutcome>,
+    /// Error message if failed.
+    pub error_message: Option<String>,
+    /// Normalized reward.
+    pub reward: Option<f64>,
 }
 
 // ============================================================================

@@ -2,9 +2,23 @@
 name = "mcp-langbase-reasoning"
 version = "0.1.0"
 edition = "2021"
-authors = ["MCP Langbase Reasoning Team"]
-description = "MCP server delegating reasoning to Langbase Pipes"
+rust-version = "1.70"
+authors = ["MCP Langbase Reasoning Contributors"]
+description = "MCP server providing structured reasoning via Langbase Pipes - linear, tree, divergent, Graph-of-Thoughts, and decision framework modes"
 license = "MIT"
+repository = "https://github.com/quanticsoul4772/mcp-langbase-reasoning"
+documentation = "https://docs.rs/mcp-langbase-reasoning"
+readme = "README.md"
+keywords = ["mcp", "reasoning", "langbase", "ai", "llm"]
+categories = ["development-tools", "api-bindings"]
+exclude = [
+    "claudedocs/*",
+    "docs/archive/*",
+    ".env*",
+    "data/*",
+    "*.db",
+    "*.db-journal",
+]
 
 [dependencies]
 # Async runtime

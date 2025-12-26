@@ -1,18 +1,18 @@
 //! Reasoning mode implementations.
 //!
 //! This module provides different reasoning modes:
-//! - [`LinearMode`]: Sequential step-by-step reasoning
-//! - [`TreeMode`]: Branching exploration with multiple paths
-//! - [`DivergentMode`]: Creative exploration with multiple perspectives
-//! - [`ReflectionMode`]: Meta-cognitive analysis
-//! - [`BacktrackingMode`]: Checkpoint-based state restoration
-//! - [`AutoMode`]: Intelligent mode selection
-//! - [`GotMode`]: Graph-of-Thoughts reasoning
-//! - [`DecisionMode`]: Multi-criteria decision analysis and stakeholder perspectives
-//! - [`EvidenceMode`]: Evidence assessment and Bayesian probability updates
-//! - [`DetectionMode`]: Bias and fallacy detection in reasoning
+//! - `LinearMode`: Sequential step-by-step reasoning
+//! - `TreeMode`: Branching exploration with multiple paths
+//! - `DivergentMode`: Creative exploration with multiple perspectives
+//! - `ReflectionMode`: Meta-cognitive analysis
+//! - `BacktrackingMode`: Checkpoint-based state restoration
+//! - `AutoMode`: Intelligent mode selection
+//! - `GotMode`: Graph-of-Thoughts reasoning
+//! - `DecisionMode`: Multi-criteria decision analysis and stakeholder perspectives
+//! - `EvidenceMode`: Evidence assessment and Bayesian probability updates
+//! - `DetectionMode`: Bias and fallacy detection in reasoning
 //!
-//! All modes share common infrastructure via [`ModeCore`] composition.
+//! All modes share common infrastructure via `ModeCore` composition.
 
 mod auto;
 mod backtracking;

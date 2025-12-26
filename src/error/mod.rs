@@ -1,12 +1,12 @@
 //! Error types and result aliases for the application.
 //!
 //! This module provides a hierarchy of error types for different subsystems:
-//! - [`AppError`]: Top-level application errors
-//! - [`StorageError`]: Database and persistence errors
-//! - [`LangbaseError`]: Langbase API communication errors
-//! - [`McpError`]: MCP protocol errors
-//! - [`ToolError`]: Tool-specific execution errors
-//! - [`ModeError`]: Mode-specific reasoning execution errors
+//! - `AppError`: Top-level application errors
+//! - `StorageError`: Database and persistence errors
+//! - `LangbaseError`: Langbase API communication errors
+//! - `McpError`: MCP protocol errors
+//! - `ToolError`: Tool-specific execution errors
+//! - `ModeError`: Mode-specific reasoning execution errors
 
 use thiserror::Error;
 

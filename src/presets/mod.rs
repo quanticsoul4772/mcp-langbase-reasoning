@@ -1,9 +1,9 @@
 //! Workflow preset system for composing reasoning modes into higher-level workflows.
 //!
 //! This module provides:
-//! - [`WorkflowPreset`]: Definition of multi-step reasoning workflows
-//! - [`PresetRegistry`]: Registration and lookup of presets
-//! - [`execute_preset`]: Workflow execution engine
+//! - `WorkflowPreset`: Definition of multi-step reasoning workflows
+//! - `PresetRegistry`: Registration and lookup of presets
+//! - `execute_preset`: Workflow execution engine
 //! - Built-in presets for common tasks
 
 mod builtins;

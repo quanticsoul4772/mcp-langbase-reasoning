@@ -558,11 +558,10 @@ impl SuggestedAction {
 
     /// Check if the action is reversible.
     pub fn is_reversible(&self) -> bool {
-        match self {
-            SuggestedAction::ClearCache { .. } => false,
-            SuggestedAction::RestartService { .. } => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            SuggestedAction::ClearCache { .. } | SuggestedAction::RestartService { .. }
+        )
     }
 
     /// Create a NoOp action for when diagnosis fails.
@@ -850,6 +849,13 @@ impl HealthReport {
     /// Check if any triggers were detected.
     pub fn has_triggers(&self) -> bool {
         !self.triggers.is_empty()
+    }
+
+    /// Check if action is needed based on triggers.
+    ///
+    /// Returns true if there are any triggers indicating the system is unhealthy.
+    pub fn needs_action(&self) -> bool {
+        !self.is_healthy && self.has_triggers()
     }
 
     /// Get the most severe trigger.

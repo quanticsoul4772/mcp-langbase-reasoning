@@ -74,6 +74,8 @@ pub mod executor;
 pub mod learner;
 pub mod monitor;
 pub mod pipes;
+pub mod storage;
+pub mod system;
 pub mod types;
 
 // Re-export main types for convenience
@@ -92,6 +94,8 @@ pub use pipes::{
     ActionEffectiveness, ActionSelectionResponse, DiagnosisResponse, LearningResponse,
     PipeCallMetrics, PipeError, SelfImprovementPipes, ValidationResponse,
 };
+pub use storage::{ActionEffectivenessRecord, ActionRecord, SelfImprovementStorage};
+pub use system::{CycleResult, InvocationEvent, SelfImprovementError, SelfImprovementSystem, SystemStatus};
 pub use types::{
     ActionId, ActionOutcome, Baselines, ConfigScope, DiagnosisId, DiagnosisStatus, HealthReport,
     MetricsSnapshot, NormalizedReward, ParamValue, ResourceType, RewardBreakdown, RewardWeights,

@@ -6,6 +6,7 @@
 //! - [`LangbaseError`]: Langbase API communication errors
 //! - [`McpError`]: MCP protocol errors
 //! - [`ToolError`]: Tool-specific execution errors
+//! - [`ModeError`]: Mode-specific reasoning execution errors
 
 use thiserror::Error;
 
@@ -227,6 +228,94 @@ pub enum ToolError {
     },
 }
 
+/// Mode-specific execution errors for reasoning operations.
+///
+/// These errors occur during the execution of reasoning modes
+/// and provide structured information for debugging and recovery.
+#[derive(Debug, Error)]
+pub enum ModeError {
+    /// Session state has been corrupted or is inconsistent.
+    #[error("Session state corrupted: {message}")]
+    StateCorrupted {
+        /// Description of the corruption.
+        message: String,
+    },
+
+    /// A required parameter was not provided.
+    #[error("Required parameter missing: {param}")]
+    MissingParameter {
+        /// Name of the missing parameter.
+        param: String,
+    },
+
+    /// Branch state is invalid for the requested operation.
+    #[error("Invalid branch state: {branch_id}")]
+    InvalidBranchState {
+        /// ID of the branch with invalid state.
+        branch_id: String,
+    },
+
+    /// Lock acquisition failed (mutex poisoned or timeout).
+    #[error("Lock acquisition failed: {resource}")]
+    LockPoisoned {
+        /// Name of the resource that couldn't be locked.
+        resource: String,
+    },
+
+    /// Checkpoint not found for backtracking.
+    #[error("Checkpoint not found: {checkpoint_id}")]
+    CheckpointNotFound {
+        /// ID of the missing checkpoint.
+        checkpoint_id: String,
+    },
+
+    /// Graph node not found.
+    #[error("Graph node not found: {node_id}")]
+    NodeNotFound {
+        /// ID of the missing node.
+        node_id: String,
+    },
+
+    /// Invalid confidence value (must be 0.0-1.0).
+    #[error("Invalid confidence value: {value} (must be 0.0-1.0)")]
+    InvalidConfidence {
+        /// The invalid confidence value.
+        value: f64,
+    },
+
+    /// Operation timeout.
+    #[error("Operation timed out after {timeout_ms}ms")]
+    Timeout {
+        /// Timeout duration in milliseconds.
+        timeout_ms: u64,
+    },
+
+    /// Parse error when processing mode-specific data.
+    #[error("Parse error in {context}: {message}")]
+    ParseError {
+        /// Context where parsing failed.
+        context: String,
+        /// Description of the parse error.
+        message: String,
+    },
+}
+
+impl From<ModeError> for AppError {
+    fn from(err: ModeError) -> Self {
+        AppError::Internal {
+            message: err.to_string(),
+        }
+    }
+}
+
+impl From<ModeError> for McpError {
+    fn from(err: ModeError) -> Self {
+        McpError::ExecutionFailed {
+            message: err.to_string(),
+        }
+    }
+}
+
 impl From<ToolError> for AppError {
     fn from(err: ToolError) -> Self {
         AppError::Internal {
@@ -254,6 +343,9 @@ pub type LangbaseResult<T> = Result<T, LangbaseError>;
 
 /// Result type alias for MCP operations
 pub type McpResult<T> = Result<T, McpError>;
+
+/// Result type alias for mode operations
+pub type ModeResult<T> = Result<T, ModeError>;
 
 #[cfg(test)]
 mod tests {

@@ -209,11 +209,11 @@ impl Analyzer {
             }
         }
 
-        // Get the most severe trigger
+        // Get the most severe trigger (defensive: should always exist after has_triggers() check)
         let trigger = health_report
             .most_severe_trigger()
             .cloned()
-            .expect("has_triggers() was true");
+            .ok_or(AnalysisBlocked::NoTriggers)?;
 
         // Check severity threshold
         let severity = Severity::from_deviation(trigger.deviation_pct().abs());

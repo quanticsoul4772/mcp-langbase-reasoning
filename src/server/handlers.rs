@@ -12,6 +12,7 @@ use crate::modes::{
     LinearParams, PerspectiveParams, ProbabilisticParams, ReflectionParams, TreeParams,
 };
 use crate::presets::execute_preset;
+use crate::self_improvement::InvocationEvent;
 use crate::storage::BranchState;
 
 // ============================================================================
@@ -81,7 +82,10 @@ pub async fn handle_tool_call(
 ) -> McpResult<Value> {
     info!(tool = %tool_name, "Routing tool call");
 
-    match tool_name {
+    // Start timing for self-improvement tracking
+    let start = std::time::Instant::now();
+
+    let result = match tool_name {
         // Phase 1-2 tools
         "reasoning_linear" => handle_linear(state, arguments).await,
         "reasoning_tree" => handle_tree(state, arguments).await,
@@ -126,7 +130,30 @@ pub async fn handle_tool_call(
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
-    }
+    };
+
+    // Record invocation for self-improvement system (if enabled)
+    let latency_ms = start.elapsed().as_millis() as i64;
+    let success = result.is_ok();
+
+    // Extract quality score from response if available
+    let quality_score = result
+        .as_ref()
+        .ok()
+        .and_then(|v| v.get("confidence"))
+        .and_then(|c| c.as_f64());
+
+    state
+        .record_invocation(InvocationEvent {
+            tool_name: tool_name.to_string(),
+            latency_ms,
+            success,
+            quality_score,
+            timestamp: chrono::Utc::now(),
+        })
+        .await;
+
+    result
 }
 
 /// Handle reasoning.linear tool call

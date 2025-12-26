@@ -215,10 +215,10 @@ impl Monitor {
     /// Create a new monitor.
     pub fn new(config: SelfImprovementConfig) -> Self {
         let calculator = BaselineCalculator::new(config.baseline.clone());
-        let mut state = MonitorState::default();
-
-        // Initialize baselines
-        state.baselines = BaselineCollection::initialize(&config.baseline);
+        let state = MonitorState {
+            baselines: BaselineCollection::initialize(&config.baseline),
+            ..Default::default()
+        };
 
         Self {
             config,
@@ -365,6 +365,41 @@ impl Monitor {
         let mut state = self.state.write().await;
         *state = MonitorState::default();
         state.baselines = BaselineCollection::initialize(&self.config.baseline);
+    }
+
+    /// Get current metrics as a snapshot.
+    ///
+    /// Returns the current aggregated metrics without resetting.
+    pub async fn get_current_metrics(&self) -> MetricsSnapshot {
+        let state = self.state.read().await;
+        state.current_aggregation.to_snapshot()
+    }
+
+    /// Get current baselines as a Baselines struct.
+    ///
+    /// Used for reward calculation in the Learner phase.
+    pub async fn get_baselines(&self) -> super::types::Baselines {
+        let state = self.state.read().await;
+        super::types::Baselines {
+            error_rate: state
+                .baselines
+                .error_rate
+                .as_ref()
+                .map(|b| b.rolling_avg)
+                .unwrap_or(0.0),
+            latency_ms: state
+                .baselines
+                .latency
+                .as_ref()
+                .map(|b| b.rolling_avg as i64)
+                .unwrap_or(0),
+            quality_score: state
+                .baselines
+                .quality_score
+                .as_ref()
+                .map(|b| b.rolling_avg)
+                .unwrap_or(0.8),
+        }
     }
 
     // ========================================================================

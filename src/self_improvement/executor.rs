@@ -454,7 +454,7 @@ impl Executor {
             &execution
                 .action
                 .to_trigger_metric()
-                .unwrap_or_else(|| super::types::TriggerMetric::ErrorRate {
+                .unwrap_or(super::types::TriggerMetric::ErrorRate {
                     observed: 0.0,
                     baseline: 0.0,
                     threshold: 0.0,
@@ -591,6 +591,38 @@ impl Executor {
     /// Get current config state.
     pub async fn config_state(&self) -> ConfigState {
         self.state.read().await.config_state.clone()
+    }
+
+    /// Rollback a specific action by its ID.
+    ///
+    /// Searches the history for the action and attempts to restore
+    /// the pre-action state.
+    pub async fn rollback_by_id(&self, action_id: &str) -> Result<(), String> {
+        let mut state = self.state.write().await;
+
+        // Find the action in history
+        let action_idx = state
+            .history
+            .iter()
+            .position(|a| a.action_id.0 == action_id);
+
+        match action_idx {
+            Some(idx) => {
+                let action = &state.history[idx];
+
+                // Restore the pre-action state
+                state.config_state = action.pre_state.clone();
+                state.total_rollbacks += 1;
+
+                info!(
+                    action_id = action_id,
+                    "Action rolled back by ID"
+                );
+
+                Ok(())
+            }
+            None => Err(format!("Action not found: {}", action_id)),
+        }
     }
 
     // ========================================================================

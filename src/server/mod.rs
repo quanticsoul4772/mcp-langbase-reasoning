@@ -4,6 +4,7 @@
 //! - MCP server implementation over stdio
 //! - Tool call handlers and routing
 //! - Shared application state management
+//! - Self-improvement system integration
 
 mod handlers;
 mod mcp;
@@ -20,13 +21,13 @@ use crate::modes::{
     LinearMode, ReflectionMode, TreeMode,
 };
 use crate::presets::PresetRegistry;
+use crate::self_improvement::{SelfImprovementConfig, SelfImprovementSystem};
 use crate::storage::SqliteStorage;
 
 /// Application state shared across handlers.
 ///
 /// Contains all mode handlers and shared resources needed for
 /// processing reasoning requests.
-#[derive(Clone)]
 pub struct AppState {
     /// Application configuration.
     pub config: Config,
@@ -56,6 +57,11 @@ pub struct AppState {
     pub detection_mode: DetectionMode,
     /// Workflow preset registry.
     pub preset_registry: Arc<PresetRegistry>,
+    /// Self-improvement system (optional, enabled via config).
+    ///
+    /// When enabled, monitors system health and can take autonomous
+    /// actions to improve performance, error rates, and quality.
+    pub self_improvement: Option<Arc<SelfImprovementSystem>>,
 }
 
 impl AppState {
@@ -81,6 +87,20 @@ impl AppState {
         let detection_mode = DetectionMode::new(storage.clone(), langbase.clone(), &config);
         let preset_registry = Arc::new(PresetRegistry::new());
 
+        // Initialize self-improvement system (enabled by default)
+        let self_improvement_config = SelfImprovementConfig::from_env();
+        let self_improvement = if self_improvement_config.enabled {
+            tracing::info!("Self-improvement system enabled (autonomous optimization active)");
+            Some(Arc::new(SelfImprovementSystem::new(
+                self_improvement_config,
+                storage.clone(),
+                langbase.clone(),
+            )))
+        } else {
+            tracing::warn!("Self-improvement system disabled via SELF_IMPROVEMENT_ENABLED=false");
+            None
+        };
+
         Self {
             config,
             storage,
@@ -96,6 +116,45 @@ impl AppState {
             evidence_mode,
             detection_mode,
             preset_registry,
+            self_improvement,
+        }
+    }
+
+    /// Record an invocation event for self-improvement monitoring.
+    ///
+    /// This should be called after each tool invocation to feed metrics
+    /// to the self-improvement system.
+    pub async fn record_invocation(&self, event: crate::self_improvement::InvocationEvent) {
+        if let Some(ref system) = self.self_improvement {
+            system.on_invocation(event).await;
+        }
+    }
+
+    /// Check if self-improvement system is enabled.
+    pub fn self_improvement_enabled(&self) -> bool {
+        self.self_improvement.is_some()
+    }
+}
+
+// Manual Clone implementation since SelfImprovementSystem is behind Arc
+impl Clone for AppState {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            storage: self.storage.clone(),
+            langbase: self.langbase.clone(),
+            linear_mode: self.linear_mode.clone(),
+            tree_mode: self.tree_mode.clone(),
+            divergent_mode: self.divergent_mode.clone(),
+            reflection_mode: self.reflection_mode.clone(),
+            backtracking_mode: self.backtracking_mode.clone(),
+            auto_mode: self.auto_mode.clone(),
+            got_mode: self.got_mode.clone(),
+            decision_mode: self.decision_mode.clone(),
+            evidence_mode: self.evidence_mode.clone(),
+            detection_mode: self.detection_mode.clone(),
+            preset_registry: Arc::clone(&self.preset_registry),
+            self_improvement: self.self_improvement.as_ref().map(Arc::clone),
         }
     }
 }

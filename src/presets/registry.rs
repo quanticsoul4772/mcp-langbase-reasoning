@@ -29,7 +29,7 @@ impl PresetRegistry {
     /// Register a preset.
     ///
     /// # Errors
-    /// Returns error if a preset with the same ID already exists.
+    /// Returns error if a preset with the same ID already exists or if the lock is poisoned.
     pub fn register(&self, preset: WorkflowPreset) -> Result<(), String> {
         if preset.id.is_empty() {
             return Err("Preset ID is required".to_string());
@@ -41,7 +41,10 @@ impl PresetRegistry {
             return Err("Preset must have at least one step".to_string());
         }
 
-        let mut presets = self.presets.write().unwrap();
+        let mut presets = self.presets.write().map_err(|e| {
+            error!(error = %e, "Preset registry lock poisoned during write");
+            "Preset registry lock poisoned".to_string()
+        })?;
         if presets.contains_key(&preset.id) {
             return Err(format!("Preset '{}' already exists", preset.id));
         }
@@ -51,33 +54,64 @@ impl PresetRegistry {
     }
 
     /// Get a preset by ID.
+    ///
+    /// Returns `None` if the preset doesn't exist or if the lock is poisoned.
     pub fn get(&self, id: &str) -> Option<WorkflowPreset> {
-        self.presets.read().unwrap().get(id).cloned()
+        match self.presets.read() {
+            Ok(presets) => presets.get(id).cloned(),
+            Err(e) => {
+                error!(error = %e, preset_id = id, "Preset registry lock poisoned during read");
+                None
+            }
+        }
     }
 
     /// List all presets, optionally filtered by category.
+    ///
+    /// Returns empty list if the lock is poisoned.
     pub fn list(&self, category: Option<&str>) -> Vec<PresetSummary> {
-        self.presets
-            .read()
-            .unwrap()
-            .values()
-            .filter(|p| category.is_none() || Some(p.category.as_str()) == category)
-            .map(|p| p.to_summary())
-            .collect()
+        match self.presets.read() {
+            Ok(presets) => presets
+                .values()
+                .filter(|p| category.is_none() || Some(p.category.as_str()) == category)
+                .map(|p| p.to_summary())
+                .collect(),
+            Err(e) => {
+                error!(error = %e, "Preset registry lock poisoned during list");
+                Vec::new()
+            }
+        }
     }
 
     /// Get all unique categories.
+    ///
+    /// Returns empty list if the lock is poisoned.
     pub fn categories(&self) -> Vec<String> {
-        let presets = self.presets.read().unwrap();
-        let mut cats: Vec<_> = presets.values().map(|p| p.category.clone()).collect();
-        cats.sort();
-        cats.dedup();
-        cats
+        match self.presets.read() {
+            Ok(presets) => {
+                let mut cats: Vec<_> = presets.values().map(|p| p.category.clone()).collect();
+                cats.sort();
+                cats.dedup();
+                cats
+            }
+            Err(e) => {
+                error!(error = %e, "Preset registry lock poisoned during categories");
+                Vec::new()
+            }
+        }
     }
 
     /// Get the number of registered presets.
+    ///
+    /// Returns 0 if the lock is poisoned.
     pub fn count(&self) -> usize {
-        self.presets.read().unwrap().len()
+        match self.presets.read() {
+            Ok(presets) => presets.len(),
+            Err(e) => {
+                error!(error = %e, "Preset registry lock poisoned during count");
+                0
+            }
+        }
     }
 
     fn register_builtins(&self) {

@@ -126,6 +126,7 @@ struct ActionHistoryEntry {
 // ============================================================================
 
 /// Internal state for the Learner.
+#[derive(Default)]
 struct LearnerState {
     /// History by action signature
     effectiveness_history: HashMap<String, Vec<ActionHistoryEntry>>,
@@ -133,16 +134,6 @@ struct LearnerState {
     total_cycles: u64,
     /// Last learning time
     last_learning_at: Option<DateTime<Utc>>,
-}
-
-impl Default for LearnerState {
-    fn default() -> Self {
-        Self {
-            effectiveness_history: HashMap::new(),
-            total_cycles: 0,
-            last_learning_at: None,
-        }
-    }
 }
 
 // ============================================================================

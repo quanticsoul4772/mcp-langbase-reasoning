@@ -8,9 +8,12 @@ use std::time::Duration;
 use super::types::Severity;
 
 /// Configuration for the self-improvement system.
+///
+/// The system is **enabled by default** for full autonomous operation.
+/// Set `SELF_IMPROVEMENT_ENABLED=false` to disable if needed.
 #[derive(Debug, Clone)]
 pub struct SelfImprovementConfig {
-    /// Enable/disable the self-improvement system
+    /// Enable/disable the self-improvement system (default: true)
     pub enabled: bool,
 
     /// Monitor configuration
@@ -38,7 +41,7 @@ pub struct SelfImprovementConfig {
 impl Default for SelfImprovementConfig {
     fn default() -> Self {
         Self {
-            enabled: false, // Disabled by default for safety
+            enabled: true, // Enabled by default!
             monitor: MonitorConfig::default(),
             analyzer: AnalyzerConfig::default(),
             executor: ExecutorConfig::default(),
@@ -53,9 +56,10 @@ impl Default for SelfImprovementConfig {
 impl SelfImprovementConfig {
     /// Load configuration from environment variables.
     pub fn from_env() -> Self {
+        // Default is enabled=true, only disable if explicitly set to "false"
         let enabled = std::env::var("SELF_IMPROVEMENT_ENABLED")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+            .map(|v| v.to_lowercase() != "false")
+            .unwrap_or(true);
 
         Self {
             enabled,
@@ -458,7 +462,7 @@ mod tests {
     #[test]
     fn test_default_configs() {
         let config = SelfImprovementConfig::default();
-        assert!(!config.enabled);
+        assert!(config.enabled); // Enabled by default!
         assert_eq!(config.monitor.check_interval_secs, 300);
         assert_eq!(config.executor.max_actions_per_hour, 3);
         assert_eq!(config.circuit_breaker.failure_threshold, 3);

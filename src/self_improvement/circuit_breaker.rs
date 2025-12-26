@@ -106,6 +106,7 @@ impl CircuitBreaker {
     }
 
     /// Create a circuit breaker from database state.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_db_state(
         state: CircuitState,
         consecutive_failures: u32,

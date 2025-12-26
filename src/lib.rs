@@ -14,6 +14,7 @@
 //! - **Graph-of-Thoughts (GoT)**: Advanced graph-based reasoning with scoring and pruning
 //! - **Bias & Fallacy Detection**: Cognitive bias and logical fallacy identification
 //! - **Workflow Presets**: Composable multi-step reasoning workflows
+//! - **Self-Improvement**: Autonomous system health monitoring and optimization
 //!
 //! ## Architecture
 //!
@@ -61,6 +62,8 @@ pub mod prompts;
 pub mod server;
 /// SQLite storage layer for persistence.
 pub mod storage;
+/// Self-improvement system for autonomous optimization.
+pub mod self_improvement;
 
 pub use config::Config;
 pub use error::{AppError, AppResult};

@@ -232,3 +232,16 @@ CREATE TABLE pipe_effectiveness (
 
 CREATE INDEX idx_pipe_effectiveness_phase ON pipe_effectiveness(phase);
 CREATE INDEX idx_pipe_effectiveness_quality ON pipe_effectiveness(avg_quality_score DESC);
+
+-- ============================================================================
+-- SYSTEM SETTINGS
+-- Key-value store for system-level settings like enable/disable state.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default self-improvement enabled state
+INSERT OR IGNORE INTO system_settings (key, value) VALUES ('self_improvement_enabled', 'true');

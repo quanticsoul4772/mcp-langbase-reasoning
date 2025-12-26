@@ -6,7 +6,10 @@
 use chrono::{Duration, Utc};
 use clap::Subcommand;
 
-use super::{ActionOutcome, CircuitState, SelfImprovementStorage, Severity, TriggerMetric};
+use super::{
+    ActionId, ActionOutcome, CircuitState, DiagnosisId, DiagnosisStatus, SelfImprovementStorage,
+    Severity, TriggerMetric,
+};
 use crate::storage::SqliteStorage;
 
 /// Self-improvement CLI subcommands.
@@ -41,6 +44,41 @@ pub enum SelfImproveCommands {
 
     /// Show metric baselines
     Baselines,
+
+    /// Enable the self-improvement system
+    Enable,
+
+    /// Disable the self-improvement system
+    Disable,
+
+    /// Pause self-improvement for a duration
+    Pause {
+        /// Duration to pause (e.g., "30m", "2h", "1d")
+        #[arg(long)]
+        duration: String,
+    },
+
+    /// Rollback a specific action
+    Rollback {
+        /// Action ID to rollback
+        action_id: String,
+    },
+
+    /// Approve a pending diagnosis for execution
+    Approve {
+        /// Diagnosis ID to approve
+        diagnosis_id: String,
+    },
+
+    /// Reject a pending diagnosis
+    Reject {
+        /// Diagnosis ID to reject
+        diagnosis_id: String,
+
+        /// Reason for rejection
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 /// Result of CLI command execution.
@@ -83,6 +121,17 @@ pub async fn execute_command(
         SelfImproveCommands::Config => execute_config().await,
         SelfImproveCommands::CircuitBreaker => execute_circuit_breaker(storage).await,
         SelfImproveCommands::Baselines => execute_baselines(storage).await,
+        SelfImproveCommands::Enable => execute_enable(storage).await,
+        SelfImproveCommands::Disable => execute_disable(storage).await,
+        SelfImproveCommands::Pause { duration } => execute_pause(storage, &duration).await,
+        SelfImproveCommands::Rollback { action_id } => execute_rollback(storage, &action_id).await,
+        SelfImproveCommands::Approve { diagnosis_id } => {
+            execute_approve(storage, &diagnosis_id).await
+        }
+        SelfImproveCommands::Reject {
+            diagnosis_id,
+            reason,
+        } => execute_reject(storage, &diagnosis_id, reason).await,
     }
 }
 
@@ -529,7 +578,246 @@ async fn execute_baselines(storage: &SqliteStorage) -> CliResult {
     CliResult::success(output)
 }
 
+/// Execute enable command.
+async fn execute_enable(storage: &SqliteStorage) -> CliResult {
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+
+    match si_storage.set_system_enabled(true).await {
+        Ok(()) => {
+            let mut output = String::new();
+            output.push_str("\n✓ Self-improvement system ENABLED\n\n");
+            output.push_str("The system will now:\n");
+            output.push_str("  - Monitor metrics for anomalies\n");
+            output.push_str("  - Diagnose issues when thresholds are exceeded\n");
+            output.push_str("  - Execute safe, bounded actions to improve performance\n");
+            output.push_str("  - Learn from action outcomes\n\n");
+            output.push_str("Use 'self-improve status' to check current state.\n");
+            CliResult::success(output)
+        }
+        Err(e) => CliResult::error(format!("Failed to enable system: {}", e)),
+    }
+}
+
+/// Execute disable command.
+async fn execute_disable(storage: &SqliteStorage) -> CliResult {
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+
+    match si_storage.set_system_enabled(false).await {
+        Ok(()) => {
+            let mut output = String::new();
+            output.push_str("\n⚠ Self-improvement system DISABLED\n\n");
+            output.push_str("The system will no longer:\n");
+            output.push_str("  - Execute any automatic actions\n");
+            output.push_str("  - Respond to metric anomalies\n\n");
+            output.push_str("Metrics will continue to be collected for monitoring.\n");
+            output.push_str("Use 'self-improve enable' to re-enable the system.\n");
+            CliResult::success(output)
+        }
+        Err(e) => CliResult::error(format!("Failed to disable system: {}", e)),
+    }
+}
+
+/// Execute pause command.
+async fn execute_pause(storage: &SqliteStorage, duration_str: &str) -> CliResult {
+    // Parse duration string (e.g., "30m", "2h", "1d")
+    let duration = match parse_duration_string(duration_str) {
+        Ok(d) => d,
+        Err(e) => return CliResult::error(format!("Invalid duration format: {}", e)),
+    };
+
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+    let ends_at = Utc::now() + duration;
+
+    match si_storage.create_pause(ends_at, "CLI pause command").await {
+        Ok(()) => {
+            let mut output = String::new();
+            output.push_str(&format!(
+                "\n⏸ Self-improvement system PAUSED until {}\n\n",
+                ends_at.format("%Y-%m-%d %H:%M:%S UTC")
+            ));
+            output.push_str("During this time:\n");
+            output.push_str("  - No automatic actions will be executed\n");
+            output.push_str("  - Metrics will continue to be collected\n");
+            output.push_str("  - System will automatically resume after the pause expires\n\n");
+            output.push_str("To resume early, use 'self-improve enable'.\n");
+            CliResult::success(output)
+        }
+        Err(e) => CliResult::error(format!("Failed to pause system: {}", e)),
+    }
+}
+
+/// Execute rollback command.
+async fn execute_rollback(storage: &SqliteStorage, action_id_str: &str) -> CliResult {
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+
+    // Parse action ID
+    let action_id = ActionId(action_id_str.to_string());
+
+    // Get the action details first
+    match si_storage.get_action(&action_id).await {
+        Ok(Some(action)) => {
+            // Check if action can be rolled back
+            if action.outcome == ActionOutcome::RolledBack {
+                return CliResult::error("Action has already been rolled back.");
+            }
+            if action.outcome == ActionOutcome::Pending {
+                return CliResult::error(
+                    "Action is still pending. Cancel it with 'self-improve reject' instead.",
+                );
+            }
+
+            // Execute rollback
+            match si_storage
+                .rollback_action(&action_id, "Manual rollback via CLI")
+                .await
+            {
+                Ok(()) => {
+                    let mut output = String::new();
+                    output.push_str(&format!("\n↩ Action {} rolled back successfully\n\n", action_id_str));
+                    output.push_str(&format!("Action type: {}\n", action.action_type));
+                    output.push_str("The configuration change has been reverted.\n\n");
+                    output.push_str("Note: A learning record has been created for this rollback.\n");
+                    CliResult::success(output)
+                }
+                Err(e) => CliResult::error(format!("Failed to rollback action: {}", e)),
+            }
+        }
+        Ok(None) => CliResult::error(format!("Action '{}' not found.", action_id_str)),
+        Err(e) => CliResult::error(format!("Failed to load action: {}", e)),
+    }
+}
+
+/// Execute approve command.
+async fn execute_approve(storage: &SqliteStorage, diagnosis_id_str: &str) -> CliResult {
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+
+    let diagnosis_id = DiagnosisId(diagnosis_id_str.to_string());
+
+    // Get the diagnosis details first
+    match si_storage.get_diagnosis(&diagnosis_id).await {
+        Ok(Some(diagnosis)) => {
+            // Check if diagnosis is awaiting approval
+            if diagnosis.status != DiagnosisStatus::AwaitingApproval
+                && diagnosis.status != DiagnosisStatus::Pending
+            {
+                return CliResult::error(format!(
+                    "Diagnosis is not pending approval. Current status: {:?}",
+                    diagnosis.status
+                ));
+            }
+
+            // Approve the diagnosis
+            match si_storage
+                .update_diagnosis_status(&diagnosis_id, DiagnosisStatus::Pending)
+                .await
+            {
+                Ok(()) => {
+                    let mut output = String::new();
+                    output.push_str(&format!(
+                        "\n✓ Diagnosis {} approved for execution\n\n",
+                        diagnosis_id_str
+                    ));
+                    output.push_str(&format!("Severity: {:?}\n", diagnosis.severity));
+                    output.push_str(&format!("Description: {}\n", diagnosis.description));
+                    output.push_str(&format!(
+                        "Suggested Action: {}\n\n",
+                        diagnosis.suggested_action.action_type()
+                    ));
+                    output.push_str("The action will be executed in the next improvement cycle.\n");
+                    CliResult::success(output)
+                }
+                Err(e) => CliResult::error(format!("Failed to approve diagnosis: {}", e)),
+            }
+        }
+        Ok(None) => CliResult::error(format!("Diagnosis '{}' not found.", diagnosis_id_str)),
+        Err(e) => CliResult::error(format!("Failed to load diagnosis: {}", e)),
+    }
+}
+
+/// Execute reject command.
+async fn execute_reject(
+    storage: &SqliteStorage,
+    diagnosis_id_str: &str,
+    reason: Option<String>,
+) -> CliResult {
+    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
+
+    let diagnosis_id = DiagnosisId(diagnosis_id_str.to_string());
+
+    // Get the diagnosis details first
+    match si_storage.get_diagnosis(&diagnosis_id).await {
+        Ok(Some(diagnosis)) => {
+            // Check if diagnosis can be rejected
+            if diagnosis.status == DiagnosisStatus::Completed {
+                return CliResult::error("Diagnosis has already been completed and cannot be rejected.");
+            }
+            if diagnosis.status == DiagnosisStatus::RolledBack {
+                return CliResult::error("Diagnosis was already rolled back.");
+            }
+
+            let rejection_reason = reason.unwrap_or_else(|| "Rejected via CLI".to_string());
+
+            // Reject the diagnosis (mark as superseded)
+            match si_storage
+                .reject_diagnosis(&diagnosis_id, &rejection_reason)
+                .await
+            {
+                Ok(()) => {
+                    let mut output = String::new();
+                    output.push_str(&format!(
+                        "\n✗ Diagnosis {} rejected\n\n",
+                        diagnosis_id_str
+                    ));
+                    output.push_str(&format!("Reason: {}\n", rejection_reason));
+                    output.push_str(&format!("Original description: {}\n\n", diagnosis.description));
+                    output.push_str("The suggested action will not be executed.\n");
+                    CliResult::success(output)
+                }
+                Err(e) => CliResult::error(format!("Failed to reject diagnosis: {}", e)),
+            }
+        }
+        Ok(None) => CliResult::error(format!("Diagnosis '{}' not found.", diagnosis_id_str)),
+        Err(e) => CliResult::error(format!("Failed to load diagnosis: {}", e)),
+    }
+}
+
 // Helper functions
+
+/// Parse duration string (e.g., "30m", "2h", "1d") into chrono::Duration.
+fn parse_duration_string(s: &str) -> Result<Duration, String> {
+    let s = s.trim().to_lowercase();
+    if s.is_empty() {
+        return Err("Duration cannot be empty".to_string());
+    }
+
+    let (num_str, unit) = if s.ends_with('s') {
+        (&s[..s.len() - 1], 's')
+    } else if s.ends_with('m') {
+        (&s[..s.len() - 1], 'm')
+    } else if s.ends_with('h') {
+        (&s[..s.len() - 1], 'h')
+    } else if s.ends_with('d') {
+        (&s[..s.len() - 1], 'd')
+    } else {
+        return Err("Duration must end with 's' (seconds), 'm' (minutes), 'h' (hours), or 'd' (days)".to_string());
+    };
+
+    let num: i64 = num_str
+        .parse()
+        .map_err(|_| format!("Invalid number: '{}'", num_str))?;
+
+    if num <= 0 {
+        return Err("Duration must be positive".to_string());
+    }
+
+    match unit {
+        's' => Ok(Duration::seconds(num)),
+        'm' => Ok(Duration::minutes(num)),
+        'h' => Ok(Duration::hours(num)),
+        'd' => Ok(Duration::days(num)),
+        _ => unreachable!(),
+    }
+}
 
 fn severity_symbol(severity: &Severity) -> &'static str {
     match severity {

@@ -442,9 +442,13 @@ SI_RECOVERY_TIMEOUT_SECS=3600
 - [x] Improvement cycles execute without errors
 
 ### Phase 3 ✅ COMPLETED
-- [x] All CLI commands functional (status, history, diagnostics, config, circuit-breaker, baselines)
+- [x] All CLI commands functional (status, history, diagnostics, config, circuit-breaker, baselines, enable, disable, pause, rollback, approve, reject)
 - [x] Status command shows accurate metrics
 - [x] Environment configuration works as documented
+- [x] Enable/disable commands with system_settings table
+- [x] Pause command with duration parsing (e.g., "30m", "2h", "1d")
+- [x] Rollback command for reverting specific actions
+- [x] Approve/reject commands for pending diagnoses
 
 ---
 

@@ -859,6 +859,195 @@ impl SelfImprovementStorage {
             None => Ok(None),
         }
     }
+
+    // ========================================================================
+    // Runtime Control Operations (for CLI commands)
+    // ========================================================================
+
+    /// Set whether the self-improvement system is enabled.
+    pub async fn set_system_enabled(&self, enabled: bool) -> StorageResult<()> {
+        let enabled_val = if enabled { 1 } else { 0 };
+
+        sqlx::query(
+            r#"
+            INSERT INTO system_settings (key, value, updated_at)
+            VALUES ('self_improvement_enabled', ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(enabled_val.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to set system enabled state: {}", e),
+        })?;
+
+        debug!(enabled = enabled, "System enabled state updated");
+        Ok(())
+    }
+
+    /// Create a pause period for the self-improvement system.
+    pub async fn create_pause(
+        &self,
+        ends_at: DateTime<Utc>,
+        reason: &str,
+    ) -> StorageResult<()> {
+        let id = format!("pause_{}", Utc::now().timestamp_millis());
+        let ends_at_str = ends_at.to_rfc3339();
+
+        sqlx::query(
+            r#"
+            INSERT INTO cooldown_periods (id, started_at, ends_at, reason, is_active)
+            VALUES (?, datetime('now'), ?, ?, 1)
+            "#,
+        )
+        .bind(&id)
+        .bind(&ends_at_str)
+        .bind(reason)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to create pause: {}", e),
+        })?;
+
+        debug!(id = %id, ends_at = %ends_at, "Pause created");
+        Ok(())
+    }
+
+    /// Get a specific action by ID.
+    pub async fn get_action(&self, action_id: &ActionId) -> StorageResult<Option<ActionRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                id, diagnosis_id, action_type, action_params,
+                pre_state, post_state, metrics_before, metrics_after,
+                executed_at, verified_at, completed_at,
+                outcome, rollback_reason, normalized_reward,
+                reward_breakdown, lessons_learned
+            FROM self_improvement_actions
+            WHERE id = ?
+            "#,
+        )
+        .bind(&action_id.0)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to get action: {}", e),
+        })?;
+
+        match row {
+            Some(row) => {
+                let outcome_str: String = row.get("outcome");
+                let outcome = outcome_str.parse::<ActionOutcome>().unwrap_or(ActionOutcome::Pending);
+
+                Ok(Some(ActionRecord {
+                    id: ActionId(row.get("id")),
+                    diagnosis_id: DiagnosisId(row.get("diagnosis_id")),
+                    action_type: row.get("action_type"),
+                    action_params: row.get("action_params"),
+                    pre_state: row.get("pre_state"),
+                    post_state: row.get("post_state"),
+                    metrics_before: row.get("metrics_before"),
+                    metrics_after: row.get("metrics_after"),
+                    executed_at: parse_timestamp(row.get("executed_at")),
+                    verified_at: row
+                        .get::<Option<String>, _>("verified_at")
+                        .map(|s| parse_timestamp(&s)),
+                    completed_at: row
+                        .get::<Option<String>, _>("completed_at")
+                        .map(|s| parse_timestamp(&s)),
+                    outcome,
+                    rollback_reason: row.get("rollback_reason"),
+                    normalized_reward: row.get("normalized_reward"),
+                    reward_breakdown: row.get("reward_breakdown"),
+                    lessons_learned: row.get("lessons_learned"),
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Rollback an action and update its status.
+    pub async fn rollback_action(
+        &self,
+        action_id: &ActionId,
+        reason: &str,
+    ) -> StorageResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE self_improvement_actions
+            SET outcome = 'rolled_back',
+                rollback_reason = ?,
+                completed_at = datetime('now')
+            WHERE id = ?
+            "#,
+        )
+        .bind(reason)
+        .bind(&action_id.0)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to rollback action: {}", e),
+        })?;
+
+        debug!(action_id = %action_id.0, reason = reason, "Action rolled back");
+        Ok(())
+    }
+
+    /// Get a specific diagnosis by ID.
+    pub async fn get_diagnosis(
+        &self,
+        diagnosis_id: &DiagnosisId,
+    ) -> StorageResult<Option<SelfDiagnosis>> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                id, created_at, trigger_type, severity, description,
+                suspected_cause, suggested_action, action_rationale, status
+            FROM self_diagnoses
+            WHERE id = ?
+            "#,
+        )
+        .bind(&diagnosis_id.0)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to get diagnosis: {}", e),
+        })?;
+
+        match row {
+            Some(row) => Ok(parse_diagnosis_row(&row)),
+            None => Ok(None),
+        }
+    }
+
+    /// Reject a diagnosis with a reason.
+    pub async fn reject_diagnosis(
+        &self,
+        diagnosis_id: &DiagnosisId,
+        reason: &str,
+    ) -> StorageResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE self_diagnoses
+            SET status = 'superseded',
+                action_rationale = COALESCE(action_rationale, '') || ' [Rejected: ' || ? || ']'
+            WHERE id = ?
+            "#,
+        )
+        .bind(reason)
+        .bind(&diagnosis_id.0)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| StorageError::Query {
+            message: format!("Failed to reject diagnosis: {}", e),
+        })?;
+
+        debug!(diagnosis_id = %diagnosis_id.0, reason = reason, "Diagnosis rejected");
+        Ok(())
+    }
 }
 
 // ============================================================================

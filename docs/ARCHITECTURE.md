@@ -32,13 +32,23 @@ Technical architecture documentation for mcp-langbase-reasoning.
 |  |  - Registry (built-ins)   - Executor (workflow orchestration)      | |
 |  |  - Types (preset/step)    - Builtins (code-review, debug, etc.)    | |
 |  +-------------------------------------------------------------------+ |
+|                                                                         |
+|  +-------------------------------------------------------------------+ |
+|  |                    Self-Improvement System                         | |
+|  |  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐             | |
+|  |  │ Monitor │─▶│ Analyzer │─▶│ Executor │─▶│ Learner │──┐          | |
+|  |  └────┬────┘  └──────────┘  └──────────┘  └─────────┘  │          | |
+|  |       └────────────────────────────────────────────────┘          | |
+|  |  - Circuit Breaker   - Action Allowlist   - Auto-Rollback         | |
+|  +-------------------------------------------------------------------+ |
 |                           |                |                  |         |
 |                           v                v                  |         |
 |                    +---------------------------+              |         |
 |                    |         SQLite DB          |              |         |
 |                    | (sessions, thoughts,       |              |         |
 |                    |  branches, checkpoints,    |              |         |
-|                    |  graphs, invocations)      |              |         |
+|                    |  graphs, invocations,      |              |         |
+|                    |  metrics, actions)         |              |         |
 |                    +---------------------------+              |         |
 +------------------------------------------------------------- | --------+
                                                                |

@@ -323,7 +323,7 @@ async fn test_select_action_success() {
     let result = pipes.select_action(&diagnosis, &allowlist, &history).await;
 
     assert!(result.is_ok());
-    let (selection, metrics) = result.unwrap();
+    let (_selection, metrics) = result.unwrap();
     assert!(metrics.call_success);
 }
 
@@ -566,7 +566,7 @@ async fn test_synthesize_learning_success() {
         .await;
 
     assert!(result.is_ok());
-    let (learning, metrics) = result.unwrap();
+    let (learning, _metrics) = result.unwrap();
     assert!(learning.action_effectiveness > 0.0);
     assert!(!learning.lessons.is_empty());
 }

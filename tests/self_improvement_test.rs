@@ -282,7 +282,7 @@ async fn test_save_and_get_action() {
     let si_storage = create_si_storage(&storage);
 
     // First save the diagnosis (foreign key constraint)
-    let mut diagnosis = mock_diagnosis();
+    let diagnosis = mock_diagnosis();
     si_storage.save_diagnosis(&diagnosis).await.unwrap();
 
     let action = mock_action_record(&diagnosis.id);

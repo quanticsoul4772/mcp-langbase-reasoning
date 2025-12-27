@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn test_param_value_display() {
         assert_eq!(ParamValue::Integer(42).to_string(), "42");
-        assert_eq!(ParamValue::Float(3.14159).to_string(), "3.14");
+        assert_eq!(ParamValue::Float(1.23456).to_string(), "1.23");
         assert_eq!(ParamValue::Boolean(true).to_string(), "true");
         assert_eq!(ParamValue::DurationMs(5000).to_string(), "5000ms");
     }

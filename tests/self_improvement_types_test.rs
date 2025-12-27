@@ -546,9 +546,9 @@ fn test_param_value_integer() {
 
 #[test]
 fn test_param_value_float() {
-    let val = ParamValue::Float(3.14);
+    let val = ParamValue::Float(1.234);
     match val {
-        ParamValue::Float(f) => assert!((f - 3.14).abs() < 0.001),
+        ParamValue::Float(f) => assert!((f - 1.234).abs() < 0.001),
         _ => panic!("Expected Float"),
     }
 }

@@ -308,8 +308,10 @@ async fn test_executor_circuit_breaker_blocks() {
     let config = test_config();
     let allowlist = ActionAllowlist::default_allowlist();
 
-    let mut cb_config = CircuitBreakerConfig::default();
-    cb_config.failure_threshold = 1;
+    let cb_config = CircuitBreakerConfig {
+        failure_threshold: 1,
+        ..Default::default()
+    };
 
     let cb = Arc::new(RwLock::new(CircuitBreaker::new(cb_config)));
 

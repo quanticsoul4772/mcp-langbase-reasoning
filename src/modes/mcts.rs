@@ -499,7 +499,7 @@ impl MCTSMode {
                         } else {
                             0.0
                         };
-                        avg_a.partial_cmp(&avg_b).unwrap()
+                        avg_a.partial_cmp(&avg_b).unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .unwrap();
 

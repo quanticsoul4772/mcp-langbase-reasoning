@@ -396,7 +396,7 @@ impl TimelineMode {
         let recommended_index = created_branches
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.ucb_score.partial_cmp(&b.ucb_score).unwrap())
+            .max_by(|(_, a), (_, b)| a.ucb_score.partial_cmp(&b.ucb_score).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i)
             .unwrap_or(0);
 

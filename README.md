@@ -134,18 +134,7 @@ Add to Claude Desktop configuration (`claude_desktop_config.json`):
 
 ## Self-Improvement System
 
-The server includes an autonomous self-improvement loop that monitors system health, diagnoses issues, executes safe optimizations, and learns from outcomes.
-
-### How It Works
-
-```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│ MONITOR  │───▶│ ANALYZER │───▶│ EXECUTOR │───▶│ LEARNER  │
-│ Phase 1  │    │ Phase 2  │    │ Phase 3  │    │ Phase 4  │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
-     │                                               │
-     └───────────────────◀───────────────────────────┘
-```
+The server includes an autonomous self-improvement loop that monitors system health, diagnoses issues, executes safe optimizations, and learns from outcomes. See the [Architecture](#architecture) diagram for the system overview.
 
 | Phase | Function |
 |-------|----------|

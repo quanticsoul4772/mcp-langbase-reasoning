@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Reasoning Time Machine** - Full temporal navigation through reasoning processes
+  - `reasoning_timeline_create` - Create reasoning timelines with checkpoints
+  - `reasoning_timeline_branch` - Branch from any checkpoint to explore alternatives
+  - `reasoning_timeline_compare` - Compare outcomes across branches
+  - `reasoning_timeline_merge` - Merge insights with multiple strategies (best_of, synthesize, consensus, weighted)
+  - `reasoning_mcts_explore` - Monte Carlo Tree Search with UCB1 balancing
+  - `reasoning_auto_backtrack` - Self-backtracking with quality assessment
+  - `reasoning_counterfactual` - "What if?" analysis with Pearl's Ladder of Causation
+- Database migration for timelines, MCTS nodes, and counterfactual analyses
+- 82 new unit tests for Time Machine modes
+
+### Changed
+
+- Updated documentation to reflect Time Machine feature
+- Mode count increased from 9 to 12 (timeline, mcts, counterfactual)
+
 ## [0.2.0] - 2025-12-26
 
 ### Added

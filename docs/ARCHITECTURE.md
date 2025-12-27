@@ -21,10 +21,13 @@ Technical architecture documentation for mcp-langbase-reasoning.
 |  |             |  | - Reflection  |  | - Checks  |  |                 | |
 |  |             |  | - Backtrack   |  | - Graphs  |  |                 | |
 |  |             |  | - Auto        |  | - Invoc.  |  |                 | |
-|  |             |  | - GoT         |  | - Detect. |  |                 | |
-|  |             |  | - Detection   |  | - Decis.  |  |                 | |
-|  |             |  | - Decision    |  | - Evid.   |  |                 | |
+|  |             |  | - GoT         |  | - Timel.  |  |                 | |
+|  |             |  | - Detection   |  | - MCTS    |  |                 | |
+|  |             |  | - Decision    |  | - Counter.|  |                 | |
 |  |             |  | - Evidence    |  |           |  |                 | |
+|  |             |  | - Timeline    |  |           |  |                 | |
+|  |             |  | - MCTS        |  |           |  |                 | |
+|  |             |  | - Counterfact.|  |           |  |                 | |
 |  +-------------+  +---------------+  +-----------+  +-----------------+ |
 |                                                                         |
 |  +-------------------------------------------------------------------+ |
@@ -48,7 +51,9 @@ Technical architecture documentation for mcp-langbase-reasoning.
 |                    | (sessions, thoughts,       |              |         |
 |                    |  branches, checkpoints,    |              |         |
 |                    |  graphs, invocations,      |              |         |
-|                    |  metrics, actions)         |              |         |
+|                    |  metrics, actions,         |              |         |
+|                    |  timelines, mcts_nodes,    |              |         |
+|                    |  counterfactual_analyses)  |              |         |
 |                    +---------------------------+              |         |
 +------------------------------------------------------------- | --------+
                                                                |
@@ -97,7 +102,10 @@ src/
 │   ├── got.rs           # Graph-of-Thoughts operations
 │   ├── detection.rs     # Bias and fallacy detection
 │   ├── decision.rs      # Multi-criteria decision framework
-│   └── evidence.rs      # Evidence assessment and Bayesian updates
+│   ├── evidence.rs      # Evidence assessment and Bayesian updates
+│   ├── timeline.rs      # Timeline-based temporal navigation
+│   ├── mcts.rs          # Monte Carlo Tree Search exploration
+│   └── counterfactual.rs # "What if?" counterfactual analysis
 ├── presets/
 │   ├── mod.rs           # Module exports
 │   ├── types.rs         # WorkflowPreset, PresetStep types
@@ -144,7 +152,8 @@ tests/
 migrations/
 ├── 20240101000001_initial_schema.sql       # Sessions, thoughts, invocations
 ├── 20240102000001_branches_checkpoints.sql # Branches, checkpoints, snapshots
-└── 20240103000001_graphs.sql               # Graph nodes and edges
+├── 20240103000001_graphs.sql               # Graph nodes and edges
+└── 20240110000001_time_machine.sql         # Timelines, MCTS nodes, counterfactuals
 ```
 
 ## Component Details
@@ -200,6 +209,9 @@ Tool routing:
 - `reasoning_make_decision`, `reasoning_analyze_perspectives` -> DecisionMode
 - `reasoning_assess_evidence`, `reasoning_probabilistic` -> EvidenceMode
 - `reasoning_preset_list`, `reasoning_preset_run` -> PresetRegistry/Executor
+- `reasoning_timeline_*` -> TimelineMode
+- `reasoning_mcts_explore`, `reasoning_auto_backtrack` -> MCTSMode
+- `reasoning_counterfactual` -> CounterfactualMode
 
 ### Reasoning Modes (modes/)
 
@@ -285,6 +297,54 @@ pub struct GotMode {
 - Bayesian probability updates with entropy metrics
 - Persisted assessments and probability chains
 
+#### Timeline Mode (modes/timeline.rs)
+- Timeline-based temporal navigation through reasoning
+- Branch creation from any checkpoint
+- Multi-branch comparison and ranking
+- Branch merging with multiple strategies (best_of, synthesize, consensus, weighted)
+- Persisted timelines with branch tree structure
+
+```rust
+pub struct TimelineMode {
+    core: ModeCore,
+    pipe_name: String,
+}
+```
+
+#### MCTS Mode (modes/mcts.rs)
+- Monte Carlo Tree Search for intelligent path exploration
+- UCB1 selection balancing exploration vs exploitation
+- Multiple expansion strategies (best_first, breadth_first, random, diverse)
+- Self-backtracking with quality threshold assessment
+- Automatic alternative path generation
+
+```rust
+pub struct MCTSMode {
+    core: ModeCore,
+    exploration_constant: f64,  // Default: √2 ≈ 1.414
+    max_depth: i32,
+}
+```
+
+UCB1 Formula:
+```
+UCB1(s,a) = Q(s,a) + c × √(ln(N_parent) / N(s,a))
+```
+
+#### Counterfactual Mode (modes/counterfactual.rs)
+- "What if?" analysis on past reasoning decisions
+- Multiple intervention types (change, remove, replace, inject)
+- Causal attribution scoring with Pearl's Ladder of Causation
+- Counterfactual outcome prediction with confidence
+- Causal chain tracing and confounder identification
+
+```rust
+pub struct CounterfactualMode {
+    core: ModeCore,
+    pipe_name: String,
+}
+```
+
 ### ModeCore Architecture (modes/core.rs)
 
 All reasoning modes share common infrastructure via composition:
@@ -302,7 +362,7 @@ impl ModeCore {
 ```
 
 Benefits:
-- Eliminates field duplication across 10 mode structs
+- Eliminates field duplication across 13 mode structs
 - Consistent storage and Langbase access patterns
 - Simplified initialization and dependency injection
 - Single point for cross-cutting concerns
@@ -917,4 +977,4 @@ pub struct Config {
 | Decision/Evidence | Unit | `src/modes/{decision,evidence}.rs` (inline) |
 | Prompts | Unit | `src/prompts.rs` (inline) |
 
-Total test count: 2100+ tests across all modules (83% coverage).
+Total test count: 2000+ tests across all modules.

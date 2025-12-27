@@ -4,12 +4,13 @@ A Model Context Protocol (MCP) server providing structured reasoning capabilitie
 
 ## Features
 
-- **9 Reasoning Modes** - Linear, tree, divergent, reflection, backtracking, auto-selection, Graph-of-Thoughts, decision framework, and evidence assessment
+- **12 Reasoning Modes** - Linear, tree, divergent, reflection, backtracking, auto-selection, Graph-of-Thoughts, decision framework, evidence assessment, timeline, MCTS, and counterfactual
+- **Reasoning Time Machine** - Timeline-based exploration, MCTS-guided search, counterfactual "what if" analysis
 - **5 Workflow Presets** - Code review, debugging, architecture decisions, strategic decisions, and evidence-based conclusions
 - **Cognitive Analysis** - Bias detection and logical fallacy identification
 - **Autonomous Self-Improvement** - 4-phase optimization loop with safety controls (Monitor → Analyzer → Executor → Learner)
-- **Session Persistence** - SQLite storage for sessions, thoughts, branches, and checkpoints
-- **Production Ready** - 2100+ tests, 83% coverage, async I/O, retry logic, structured error handling
+- **Session Persistence** - SQLite storage for sessions, thoughts, branches, checkpoints, and timelines
+- **Production Ready** - 2000+ tests, async I/O, retry logic, structured error handling
 
 ## Quick Start
 
@@ -98,6 +99,18 @@ Add to Claude Desktop configuration (`claude_desktop_config.json`):
 | `reasoning_analyze_perspectives` | Stakeholder analysis |
 | `reasoning_assess_evidence` | Evidence quality assessment |
 | `reasoning_probabilistic` | Bayesian probability updates |
+
+### Time Machine
+
+| Tool | Description |
+|------|-------------|
+| `reasoning_timeline_create` | Create a new reasoning timeline |
+| `reasoning_timeline_branch` | Branch from any checkpoint |
+| `reasoning_timeline_compare` | Compare outcomes across branches |
+| `reasoning_timeline_merge` | Merge insights from multiple branches |
+| `reasoning_mcts_explore` | MCTS-guided exploration with UCB balancing |
+| `reasoning_auto_backtrack` | Self-backtracking with quality assessment |
+| `reasoning_counterfactual` | "What if?" analysis on past reasoning |
 
 ### Cognitive Analysis
 
@@ -258,7 +271,7 @@ Last Cycle:        2025-12-26T10:30:00Z
 ```bash
 cargo build              # Debug build
 cargo build --release    # Release build
-cargo test               # Run all 2100+ tests
+cargo test               # Run all 2000+ tests
 cargo clippy -- -D warnings  # Lint (0 warnings)
 cargo llvm-cov           # Generate coverage report
 ```
@@ -271,7 +284,10 @@ src/
 ├── config/           # Environment configuration
 ├── error/            # Structured error types
 ├── langbase/         # Langbase API client
-├── modes/            # 9 reasoning implementations
+├── modes/            # 12 reasoning implementations
+│   ├── timeline.rs   # Timeline management
+│   ├── mcts.rs       # MCTS exploration
+│   └── counterfactual.rs  # "What if" analysis
 ├── presets/          # Workflow preset system
 ├── self_improvement/ # Autonomous optimization
 ├── server/           # MCP protocol handling
@@ -280,7 +296,8 @@ src/
 docs/
 ├── API_REFERENCE.md  # Complete tool documentation
 ├── ARCHITECTURE.md   # Technical design
-└── LANGBASE_API.md   # Pipe integration
+├── LANGBASE_API.md   # Pipe integration
+└── REASONING_TIME_MACHINE.md  # Time Machine design
 ```
 
 ## License

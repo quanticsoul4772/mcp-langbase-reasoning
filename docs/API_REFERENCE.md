@@ -1459,6 +1459,514 @@ If a non-optional step fails, execution stops and returns partial results:
 
 ---
 
+## Time Machine Tools
+
+### reasoning_timeline_create
+
+Create a new reasoning timeline with initial checkpoint for temporal navigation.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Optional session ID (creates new if not provided)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Timeline name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description"
+    },
+    "content": {
+      "type": "string",
+      "description": "Initial content/problem statement"
+    }
+  },
+  "required": ["name", "content"]
+}
+```
+
+#### Response
+
+```json
+{
+  "timeline_id": "uuid",
+  "session_id": "uuid",
+  "root_branch_id": "uuid",
+  "checkpoint_id": "uuid",
+  "thought_id": "uuid"
+}
+```
+
+---
+
+### reasoning_timeline_branch
+
+Branch from any checkpoint to explore alternatives.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "timeline_id": {
+      "type": "string",
+      "description": "Timeline ID to branch from"
+    },
+    "checkpoint_id": {
+      "type": "string",
+      "description": "Checkpoint ID to branch from"
+    },
+    "branch_name": {
+      "type": "string",
+      "description": "Optional new branch name"
+    },
+    "new_direction": {
+      "type": "string",
+      "description": "New direction to explore"
+    },
+    "intervention": {
+      "type": "string",
+      "description": "Optional specific intervention for counterfactual"
+    }
+  },
+  "required": ["timeline_id", "checkpoint_id", "new_direction"]
+}
+```
+
+#### Response
+
+```json
+{
+  "branch_id": "uuid",
+  "timeline_id": "uuid",
+  "parent_branch_id": "uuid",
+  "depth": 1,
+  "thought": {
+    "id": "uuid",
+    "content": "Initial thought on new branch",
+    "confidence": 0.85
+  },
+  "checkpoint_id": "uuid"
+}
+```
+
+---
+
+### reasoning_timeline_compare
+
+Compare outcomes across different branches in a timeline.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "timeline_id": {
+      "type": "string",
+      "description": "Timeline ID"
+    },
+    "branch_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "maxItems": 5,
+      "description": "Branch IDs to compare (2-5 branches)"
+    },
+    "criteria": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional comparison criteria"
+    }
+  },
+  "required": ["timeline_id", "branch_ids"]
+}
+```
+
+#### Response
+
+```json
+{
+  "timeline_id": "uuid",
+  "summary": "Comparison summary",
+  "branches": [
+    {
+      "branch_id": "uuid",
+      "branch_name": "Approach A",
+      "thought_count": 5,
+      "avg_confidence": 0.82,
+      "key_insights": ["insight 1"],
+      "strengths": ["strength 1"],
+      "weaknesses": ["weakness 1"]
+    }
+  ],
+  "ranking": [
+    {
+      "branch_id": "uuid",
+      "rank": 1,
+      "score": 0.85,
+      "criteria_scores": { "quality": 0.9, "novelty": 0.8 }
+    }
+  ],
+  "differences": [
+    {
+      "aspect": "approach",
+      "branches": [{"branch_id": "id1", "value": "X"}, {"branch_id": "id2", "value": "Y"}],
+      "significance": 0.7
+    }
+  ],
+  "recommendation": {
+    "branch_id": "uuid",
+    "reasoning": "Why this branch is recommended",
+    "confidence": 0.85
+  }
+}
+```
+
+---
+
+### reasoning_timeline_merge
+
+Merge insights from multiple branches into a unified result.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "timeline_id": {
+      "type": "string",
+      "description": "Timeline ID"
+    },
+    "branch_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "maxItems": 5,
+      "description": "Branch IDs to merge (2-5 branches)"
+    },
+    "strategy": {
+      "type": "string",
+      "enum": ["best_of", "synthesize", "consensus", "weighted_confidence"],
+      "description": "Merge strategy (default: best_of)"
+    },
+    "target_name": {
+      "type": "string",
+      "description": "Optional target branch name for merged result"
+    }
+  },
+  "required": ["timeline_id", "branch_ids"]
+}
+```
+
+#### Merge Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `best_of` | Take the best insights from each branch |
+| `synthesize` | Create a new conclusion from all branches |
+| `consensus` | Extract overlapping agreements |
+| `weighted_confidence` | Weight by confidence scores |
+
+#### Response
+
+```json
+{
+  "merged_branch_id": "uuid",
+  "timeline_id": "uuid",
+  "source_branches": ["branch_id_1", "branch_id_2"],
+  "merged_content": "Synthesized conclusion",
+  "confidence": 0.88,
+  "contributions": [
+    { "branch_id": "uuid", "insights": ["insight 1"], "weight": 0.6 }
+  ],
+  "resolved_conflicts": [
+    { "conflict_type": "approach", "branches_involved": ["id1", "id2"], "resolution": "how resolved", "confidence": 0.8 }
+  ]
+}
+```
+
+---
+
+### reasoning_mcts_explore
+
+Monte Carlo Tree Search exploration with UCB1 balancing.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Session ID"
+    },
+    "timeline_id": {
+      "type": "string",
+      "description": "Optional timeline ID (creates new if not provided)"
+    },
+    "branch_id": {
+      "type": "string",
+      "description": "Optional starting branch ID"
+    },
+    "problem": {
+      "type": "string",
+      "description": "Problem to explore"
+    },
+    "iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Number of MCTS iterations (default: 10)"
+    },
+    "exploration_constant": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 5,
+      "description": "UCB1 exploration constant c (default: 1.414)"
+    },
+    "max_depth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20,
+      "description": "Maximum simulation depth (default: 5)"
+    },
+    "expansion_strategy": {
+      "type": "string",
+      "enum": ["best_first", "breadth_first", "random", "diverse"],
+      "description": "Expansion strategy (default: best_first)"
+    }
+  },
+  "required": ["session_id", "problem"]
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "timeline_id": "uuid",
+  "summary": "Exploration summary",
+  "iterations_performed": 10,
+  "nodes_explored": 25,
+  "best_path": {
+    "path_id": "uuid",
+    "branch_id": "uuid",
+    "node_ids": ["node1", "node2", "node3"],
+    "total_value": 7.5,
+    "avg_value": 0.75,
+    "depth": 3,
+    "summary": "Path summary",
+    "insights": ["insight 1", "insight 2"]
+  },
+  "alternative_paths": [],
+  "statistics": {
+    "total_nodes": 25,
+    "max_depth": 3,
+    "avg_value": 0.68,
+    "exploration_ratio": 0.4,
+    "branches_created": 5
+  },
+  "recommendation": "Recommended next action"
+}
+```
+
+#### UCB1 Formula
+
+```
+UCB1(s,a) = Q(s,a) + c × √(ln(N_parent) / N(s,a))
+
+where:
+- Q(s,a) = exploitation value (total_value / visit_count)
+- c = exploration constant (default: √2 ≈ 1.414)
+- N_parent = parent node visit count
+- N(s,a) = current node visit count
+```
+
+---
+
+### reasoning_auto_backtrack
+
+Self-backtracking with reward model guidance.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Session ID"
+    },
+    "timeline_id": {
+      "type": "string",
+      "description": "Optional timeline ID"
+    },
+    "content": {
+      "type": "string",
+      "description": "Current content to evaluate"
+    },
+    "backtrack_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Quality threshold for triggering backtrack (default: 0.5)"
+    },
+    "max_backtrack_depth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "description": "Maximum checkpoints to backtrack (default: 3)"
+    },
+    "auto_explore": {
+      "type": "boolean",
+      "description": "Automatically explore alternatives if backtracking (default: true)"
+    },
+    "alternatives_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Number of alternatives to explore (default: 2)"
+    }
+  },
+  "required": ["session_id", "content"]
+}
+```
+
+#### Response
+
+```json
+{
+  "session_id": "uuid",
+  "backtracked": true,
+  "decision_reason": "Quality score below threshold",
+  "quality_assessment": {
+    "score": 0.45,
+    "coherence": 0.5,
+    "progress": 0.4,
+    "confidence": 0.42,
+    "issues": ["Circular reasoning detected"],
+    "strengths": ["Good initial framing"]
+  },
+  "new_branch": {
+    "branch_id": "uuid",
+    "checkpoint_restored": "checkpoint_uuid",
+    "depth_backtracked": 2,
+    "new_direction": "Alternative approach"
+  },
+  "alternatives": [
+    { "branch_id": "uuid", "direction": "Direction 1", "predicted_value": 0.7, "summary": "..." }
+  ],
+  "recommendation": "Continue on new branch",
+  "confidence": 0.75
+}
+```
+
+---
+
+### reasoning_counterfactual
+
+"What if?" analysis on existing reasoning.
+
+#### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Session ID"
+    },
+    "branch_id": {
+      "type": "string",
+      "description": "Branch ID to analyze"
+    },
+    "question": {
+      "type": "string",
+      "description": "The counterfactual question (e.g., 'What if we had chosen X instead?')"
+    },
+    "target_thought_id": {
+      "type": "string",
+      "description": "Optional target thought ID to modify"
+    },
+    "intervention": {
+      "type": "string",
+      "description": "Optional specific intervention to apply"
+    },
+    "intervention_type": {
+      "type": "string",
+      "enum": ["change", "remove", "replace", "inject"],
+      "description": "Type of intervention (default: change)"
+    },
+    "create_branch": {
+      "type": "boolean",
+      "description": "Create a new branch for the counterfactual (default: false)"
+    }
+  },
+  "required": ["session_id", "branch_id", "question"]
+}
+```
+
+#### Intervention Types
+
+| Type | Description |
+|------|-------------|
+| `change` | Modify a decision/thought to something else |
+| `remove` | Remove a decision entirely |
+| `replace` | Replace with alternative reasoning |
+| `inject` | Add new information at a point |
+
+#### Response
+
+```json
+{
+  "analysis_id": "uuid",
+  "session_id": "uuid",
+  "original_branch_id": "uuid",
+  "counterfactual_branch_id": "uuid",
+  "question": "What if we had chosen X?",
+  "original_outcome": "Summary of original reasoning path",
+  "counterfactual_outcome": "What would have happened",
+  "outcome_delta": {
+    "direction": "better",
+    "magnitude": 0.3,
+    "key_changes": ["Change 1", "Change 2"]
+  },
+  "causal_analysis": {
+    "attribution": 0.75,
+    "causal_chain": ["Step 1", "Step 2", "Outcome"],
+    "confounders": ["Possible confounder"],
+    "robustness": 0.8
+  },
+  "confidence": 0.78
+}
+```
+
+#### Pearl's Ladder of Causation
+
+The counterfactual analysis follows Judea Pearl's causal hierarchy:
+
+| Level | Question | Description |
+|-------|----------|-------------|
+| 1. Association | What if I see X? | Observational data |
+| 2. Intervention | What if I do X? | Controlled experiment |
+| 3. Counterfactual | What if I had done X? | Retrospective analysis |
+
+---
+
 ## Data Types
 
 ### Session

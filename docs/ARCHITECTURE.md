@@ -103,13 +103,33 @@ src/
     ├── mod.rs           # Storage trait, domain types
     └── sqlite.rs        # SQLite implementation
 
+self_improvement/
+├── mod.rs               # Module exports and re-exports
+├── system.rs            # Main orchestrator (4-phase loop)
+├── monitor.rs           # Phase 1: Metrics collection and anomaly detection
+├── analyzer.rs          # Phase 2: Root cause diagnosis via Langbase
+├── executor.rs          # Phase 3: Safe action execution with rollback
+├── learner.rs           # Phase 4: Reward calculation and learning
+├── types.rs             # Core types (Diagnosis, Action, Reward, etc.)
+├── config.rs            # Configuration from environment
+├── allowlist.rs         # Action validation and bounds
+├── baseline.rs          # EMA + rolling baseline calculation
+├── circuit_breaker.rs   # Failure protection pattern
+├── pipes.rs             # Langbase pipe integrations
+├── storage.rs           # SQLite persistence for actions
+└── cli.rs               # CLI command handlers
+
 tests/
 ├── config_env_test.rs   # Configuration tests
 ├── integration_test.rs  # Mode integration tests
 ├── langbase_test.rs     # HTTP client tests with mocks
 ├── mcp_protocol_test.rs # JSON-RPC compliance tests
 ├── modes_test.rs        # Mode-specific tests
-└── storage_test.rs      # SQLite integration tests
+├── storage_test.rs      # SQLite integration tests
+├── self_improvement_test.rs           # Core self-improvement tests
+├── self_improvement_types_test.rs     # Type definition tests
+├── self_improvement_pipes_test.rs     # Pipe integration tests
+└── self_improvement_integration_test.rs # Full loop tests
 
 migrations/
 ├── 20240101000001_initial_schema.sql       # Sessions, thoughts, invocations
@@ -426,6 +446,272 @@ graph_edges (id, graph_id, from_node, to_node, edge_type, weight, created_at, me
 -- Invocations: API call audit log
 invocations (id, session_id, tool_name, input, output, pipe_name, latency_ms, success, error, created_at)
   FK: session_id -> sessions.id (SET NULL)
+
+-- Self-improvement action records
+si_actions (id, diagnosis_id, action_type, action_data, pre_metrics, post_metrics, outcome, reward, executed_at, verified_at)
+
+-- Action effectiveness history
+si_effectiveness (id, action_signature, successful_attempts, total_attempts, avg_reward, last_updated)
+```
+
+### Self-Improvement System (self_improvement/)
+
+Autonomous 4-phase optimization loop with multiple safety layers.
+
+#### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    SelfImprovementSystem                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
+│  │ Monitor  │──│ Analyzer │──│ Executor │──│ Learner  │            │
+│  │          │  │          │  │          │  │          │            │
+│  │ - Metrics│  │ - Diag   │  │ - Valid  │  │ - Reward │            │
+│  │ - Base   │  │ - Action │  │ - Execute│  │ - Effect │            │
+│  │ - Trigger│  │ - Detect │  │ - Verify │  │ - Synth  │            │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘            │
+│       │                                          │                  │
+│       └──────────────────────────────────────────┘                  │
+│                           │                                          │
+│  ┌───────────────────────┴───────────────────────────────────┐     │
+│  │                    Shared Components                       │     │
+│  │  CircuitBreaker │ ActionAllowlist │ Storage │ Pipes       │     │
+│  └────────────────────────────────────────────────────────────┘     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Phase 1: Monitor (monitor.rs)
+
+Collects system metrics and detects anomalies.
+
+```rust
+pub struct Monitor {
+    config: SelfImprovementConfig,
+    metrics: Arc<RwLock<Vec<RawMetrics>>>,
+    baselines: Arc<RwLock<BaselineCollection>>,
+}
+
+impl Monitor {
+    pub async fn record_invocation(&self, event: InvocationEvent);
+    pub async fn check_health(&self) -> Option<HealthReport>;
+    pub async fn get_baselines(&self) -> Baselines;
+}
+```
+
+Key Types:
+- `RawMetrics`: Individual invocation metrics
+- `AggregatedMetrics`: Windowed aggregations
+- `HealthReport`: Current health with triggers
+- `TriggerMetric`: ErrorRate, Latency, QualityScore variants
+
+Baseline Calculation:
+- Hybrid EMA (Exponential Moving Average) + rolling window
+- Configurable warmup period before triggering
+- Automatic threshold multipliers (warning: 1.5x, critical: 2x)
+
+#### Phase 2: Analyzer (analyzer.rs)
+
+Diagnoses root causes and recommends actions using Langbase pipes.
+
+```rust
+pub struct Analyzer {
+    config: SelfImprovementConfig,
+    pipes: Arc<SelfImprovementPipes>,
+    circuit_breaker: Arc<RwLock<CircuitBreaker>>,
+    pending: Arc<RwLock<Vec<SelfDiagnosis>>>,
+}
+
+impl Analyzer {
+    pub async fn analyze(&self, report: &HealthReport) -> Result<AnalysisResult, AnalysisBlocked>;
+    pub async fn pending_count(&self) -> usize;
+}
+```
+
+Key Types:
+- `SelfDiagnosis`: Root cause with suggested action
+- `SuggestedAction`: AdjustParam, ToggleFeature, ScaleResource, ClearCache, NoOp
+- `Severity`: Info, Warning, High, Critical
+
+Uses Langbase Pipes:
+- `reflection-v1`: Root cause analysis
+- `decision-framework-v1`: Action selection
+- `detection-v1`: Bias/fallacy validation
+
+#### Phase 3: Executor (executor.rs)
+
+Validates and executes actions with safety controls.
+
+```rust
+pub struct Executor {
+    config: SelfImprovementConfig,
+    allowlist: ActionAllowlist,
+    circuit_breaker: Arc<RwLock<CircuitBreaker>>,
+    pending: Arc<RwLock<Option<ExecutionResult>>>,
+    history: Arc<RwLock<Vec<ExecutionResult>>>,
+}
+
+impl Executor {
+    pub async fn execute(&self, diagnosis: &SelfDiagnosis, metrics: &MetricsSnapshot)
+        -> Result<ExecutionResult, ExecutionBlocked>;
+    pub async fn verify_and_complete(&self, metrics: &MetricsSnapshot, baselines: &Baselines)
+        -> Option<ExecutionResult>;
+    pub async fn force_rollback(&self, reason: &str) -> Option<ExecutionResult>;
+}
+```
+
+Key Types:
+- `ExecutionResult`: Full execution record with pre/post state
+- `ExecutionBlocked`: CircuitOpen, NotAllowed, CooldownActive, RateLimitExceeded, NoOpAction
+- `ConfigState`: Snapshot of current configuration
+
+Safety Mechanisms:
+- Allowlist validation (bounds, step limits)
+- Rate limiting (max actions per hour)
+- Cooldown enforcement
+- Automatic rollback on regression
+
+#### Phase 4: Learner (learner.rs)
+
+Calculates rewards and tracks action effectiveness.
+
+```rust
+pub struct Learner {
+    config: SelfImprovementConfig,
+    pipes: Arc<SelfImprovementPipes>,
+    circuit_breaker: Arc<RwLock<CircuitBreaker>>,
+    effectiveness_history: Arc<RwLock<HashMap<String, ActionEffectiveness>>>,
+}
+
+impl Learner {
+    pub async fn learn(&self, execution: &ExecutionResult, diagnosis: &SelfDiagnosis,
+        post_metrics: &MetricsSnapshot, baselines: &Baselines)
+        -> Result<LearningOutcome, LearningBlocked>;
+    pub async fn get_effectiveness_for_action(&self, action: &SuggestedAction) -> Option<f64>;
+}
+```
+
+Key Types:
+- `NormalizedReward`: Combined score from error, latency, quality deltas
+- `RewardBreakdown`: Individual component contributions
+- `LearningOutcome`: Reward, effectiveness, synthesis
+- `ActionEffectiveness`: Historical success rate
+
+Reward Calculation:
+```
+reward = w_error × Δ_error + w_latency × Δ_latency + w_quality × Δ_quality
+```
+Where Δ values are normalized improvements (-1 to +1).
+
+#### Circuit Breaker (circuit_breaker.rs)
+
+Failure protection pattern implementation.
+
+```rust
+pub struct CircuitBreaker {
+    config: CircuitBreakerConfig,
+    state: CircuitState,
+    failure_count: u32,
+    last_failure: Option<DateTime<Utc>>,
+    opened_at: Option<DateTime<Utc>>,
+}
+
+pub enum CircuitState {
+    Closed,    // Normal operation
+    Open,      // Blocking all actions
+    HalfOpen,  // Testing recovery
+}
+```
+
+Behavior:
+- Opens after N consecutive failures
+- Stays open for configurable duration
+- Half-open allows single test action
+- Success in half-open closes circuit
+
+#### Action Allowlist (allowlist.rs)
+
+Validates actions against pre-defined bounds.
+
+```rust
+pub struct ActionAllowlist {
+    adjustable_params: HashMap<String, ParamBounds>,
+    toggleable_features: HashSet<String>,
+    scalable_resources: HashMap<ResourceType, ResourceBounds>,
+}
+
+pub struct ParamBounds {
+    current_value: ParamValue,
+    min: ParamValue,
+    max: ParamValue,
+    step: ParamValue,
+    description: String,
+}
+```
+
+Validations:
+- Parameter within min/max range
+- Step size within allowed increment
+- Feature in toggleable set
+- Resource within scaling bounds
+
+#### Pipes Integration (pipes.rs)
+
+Langbase pipe wrappers for AI-assisted analysis.
+
+```rust
+pub struct SelfImprovementPipes {
+    langbase: Arc<LangbaseClient>,
+    config: SelfImprovementPipeConfig,
+}
+
+impl SelfImprovementPipes {
+    pub async fn generate_diagnosis(&self, report: &HealthReport, trigger: &TriggerMetric)
+        -> Result<DiagnosisResponse, PipeError>;
+    pub async fn select_action(&self, diagnosis: &SelfDiagnosis, allowlist: &ActionAllowlist)
+        -> Result<ActionSelectionResponse, PipeError>;
+    pub async fn validate_decision(&self, diagnosis: &SelfDiagnosis)
+        -> Result<ValidationResponse, PipeError>;
+    pub async fn synthesize_learning(&self, execution: &ExecutionResult, diagnosis: &SelfDiagnosis)
+        -> Result<LearningResponse, PipeError>;
+}
+```
+
+#### Storage (storage.rs)
+
+SQLite persistence for self-improvement data.
+
+```rust
+pub struct SelfImprovementStorage {
+    pool: SqlitePool,
+}
+
+impl SelfImprovementStorage {
+    pub async fn save_action(&self, action: &ActionRecord) -> Result<(), StorageError>;
+    pub async fn get_action_history(&self, limit: usize) -> Result<Vec<ActionRecord>, StorageError>;
+    pub async fn save_effectiveness(&self, record: &ActionEffectivenessRecord) -> Result<(), StorageError>;
+    pub async fn get_effectiveness(&self, signature: &str) -> Result<Option<ActionEffectivenessRecord>, StorageError>;
+}
+```
+
+#### CLI (cli.rs)
+
+Command-line interface for system management.
+
+```rust
+pub enum SelfImproveCommands {
+    Status,
+    History { limit: Option<usize> },
+    Enable,
+    Disable,
+    Pause { duration: String },
+    Resume,
+    Config,
+    Check,
+    Rollback,
+    Reset,
+}
+
+pub async fn execute_command(cmd: SelfImproveCommands, config: &Config) -> CliResult<String>;
 ```
 
 ### Prompts (prompts.rs)
@@ -621,4 +907,4 @@ pub struct Config {
 | Decision/Evidence | Unit | `src/modes/{decision,evidence}.rs` (inline) |
 | Prompts | Unit | `src/prompts.rs` (inline) |
 
-Total test count: 591 tests across all modules.
+Total test count: 2100+ tests across all modules (83% coverage).

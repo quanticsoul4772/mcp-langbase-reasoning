@@ -7,9 +7,9 @@ A Model Context Protocol (MCP) server providing structured reasoning capabilitie
 - **9 Reasoning Modes** - Linear, tree, divergent, reflection, backtracking, auto-selection, Graph-of-Thoughts, decision framework, and evidence assessment
 - **5 Workflow Presets** - Code review, debugging, architecture decisions, strategic decisions, and evidence-based conclusions
 - **Cognitive Analysis** - Bias detection and logical fallacy identification
-- **Self-Improvement** - Autonomous monitoring and optimization loop
+- **Autonomous Self-Improvement** - 4-phase optimization loop with safety controls (Monitor → Analyzer → Executor → Learner)
 - **Session Persistence** - SQLite storage for sessions, thoughts, branches, and checkpoints
-- **Production Ready** - 1900+ tests, async I/O, retry logic, structured error handling
+- **Production Ready** - 2100+ tests, 83% coverage, async I/O, retry logic, structured error handling
 
 ## Quick Start
 
@@ -132,6 +132,109 @@ Add to Claude Desktop configuration (`claude_desktop_config.json`):
 | `REQUEST_TIMEOUT_MS` | `30000` | HTTP timeout |
 | `MAX_RETRIES` | `3` | API retry attempts |
 
+## Self-Improvement System
+
+The server includes an autonomous self-improvement loop that monitors system health, diagnoses issues, executes safe optimizations, and learns from outcomes.
+
+### How It Works
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ MONITOR  │───▶│ ANALYZER │───▶│ EXECUTOR │───▶│ LEARNER  │
+│ Phase 1  │    │ Phase 2  │    │ Phase 3  │    │ Phase 4  │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+     │                                               │
+     └───────────────────◀───────────────────────────┘
+```
+
+| Phase | Function |
+|-------|----------|
+| **Monitor** | Collects metrics (error rate, latency, quality), maintains baselines, detects anomalies |
+| **Analyzer** | Uses Langbase pipes to diagnose root causes, generates action recommendations |
+| **Executor** | Validates actions against allowlist, executes safely, monitors for regressions |
+| **Learner** | Calculates rewards, tracks action effectiveness, synthesizes lessons |
+
+### Safety Features
+
+- **Disabled by Default** - Set `SELF_IMPROVEMENT_ENABLED=true` to activate
+- **Circuit Breaker** - Stops after consecutive failures (default: 5)
+- **Action Allowlist** - Only bounded, pre-approved parameter changes allowed
+- **Rate Limiting** - Maximum actions per hour (default: 10)
+- **Automatic Rollback** - Reverts changes that cause regression
+- **Cooldown Periods** - Minimum time between actions (default: 60s)
+- **AI Validation** - Bias and fallacy detection on decisions
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SELF_IMPROVEMENT_ENABLED` | `false` | Enable the self-improvement loop |
+| `SI_MAX_ACTIONS_PER_HOUR` | `10` | Maximum actions per hour |
+| `SI_COOLDOWN_SECS` | `60` | Cooldown between actions |
+| `SI_REQUIRE_APPROVAL` | `false` | Require manual approval |
+| `SI_ROLLBACK_ON_REGRESSION` | `true` | Auto-rollback on degradation |
+| `SI_CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before circuit opens |
+| `SI_ERROR_RATE_THRESHOLD` | `0.1` | Error rate trigger (10%) |
+| `SI_LATENCY_THRESHOLD_MS` | `5000` | P95 latency trigger |
+| `SI_QUALITY_THRESHOLD` | `0.7` | Quality score minimum |
+
+### Allowed Actions
+
+The system can only adjust pre-defined safe parameters:
+
+| Parameter | Range | Max Step |
+|-----------|-------|----------|
+| `REQUEST_TIMEOUT_MS` | 5,000-60,000 | 5,000 |
+| `MAX_RETRIES` | 1-10 | 2 |
+| `RETRY_DELAY_MS` | 100-5,000 | 500 |
+| `REFLECTION_QUALITY_THRESHOLD` | 0.5-0.95 | 0.05 |
+| `MAX_CONCURRENT_REQUESTS` | 1-20 | 2 |
+| `CONNECTION_POOL_SIZE` | 1-50 | 5 |
+
+### CLI Commands
+
+```bash
+# View system status
+cargo run -- self-improve status
+
+# View action history
+cargo run -- self-improve history
+
+# Enable/disable the system
+cargo run -- self-improve enable
+cargo run -- self-improve disable
+
+# Pause temporarily
+cargo run -- self-improve pause --duration 1h
+
+# View current configuration
+cargo run -- self-improve config
+
+# Force a health check
+cargo run -- self-improve check
+
+# Rollback last action
+cargo run -- self-improve rollback
+```
+
+### Example Output
+
+```
+$ cargo run -- self-improve status
+
+Self-Improvement System Status
+==============================
+Enabled:           true
+Circuit State:     closed
+Consecutive Fails: 0
+In Cooldown:       false
+Actions This Hour: 3/10
+Total Cycles:      47
+Total Successes:   42
+Total Rollbacks:   2
+Last Cycle:        2025-12-26T10:30:00Z
+```
+
 ## Architecture
 
 ```
@@ -154,17 +257,9 @@ Add to Claude Desktop configuration (`claude_desktop_config.json`):
 ```bash
 cargo build              # Debug build
 cargo build --release    # Release build
-cargo test               # Run all tests
-cargo clippy -- -D warnings  # Lint
-```
-
-### Self-Improvement CLI
-
-```bash
-cargo run -- self-improve status      # System status
-cargo run -- self-improve history     # Action history
-cargo run -- self-improve enable      # Enable system
-cargo run -- self-improve disable     # Disable system
+cargo test               # Run all 2100+ tests
+cargo clippy -- -D warnings  # Lint (0 warnings)
+cargo llvm-cov           # Generate coverage report
 ```
 
 ## Project Structure

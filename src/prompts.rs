@@ -439,6 +439,163 @@ Always respond with valid JSON only."#;
 // Phase 4: Bias & Fallacy Detection Prompts
 // ============================================================================
 
+// ============================================================================
+// Phase 6: Time Machine Prompts (Timeline, MCTS, Counterfactual)
+// ============================================================================
+
+/// System prompt for timeline-based reasoning exploration.
+pub const TIMELINE_REASONING_PROMPT: &str = r#"You are a temporal reasoning assistant that explores and compares alternative reasoning paths through time.
+
+Your response MUST be valid JSON in this format:
+{
+  "summary": "overview of timeline exploration",
+  "current_path": {
+    "thought": "current reasoning state",
+    "confidence": 0.8,
+    "depth": 3
+  },
+  "alternatives": [
+    {
+      "thought": "alternative reasoning path",
+      "confidence": 0.7,
+      "divergence_point": "where this path diverged",
+      "rationale": "why this alternative exists"
+    }
+  ],
+  "recommended_action": "continue|branch|backtrack|merge",
+  "metadata": {}
+}
+
+Guidelines:
+- Track reasoning state across temporal exploration
+- Identify key decision points where paths diverge
+- Compare parallel reasoning trajectories
+- Recommend optimal navigation through the reasoning space
+- Support branching, merging, and backtracking operations"#;
+
+/// System prompt for MCTS-guided reasoning exploration.
+pub const MCTS_EXPLORATION_PROMPT: &str = r#"You are a Monte Carlo Tree Search reasoning assistant that uses UCB1-guided exploration to find optimal reasoning paths.
+
+Your response MUST be valid JSON in this format:
+{
+  "node_evaluation": {
+    "content": "current reasoning node content",
+    "value": 0.75,
+    "visit_count": 5,
+    "ucb_score": 1.42,
+    "is_promising": true
+  },
+  "expansion": [
+    {
+      "thought": "expanded child node content",
+      "prior": 0.6,
+      "rationale": "why this expansion is valuable"
+    }
+  ],
+  "simulation_result": {
+    "outcome_value": 0.8,
+    "path_taken": ["step1", "step2", "step3"],
+    "terminal_state": "conclusion reached"
+  },
+  "recommendation": {
+    "action": "select|expand|simulate|backpropagate",
+    "target_node": "node_id or null",
+    "confidence": 0.82
+  },
+  "metadata": {}
+}
+
+UCB1 Formula: Q(s,a) + c * sqrt(ln(N_parent) / N(s,a))
+- Q(s,a): Average value of node (exploitation)
+- c: Exploration constant (typically sqrt(2))
+- N_parent: Parent visit count
+- N(s,a): Node visit count
+
+Guidelines:
+- Balance exploration vs exploitation using UCB1
+- Expand promising nodes with high UCB scores
+- Simulate rollouts to estimate node values
+- Backpropagate results to update ancestor values
+- Select nodes with highest UCB for further exploration"#;
+
+/// System prompt for counterfactual "what if" reasoning.
+pub const COUNTERFACTUAL_ANALYSIS_PROMPT: &str = r#"You are a counterfactual reasoning assistant using Pearl's Ladder of Causation for "what if" analysis.
+
+Your response MUST be valid JSON in this format:
+{
+  "summary": "brief summary of counterfactual analysis",
+  "counterfactual_outcome": "what would have happened differently",
+  "actual_outcome": "what actually happened/was concluded",
+  "outcome_delta": 0.3,
+  "differences": ["key difference 1", "key difference 2"],
+  "changed_factors": ["factor that would change"],
+  "unchanged_factors": ["factor that stays the same"],
+  "causal_attribution": 0.75,
+  "confidence": 0.82,
+  "insights": ["key insight from the analysis"]
+}
+
+Pearl's Ladder of Causation:
+1. Association (Seeing): P(Y|X) - What correlations exist?
+2. Intervention (Doing): P(Y|do(X)) - What if we intervene?
+3. Counterfactual (Imagining): P(Y_x|X',Y') - What if X had been different?
+
+Intervention Types:
+- CHANGE: Modify an existing element
+- REMOVE: Eliminate an element entirely
+- REPLACE: Substitute with something different
+- INJECT: Add a new element at a decision point
+
+Guidelines:
+- Apply causal reasoning rigorously
+- Distinguish correlation from causation
+- Consider both direct and indirect effects
+- Estimate causal attribution (how much intervention caused change)
+- Identify what would and wouldn't change
+- Provide actionable insights from the analysis"#;
+
+/// System prompt for auto-backtracking decision.
+pub const AUTO_BACKTRACK_PROMPT: &str = r#"You are a reasoning quality monitor that decides when to automatically backtrack to a better reasoning state.
+
+Your response MUST be valid JSON in this format:
+{
+  "current_assessment": {
+    "quality_score": 0.4,
+    "confidence": 0.6,
+    "issues_detected": ["issue 1", "issue 2"]
+  },
+  "should_backtrack": true,
+  "recommended_checkpoint": "checkpoint_id or null",
+  "backtrack_rationale": "why backtracking is recommended",
+  "alternative_directions": [
+    {
+      "direction": "alternative approach description",
+      "expected_improvement": 0.3,
+      "confidence": 0.7
+    }
+  ],
+  "threshold_analysis": {
+    "quality_threshold": 0.6,
+    "confidence_threshold": 0.7,
+    "current_meets_threshold": false
+  },
+  "metadata": {}
+}
+
+Backtracking Triggers:
+- Quality score below threshold
+- Confidence dropping consistently
+- Detected reasoning loops or contradictions
+- Dead-end reached with no viable continuations
+- Better alternative path discovered
+
+Guidelines:
+- Monitor reasoning quality continuously
+- Compare current state to checkpoints
+- Recommend backtracking when quality degrades significantly
+- Suggest alternative directions after backtracking
+- Preserve good reasoning segments while discarding problematic ones"#;
+
 /// System prompt for cognitive bias detection.
 pub const BIAS_DETECTION_PROMPT: &str = r#"You are a cognitive bias detection assistant. Analyze the given content for cognitive biases that may affect reasoning quality.
 
@@ -563,6 +720,11 @@ pub fn get_prompt_for_mode(mode: &str) -> &'static str {
         }
         "evidence" | "assess_evidence" | "evidence-assessor" => EVIDENCE_ASSESSOR_PROMPT,
         "probabilistic" | "bayesian" | "bayesian-updater" => BAYESIAN_UPDATER_PROMPT,
+        // Phase 6: Time Machine (Timeline, MCTS, Counterfactual)
+        "timeline" | "timeline_reasoning" | "temporal" => TIMELINE_REASONING_PROMPT,
+        "mcts" | "mcts_exploration" | "monte_carlo" => MCTS_EXPLORATION_PROMPT,
+        "counterfactual" | "what_if" | "causal" => COUNTERFACTUAL_ANALYSIS_PROMPT,
+        "autobacktrack" | "auto_backtrack" | "backtrack_decision" => AUTO_BACKTRACK_PROMPT,
         _ => LINEAR_REASONING_PROMPT,
     }
 }
@@ -1275,5 +1437,143 @@ mod tests {
     fn test_fallacy_detection_remediation() {
         assert!(FALLACY_DETECTION_PROMPT.contains("remediation"));
         assert!(FALLACY_DETECTION_PROMPT.contains("fix the argument"));
+    }
+
+    // ========================================================================
+    // Phase 6: Time Machine Prompt Tests
+    // ========================================================================
+
+    #[test]
+    #[allow(clippy::const_is_empty)]
+    fn test_time_machine_prompts_not_empty() {
+        assert!(!TIMELINE_REASONING_PROMPT.is_empty());
+        assert!(!MCTS_EXPLORATION_PROMPT.is_empty());
+        assert!(!COUNTERFACTUAL_ANALYSIS_PROMPT.is_empty());
+        assert!(!AUTO_BACKTRACK_PROMPT.is_empty());
+    }
+
+    #[test]
+    fn test_time_machine_prompts_contain_json() {
+        assert!(TIMELINE_REASONING_PROMPT.contains("JSON"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("JSON"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("JSON"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("JSON"));
+    }
+
+    #[test]
+    fn test_timeline_prompt_keywords() {
+        assert!(TIMELINE_REASONING_PROMPT.contains("temporal"));
+        assert!(TIMELINE_REASONING_PROMPT.contains("alternatives"));
+        assert!(TIMELINE_REASONING_PROMPT.contains("divergence_point"));
+        assert!(TIMELINE_REASONING_PROMPT.contains("recommended_action"));
+        assert!(TIMELINE_REASONING_PROMPT.contains("branch"));
+        assert!(TIMELINE_REASONING_PROMPT.contains("merge"));
+    }
+
+    #[test]
+    fn test_mcts_prompt_keywords() {
+        assert!(MCTS_EXPLORATION_PROMPT.contains("Monte Carlo Tree Search"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("UCB1"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("exploration"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("exploitation"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("ucb_score"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("backpropagate"));
+    }
+
+    #[test]
+    fn test_counterfactual_prompt_keywords() {
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("Pearl's Ladder"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("counterfactual"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("causal_attribution"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("Intervention"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("CHANGE"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("REMOVE"));
+    }
+
+    #[test]
+    fn test_auto_backtrack_prompt_keywords() {
+        assert!(AUTO_BACKTRACK_PROMPT.contains("backtrack"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("quality_score"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("should_backtrack"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("checkpoint"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("threshold"));
+    }
+
+    #[test]
+    fn test_get_prompt_for_time_machine_modes() {
+        // Timeline variations
+        assert_eq!(get_prompt_for_mode("timeline"), TIMELINE_REASONING_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("timeline_reasoning"),
+            TIMELINE_REASONING_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode("temporal"), TIMELINE_REASONING_PROMPT);
+
+        // MCTS variations
+        assert_eq!(get_prompt_for_mode("mcts"), MCTS_EXPLORATION_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("mcts_exploration"),
+            MCTS_EXPLORATION_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode("monte_carlo"), MCTS_EXPLORATION_PROMPT);
+
+        // Counterfactual variations
+        assert_eq!(
+            get_prompt_for_mode("counterfactual"),
+            COUNTERFACTUAL_ANALYSIS_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode("what_if"), COUNTERFACTUAL_ANALYSIS_PROMPT);
+        assert_eq!(get_prompt_for_mode("causal"), COUNTERFACTUAL_ANALYSIS_PROMPT);
+
+        // Auto-backtrack variations
+        assert_eq!(get_prompt_for_mode("autobacktrack"), AUTO_BACKTRACK_PROMPT);
+        assert_eq!(get_prompt_for_mode("auto_backtrack"), AUTO_BACKTRACK_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("backtrack_decision"),
+            AUTO_BACKTRACK_PROMPT
+        );
+    }
+
+    #[test]
+    fn test_time_machine_prompts_case_insensitive() {
+        assert_eq!(get_prompt_for_mode("TIMELINE"), TIMELINE_REASONING_PROMPT);
+        assert_eq!(get_prompt_for_mode("MCTS"), MCTS_EXPLORATION_PROMPT);
+        assert_eq!(
+            get_prompt_for_mode("COUNTERFACTUAL"),
+            COUNTERFACTUAL_ANALYSIS_PROMPT
+        );
+        assert_eq!(get_prompt_for_mode("AUTOBACKTRACK"), AUTO_BACKTRACK_PROMPT);
+    }
+
+    #[test]
+    fn test_time_machine_prompts_minimum_lengths() {
+        assert!(TIMELINE_REASONING_PROMPT.len() > 400);
+        assert!(MCTS_EXPLORATION_PROMPT.len() > 600);
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.len() > 600);
+        assert!(AUTO_BACKTRACK_PROMPT.len() > 500);
+    }
+
+    #[test]
+    fn test_mcts_prompt_ucb_formula() {
+        assert!(MCTS_EXPLORATION_PROMPT.contains("Q(s,a)"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("sqrt"));
+        assert!(MCTS_EXPLORATION_PROMPT.contains("N_parent"));
+    }
+
+    #[test]
+    fn test_counterfactual_pearl_ladder_levels() {
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("Association"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("Intervention"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("Counterfactual"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("P(Y|X)"));
+        assert!(COUNTERFACTUAL_ANALYSIS_PROMPT.contains("do(X)"));
+    }
+
+    #[test]
+    fn test_auto_backtrack_triggers() {
+        assert!(AUTO_BACKTRACK_PROMPT.contains("Quality score below threshold"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("Confidence dropping"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("Dead-end"));
+        assert!(AUTO_BACKTRACK_PROMPT.contains("alternative path"));
     }
 }

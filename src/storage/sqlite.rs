@@ -87,9 +87,10 @@ fn parse_timestamp_or_skip(
 }
 
 use super::{
-    Branch, Checkpoint, CrossRef, Decision, Detection, DetectionType, EvidenceAssessment,
-    FallbackMetricsSummary, GraphEdge, GraphNode, Invocation, MetricsFilter, PerspectiveAnalysis,
-    PipeUsageSummary, ProbabilityUpdate, Session, StateSnapshot, Storage, StoredCriterion, Thought,
+    Branch, Checkpoint, CounterfactualAnalysis, CrossRef, Decision, Detection, DetectionType,
+    EvidenceAssessment, FallbackMetricsSummary, GraphEdge, GraphNode, InterventionType, Invocation,
+    MCTSNode, MetricsFilter, PerspectiveAnalysis, PipeUsageSummary, ProbabilityUpdate, Session,
+    StateSnapshot, Storage, StoredCriterion, Thought, Timeline, TimelineBranch, TimelineState,
 };
 #[cfg(test)]
 use super::{BranchState, CrossRefType, EdgeType};
@@ -1814,6 +1815,590 @@ impl Storage for SqliteStorage {
 
         Ok(())
     }
+
+    // ========================================================================
+    // Timeline operations (Time Machine)
+    // ========================================================================
+
+    async fn create_timeline(&self, timeline: &Timeline) -> StorageResult<()> {
+        let metadata = serialize_json(&timeline.metadata, "timeline.metadata")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO timelines (id, session_id, name, description, root_branch_id,
+                                   active_branch_id, state, branch_count, max_depth,
+                                   created_at, updated_at, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&timeline.id)
+        .bind(&timeline.session_id)
+        .bind(&timeline.name)
+        .bind(&timeline.description)
+        .bind(&timeline.root_branch_id)
+        .bind(&timeline.active_branch_id)
+        .bind(timeline.state.to_string())
+        .bind(timeline.branch_count)
+        .bind(timeline.max_depth)
+        .bind(timeline.created_at.to_rfc3339())
+        .bind(timeline.updated_at.to_rfc3339())
+        .bind(&metadata)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_timeline(&self, id: &str) -> StorageResult<Option<Timeline>> {
+        let row: Option<TimelineRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, name, description, root_branch_id, active_branch_id,
+                   state, branch_count, max_depth, created_at, updated_at, metadata
+            FROM timelines
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_timelines(&self, session_id: &str) -> StorageResult<Vec<Timeline>> {
+        let rows: Vec<TimelineRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, name, description, root_branch_id, active_branch_id,
+                   state, branch_count, max_depth, created_at, updated_at, metadata
+            FROM timelines
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_timelines_by_state(&self, state: TimelineState) -> StorageResult<Vec<Timeline>> {
+        let rows: Vec<TimelineRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, name, description, root_branch_id, active_branch_id,
+                   state, branch_count, max_depth, created_at, updated_at, metadata
+            FROM timelines
+            WHERE state = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(state.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn update_timeline(&self, timeline: &Timeline) -> StorageResult<()> {
+        let metadata = serialize_json(&timeline.metadata, "timeline.metadata")?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE timelines
+            SET name = ?, description = ?, active_branch_id = ?, state = ?,
+                branch_count = ?, max_depth = ?, updated_at = ?, metadata = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&timeline.name)
+        .bind(&timeline.description)
+        .bind(&timeline.active_branch_id)
+        .bind(timeline.state.to_string())
+        .bind(timeline.branch_count)
+        .bind(timeline.max_depth)
+        .bind(timeline.updated_at.to_rfc3339())
+        .bind(&metadata)
+        .bind(&timeline.id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::Query {
+                message: format!("Timeline not found: {}", timeline.id),
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn delete_timeline(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM timelines WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Timeline branch operations (Time Machine)
+    // ========================================================================
+
+    async fn create_timeline_branch(&self, branch: &TimelineBranch) -> StorageResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO timeline_branches (branch_id, timeline_id, depth, visit_count,
+                                           total_value, ucb_score, counterfactual_impact,
+                                           mcts_generated, alternatives_explored,
+                                           created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&branch.branch_id)
+        .bind(&branch.timeline_id)
+        .bind(branch.depth)
+        .bind(branch.visit_count)
+        .bind(branch.total_value)
+        .bind(branch.ucb_score)
+        .bind(branch.counterfactual_impact)
+        .bind(branch.mcts_generated)
+        .bind(branch.alternatives_explored)
+        .bind(branch.created_at.to_rfc3339())
+        .bind(branch.updated_at.to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_timeline_branch(&self, branch_id: &str) -> StorageResult<Option<TimelineBranch>> {
+        let row: Option<TimelineBranchRow> = sqlx::query_as(
+            r#"
+            SELECT branch_id, timeline_id, depth, visit_count, total_value,
+                   ucb_score, counterfactual_impact, mcts_generated,
+                   alternatives_explored, created_at, updated_at
+            FROM timeline_branches
+            WHERE branch_id = ?
+            "#,
+        )
+        .bind(branch_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_timeline_branches(&self, timeline_id: &str) -> StorageResult<Vec<TimelineBranch>> {
+        let rows: Vec<TimelineBranchRow> = sqlx::query_as(
+            r#"
+            SELECT branch_id, timeline_id, depth, visit_count, total_value,
+                   ucb_score, counterfactual_impact, mcts_generated,
+                   alternatives_explored, created_at, updated_at
+            FROM timeline_branches
+            WHERE timeline_id = ?
+            ORDER BY depth ASC, created_at ASC
+            "#,
+        )
+        .bind(timeline_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_branches_by_ucb(&self, timeline_id: &str) -> StorageResult<Vec<TimelineBranch>> {
+        let rows: Vec<TimelineBranchRow> = sqlx::query_as(
+            r#"
+            SELECT branch_id, timeline_id, depth, visit_count, total_value,
+                   ucb_score, counterfactual_impact, mcts_generated,
+                   alternatives_explored, created_at, updated_at
+            FROM timeline_branches
+            WHERE timeline_id = ?
+            ORDER BY ucb_score DESC NULLS LAST
+            "#,
+        )
+        .bind(timeline_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn update_timeline_branch(&self, branch: &TimelineBranch) -> StorageResult<()> {
+        let result = sqlx::query(
+            r#"
+            UPDATE timeline_branches
+            SET depth = ?, visit_count = ?, total_value = ?, ucb_score = ?,
+                counterfactual_impact = ?, mcts_generated = ?, alternatives_explored = ?,
+                updated_at = ?
+            WHERE branch_id = ?
+            "#,
+        )
+        .bind(branch.depth)
+        .bind(branch.visit_count)
+        .bind(branch.total_value)
+        .bind(branch.ucb_score)
+        .bind(branch.counterfactual_impact)
+        .bind(branch.mcts_generated)
+        .bind(branch.alternatives_explored)
+        .bind(branch.updated_at.to_rfc3339())
+        .bind(&branch.branch_id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::Query {
+                message: format!("Timeline branch not found: {}", branch.branch_id),
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn delete_timeline_branch(&self, branch_id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM timeline_branches WHERE branch_id = ?")
+            .bind(branch_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // MCTS node operations (Time Machine)
+    // ========================================================================
+
+    async fn create_mcts_node(&self, node: &MCTSNode) -> StorageResult<()> {
+        let metadata = serialize_json(&node.metadata, "mcts_node.metadata")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO mcts_nodes (id, session_id, timeline_id, branch_id, parent_node_id,
+                                    content, visit_count, total_value, prior, ucb_score,
+                                    is_expanded, is_terminal, simulation_depth,
+                                    created_at, last_visited, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&node.id)
+        .bind(&node.session_id)
+        .bind(&node.timeline_id)
+        .bind(&node.branch_id)
+        .bind(&node.parent_node_id)
+        .bind(&node.content)
+        .bind(node.visit_count)
+        .bind(node.total_value)
+        .bind(node.prior)
+        .bind(node.ucb_score)
+        .bind(node.is_expanded)
+        .bind(node.is_terminal)
+        .bind(node.simulation_depth)
+        .bind(node.created_at.to_rfc3339())
+        .bind(node.last_visited.to_rfc3339())
+        .bind(&metadata)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_mcts_node(&self, id: &str) -> StorageResult<Option<MCTSNode>> {
+        let row: Option<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_mcts_nodes(&self, session_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE session_id = ?
+            ORDER BY created_at ASC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_timeline_mcts_nodes(&self, timeline_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE timeline_id = ?
+            ORDER BY simulation_depth ASC, created_at ASC
+            "#,
+        )
+        .bind(timeline_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_mcts_children(&self, parent_node_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE parent_node_id = ?
+            ORDER BY ucb_score DESC
+            "#,
+        )
+        .bind(parent_node_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_unexpanded_mcts_nodes(&self, session_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE session_id = ? AND is_expanded = 0 AND is_terminal = 0
+            ORDER BY ucb_score DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_terminal_mcts_nodes(&self, session_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE session_id = ? AND is_terminal = 1
+            ORDER BY total_value DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_mcts_nodes_by_ucb(&self, session_id: &str) -> StorageResult<Vec<MCTSNode>> {
+        let rows: Vec<MCTSNodeRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, branch_id, parent_node_id, content,
+                   visit_count, total_value, prior, ucb_score, is_expanded, is_terminal,
+                   simulation_depth, created_at, last_visited, metadata
+            FROM mcts_nodes
+            WHERE session_id = ?
+            ORDER BY ucb_score DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn update_mcts_node(&self, node: &MCTSNode) -> StorageResult<()> {
+        let metadata = serialize_json(&node.metadata, "mcts_node.metadata")?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE mcts_nodes
+            SET visit_count = ?, total_value = ?, ucb_score = ?, is_expanded = ?,
+                is_terminal = ?, simulation_depth = ?, last_visited = ?, metadata = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(node.visit_count)
+        .bind(node.total_value)
+        .bind(node.ucb_score)
+        .bind(node.is_expanded)
+        .bind(node.is_terminal)
+        .bind(node.simulation_depth)
+        .bind(node.last_visited.to_rfc3339())
+        .bind(&metadata)
+        .bind(&node.id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(StorageError::Query {
+                message: format!("MCTS node not found: {}", node.id),
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn delete_mcts_node(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM mcts_nodes WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    // ========================================================================
+    // Counterfactual analysis operations (Time Machine)
+    // ========================================================================
+
+    async fn create_counterfactual(&self, analysis: &CounterfactualAnalysis) -> StorageResult<()> {
+        let comparison = serialize_json_required(&analysis.comparison, "counterfactual.comparison")?;
+        let metadata = serialize_json(&analysis.metadata, "counterfactual.metadata")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO counterfactual_analyses (id, session_id, timeline_id, original_branch_id,
+                                                  question, intervention_type, intervention,
+                                                  target_thought_id, counterfactual_branch_id,
+                                                  outcome_delta, causal_attribution, confidence,
+                                                  comparison, created_at, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&analysis.id)
+        .bind(&analysis.session_id)
+        .bind(&analysis.timeline_id)
+        .bind(&analysis.original_branch_id)
+        .bind(&analysis.question)
+        .bind(analysis.intervention_type.to_string())
+        .bind(&analysis.intervention)
+        .bind(&analysis.target_thought_id)
+        .bind(&analysis.counterfactual_branch_id)
+        .bind(analysis.outcome_delta)
+        .bind(analysis.causal_attribution)
+        .bind(analysis.confidence)
+        .bind(&comparison)
+        .bind(analysis.created_at.to_rfc3339())
+        .bind(&metadata)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn get_counterfactual(&self, id: &str) -> StorageResult<Option<CounterfactualAnalysis>> {
+        let row: Option<CounterfactualRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, original_branch_id, question,
+                   intervention_type, intervention, target_thought_id,
+                   counterfactual_branch_id, outcome_delta, causal_attribution,
+                   confidence, comparison, created_at, metadata
+            FROM counterfactual_analyses
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.into()))
+    }
+
+    async fn get_session_counterfactuals(
+        &self,
+        session_id: &str,
+    ) -> StorageResult<Vec<CounterfactualAnalysis>> {
+        let rows: Vec<CounterfactualRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, original_branch_id, question,
+                   intervention_type, intervention, target_thought_id,
+                   counterfactual_branch_id, outcome_delta, causal_attribution,
+                   confidence, comparison, created_at, metadata
+            FROM counterfactual_analyses
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(session_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_timeline_counterfactuals(
+        &self,
+        timeline_id: &str,
+    ) -> StorageResult<Vec<CounterfactualAnalysis>> {
+        let rows: Vec<CounterfactualRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, original_branch_id, question,
+                   intervention_type, intervention, target_thought_id,
+                   counterfactual_branch_id, outcome_delta, causal_attribution,
+                   confidence, comparison, created_at, metadata
+            FROM counterfactual_analyses
+            WHERE timeline_id = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(timeline_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn get_counterfactuals_by_type(
+        &self,
+        intervention_type: InterventionType,
+    ) -> StorageResult<Vec<CounterfactualAnalysis>> {
+        let rows: Vec<CounterfactualRow> = sqlx::query_as(
+            r#"
+            SELECT id, session_id, timeline_id, original_branch_id, question,
+                   intervention_type, intervention, target_thought_id,
+                   counterfactual_branch_id, outcome_delta, causal_attribution,
+                   confidence, comparison, created_at, metadata
+            FROM counterfactual_analyses
+            WHERE intervention_type = ?
+            ORDER BY created_at DESC
+            "#,
+        )
+        .bind(intervention_type.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| r.into()).collect())
+    }
+
+    async fn delete_counterfactual(&self, id: &str) -> StorageResult<()> {
+        sqlx::query("DELETE FROM counterfactual_analyses WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -2525,6 +3110,209 @@ impl From<ProbabilityUpdateRow> for ProbabilityUpdate {
             ),
             metadata: row.metadata.as_deref().and_then(|s| {
                 parse_metadata_with_logging(s, &format!("probability {} metadata", row.id))
+            }),
+        }
+    }
+}
+
+// ============================================================================
+// Time Machine Row Types
+// ============================================================================
+
+/// Row struct for Timeline queries
+#[derive(Debug, sqlx::FromRow)]
+struct TimelineRow {
+    id: String,
+    session_id: String,
+    name: String,
+    description: Option<String>,
+    root_branch_id: String,
+    active_branch_id: String,
+    state: String,
+    branch_count: i32,
+    max_depth: i32,
+    created_at: String,
+    updated_at: String,
+    metadata: Option<String>,
+}
+
+impl From<TimelineRow> for Timeline {
+    fn from(row: TimelineRow) -> Self {
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            name: row.name,
+            description: row.description,
+            root_branch_id: row.root_branch_id,
+            active_branch_id: row.active_branch_id,
+            state: parse_enum_with_logging(&row.state, &format!("timeline {} state", row.id)),
+            branch_count: row.branch_count,
+            max_depth: row.max_depth,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("timeline {} created_at", row.id),
+            ),
+            updated_at: parse_timestamp_with_logging(
+                &row.updated_at,
+                &format!("timeline {} updated_at", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("timeline {} metadata", row.id))
+            }),
+        }
+    }
+}
+
+/// Row struct for TimelineBranch queries
+#[derive(Debug, sqlx::FromRow)]
+struct TimelineBranchRow {
+    branch_id: String,
+    timeline_id: String,
+    depth: i32,
+    visit_count: i32,
+    total_value: f64,
+    ucb_score: Option<f64>,
+    counterfactual_impact: Option<f64>,
+    mcts_generated: bool,
+    alternatives_explored: i32,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<TimelineBranchRow> for TimelineBranch {
+    fn from(row: TimelineBranchRow) -> Self {
+        Self {
+            branch_id: row.branch_id.clone(),
+            timeline_id: row.timeline_id,
+            depth: row.depth,
+            visit_count: row.visit_count,
+            total_value: row.total_value,
+            ucb_score: row.ucb_score,
+            counterfactual_impact: row.counterfactual_impact,
+            mcts_generated: row.mcts_generated,
+            alternatives_explored: row.alternatives_explored,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("timeline_branch {} created_at", row.branch_id),
+            ),
+            updated_at: parse_timestamp_with_logging(
+                &row.updated_at,
+                &format!("timeline_branch {} updated_at", row.branch_id),
+            ),
+        }
+    }
+}
+
+/// Row struct for MCTSNode queries
+#[derive(Debug, sqlx::FromRow)]
+struct MCTSNodeRow {
+    id: String,
+    session_id: String,
+    timeline_id: Option<String>,
+    branch_id: String,
+    parent_node_id: Option<String>,
+    content: String,
+    visit_count: i32,
+    total_value: f64,
+    prior: f64,
+    ucb_score: f64,
+    is_expanded: bool,
+    is_terminal: bool,
+    simulation_depth: i32,
+    created_at: String,
+    last_visited: String,
+    metadata: Option<String>,
+}
+
+impl From<MCTSNodeRow> for MCTSNode {
+    fn from(row: MCTSNodeRow) -> Self {
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            timeline_id: row.timeline_id,
+            branch_id: row.branch_id,
+            parent_node_id: row.parent_node_id,
+            content: row.content,
+            visit_count: row.visit_count,
+            total_value: row.total_value,
+            prior: row.prior,
+            ucb_score: row.ucb_score,
+            is_expanded: row.is_expanded,
+            is_terminal: row.is_terminal,
+            simulation_depth: row.simulation_depth,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("mcts_node {} created_at", row.id),
+            ),
+            last_visited: parse_timestamp_with_logging(
+                &row.last_visited,
+                &format!("mcts_node {} last_visited", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("mcts_node {} metadata", row.id))
+            }),
+        }
+    }
+}
+
+/// Row struct for CounterfactualAnalysis queries
+#[derive(Debug, sqlx::FromRow)]
+struct CounterfactualRow {
+    id: String,
+    session_id: String,
+    timeline_id: Option<String>,
+    original_branch_id: String,
+    question: String,
+    intervention_type: String,
+    intervention: String,
+    target_thought_id: Option<String>,
+    counterfactual_branch_id: String,
+    outcome_delta: f64,
+    causal_attribution: f64,
+    confidence: f64,
+    comparison: String,
+    created_at: String,
+    metadata: Option<String>,
+}
+
+impl From<CounterfactualRow> for CounterfactualAnalysis {
+    fn from(row: CounterfactualRow) -> Self {
+        let comparison = match serde_json::from_str(&row.comparison) {
+            Ok(value) => value,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    counterfactual_id = row.id,
+                    comparison_preview = %row.comparison.chars().take(100).collect::<String>(),
+                    "Failed to parse counterfactual comparison, using null"
+                );
+                serde_json::Value::Null
+            }
+        };
+
+        Self {
+            id: row.id.clone(),
+            session_id: row.session_id,
+            timeline_id: row.timeline_id,
+            original_branch_id: row.original_branch_id,
+            question: row.question,
+            intervention_type: parse_enum_with_logging(
+                &row.intervention_type,
+                &format!("counterfactual {} intervention_type", row.id),
+            ),
+            intervention: row.intervention,
+            target_thought_id: row.target_thought_id,
+            counterfactual_branch_id: row.counterfactual_branch_id,
+            outcome_delta: row.outcome_delta,
+            causal_attribution: row.causal_attribution,
+            confidence: row.confidence,
+            comparison,
+            created_at: parse_timestamp_with_logging(
+                &row.created_at,
+                &format!("counterfactual {} created_at", row.id),
+            ),
+            metadata: row.metadata.as_deref().and_then(|s| {
+                parse_metadata_with_logging(s, &format!("counterfactual {} metadata", row.id))
             }),
         }
     }

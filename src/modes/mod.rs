@@ -11,31 +11,40 @@
 //! - `DecisionMode`: Multi-criteria decision analysis and stakeholder perspectives
 //! - `EvidenceMode`: Evidence assessment and Bayesian probability updates
 //! - `DetectionMode`: Bias and fallacy detection in reasoning
+//! - `TimelineMode`: Timeline-based temporal reasoning exploration
+//! - `MCTSMode`: Monte Carlo Tree Search for reasoning exploration
+//! - `CounterfactualMode`: "What if?" analysis and causal reasoning
 //!
 //! All modes share common infrastructure via `ModeCore` composition.
 
 mod auto;
 mod backtracking;
 mod core;
+mod counterfactual;
 mod decision;
 mod detection;
 mod divergent;
 mod evidence;
 mod got;
 mod linear;
+mod mcts;
 mod reflection;
+mod timeline;
 mod tree;
 
 pub use auto::*;
 pub use backtracking::*;
 pub use core::*;
+pub use counterfactual::*;
 pub use decision::*;
 pub use detection::*;
 pub use divergent::*;
 pub use evidence::*;
 pub use got::*;
 pub use linear::*;
+pub use mcts::*;
 pub use reflection::*;
+pub use timeline::*;
 pub use tree::*;
 
 use serde::{Deserialize, Serialize};
@@ -132,6 +141,12 @@ pub enum ReasoningMode {
     Decision,
     /// Evidence assessment and probabilistic reasoning.
     Evidence,
+    /// Timeline-based temporal reasoning exploration.
+    Timeline,
+    /// Monte Carlo Tree Search for reasoning exploration.
+    Mcts,
+    /// Counterfactual "what if?" analysis.
+    Counterfactual,
 }
 
 impl ReasoningMode {
@@ -147,6 +162,9 @@ impl ReasoningMode {
             ReasoningMode::Got => "got",
             ReasoningMode::Decision => "decision",
             ReasoningMode::Evidence => "evidence",
+            ReasoningMode::Timeline => "timeline",
+            ReasoningMode::Mcts => "mcts",
+            ReasoningMode::Counterfactual => "counterfactual",
         }
     }
 }
@@ -171,6 +189,9 @@ impl std::str::FromStr for ReasoningMode {
             "got" => Ok(ReasoningMode::Got),
             "decision" => Ok(ReasoningMode::Decision),
             "evidence" => Ok(ReasoningMode::Evidence),
+            "timeline" => Ok(ReasoningMode::Timeline),
+            "mcts" => Ok(ReasoningMode::Mcts),
+            "counterfactual" => Ok(ReasoningMode::Counterfactual),
             _ => Err(format!("Unknown reasoning mode: {}", s)),
         }
     }

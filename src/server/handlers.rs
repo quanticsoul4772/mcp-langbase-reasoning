@@ -6,10 +6,12 @@ use tracing::info;
 use super::SharedState;
 use crate::error::{McpError, McpResult};
 use crate::modes::{
-    AutoParams, BacktrackingParams, DecisionParams, DetectBiasesParams, DetectFallaciesParams,
-    DivergentParams, EvidenceParams, GotAggregateParams, GotFinalizeParams, GotGenerateParams,
-    GotGetStateParams, GotInitParams, GotPruneParams, GotRefineParams, GotScoreParams,
-    LinearParams, PerspectiveParams, ProbabilisticParams, ReflectionParams, TreeParams,
+    AutoBacktrackParams, AutoParams, BacktrackingParams, CounterfactualParams, DecisionParams,
+    DetectBiasesParams, DetectFallaciesParams, DivergentParams, EvidenceParams, GotAggregateParams,
+    GotFinalizeParams, GotGenerateParams, GotGetStateParams, GotInitParams, GotPruneParams,
+    GotRefineParams, GotScoreParams, LinearParams, MCTSExploreParams, PerspectiveParams,
+    ProbabilisticParams, ReflectionParams, TimelineBranchParams, TimelineCompareParams,
+    TimelineCreateParams, TimelineMergeParams, TreeParams,
 };
 use crate::presets::execute_preset;
 use crate::self_improvement::InvocationEvent;
@@ -127,6 +129,14 @@ pub async fn handle_tool_call(
         "reasoning_metrics_invocations" => handle_metrics_invocations(state, arguments).await,
         "reasoning_fallback_metrics" => handle_fallback_metrics(state).await,
         "reasoning_debug_config" => handle_debug_config(state).await,
+        // Phase 6 tools - Time Machine (Timeline, MCTS, Counterfactual)
+        "reasoning_timeline_create" => handle_timeline_create(state, arguments).await,
+        "reasoning_timeline_branch" => handle_timeline_branch(state, arguments).await,
+        "reasoning_timeline_compare" => handle_timeline_compare(state, arguments).await,
+        "reasoning_timeline_merge" => handle_timeline_merge(state, arguments).await,
+        "reasoning_mcts_explore" => handle_mcts_explore(state, arguments).await,
+        "reasoning_auto_backtrack" => handle_auto_backtrack(state, arguments).await,
+        "reasoning_counterfactual" => handle_counterfactual(state, arguments).await,
         _ => Err(McpError::UnknownTool {
             tool_name: tool_name.to_string(),
         }),
@@ -881,6 +891,83 @@ async fn handle_fallback_metrics(state: &SharedState) -> McpResult<Value> {
         "fallback_rate": metrics.fallback_rate,
         "recommendation": metrics.recommendation
     }))
+}
+
+// ============================================================================
+// Phase 6 Handlers - Time Machine (Timeline, MCTS, Counterfactual)
+// ============================================================================
+
+/// Handle reasoning_timeline_create tool call
+async fn handle_timeline_create(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.timeline_create",
+        arguments,
+        |params: TimelineCreateParams| state.timeline_mode.create(params),
+    )
+    .await
+}
+
+/// Handle reasoning_timeline_branch tool call
+async fn handle_timeline_branch(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.timeline_branch",
+        arguments,
+        |params: TimelineBranchParams| state.timeline_mode.branch(params),
+    )
+    .await
+}
+
+/// Handle reasoning_timeline_compare tool call
+async fn handle_timeline_compare(
+    state: &SharedState,
+    arguments: Option<Value>,
+) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.timeline_compare",
+        arguments,
+        |params: TimelineCompareParams| state.timeline_mode.compare(params),
+    )
+    .await
+}
+
+/// Handle reasoning_timeline_merge tool call
+async fn handle_timeline_merge(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.timeline_merge",
+        arguments,
+        |params: TimelineMergeParams| state.timeline_mode.merge(params),
+    )
+    .await
+}
+
+/// Handle reasoning_mcts_explore tool call
+async fn handle_mcts_explore(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.mcts_explore",
+        arguments,
+        |params: MCTSExploreParams| state.mcts_mode.explore(params),
+    )
+    .await
+}
+
+/// Handle reasoning_auto_backtrack tool call
+async fn handle_auto_backtrack(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.auto_backtrack",
+        arguments,
+        |params: AutoBacktrackParams| state.mcts_mode.auto_backtrack(params),
+    )
+    .await
+}
+
+/// Handle reasoning_counterfactual tool call
+async fn handle_counterfactual(state: &SharedState, arguments: Option<Value>) -> McpResult<Value> {
+    execute_handler(
+        "reasoning.counterfactual",
+        arguments,
+        |params: CounterfactualParams| state.counterfactual_mode.analyze(params),
+    )
+    .await
 }
 
 #[cfg(test)]

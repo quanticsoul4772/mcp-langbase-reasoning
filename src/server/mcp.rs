@@ -341,6 +341,14 @@ impl McpServer {
             get_fallback_metrics_tool(),
             // Debug tools
             get_debug_config_tool(),
+            // Phase 6 tools - Time Machine (Timeline, MCTS, Counterfactual)
+            get_timeline_create_tool(),
+            get_timeline_branch_tool(),
+            get_timeline_compare_tool(),
+            get_timeline_merge_tool(),
+            get_mcts_explore_tool(),
+            get_auto_backtrack_tool(),
+            get_counterfactual_tool(),
         ];
 
         JsonRpcResponse::success(
@@ -1423,6 +1431,265 @@ fn get_fallback_metrics_tool() -> Tool {
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {},
+            "additionalProperties": false
+        }),
+    }
+}
+
+// ============================================================================
+// Phase 6 Tool Definitions - Time Machine (Timeline, MCTS, Counterfactual)
+// ============================================================================
+
+/// Get the timeline create tool definition
+fn get_timeline_create_tool() -> Tool {
+    Tool {
+        name: "reasoning_timeline_create".to_string(),
+        description: "Create a new reasoning timeline for temporal exploration. Timelines allow tracking multiple parallel reasoning paths over time with branching support.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Initial content or problem to explore"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "Optional metadata for the timeline",
+                    "additionalProperties": true
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the timeline branch tool definition
+fn get_timeline_branch_tool() -> Tool {
+    Tool {
+        name: "reasoning_timeline_branch".to_string(),
+        description: "Create a new branch in a reasoning timeline. Enables exploring alternative paths from any point while preserving the original.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "timeline_id": {
+                    "type": "string",
+                    "description": "ID of the timeline to branch from"
+                },
+                "parent_branch_id": {
+                    "type": "string",
+                    "description": "ID of the parent branch (uses current if not specified)"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Content for the new branch"
+                },
+                "branch_point": {
+                    "type": "string",
+                    "description": "Optional specific point to branch from"
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Optional label for the branch"
+                }
+            },
+            "required": ["timeline_id", "content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the timeline compare tool definition
+fn get_timeline_compare_tool() -> Tool {
+    Tool {
+        name: "reasoning_timeline_compare".to_string(),
+        description: "Compare multiple timeline branches to analyze divergence points, quality differences, and convergence opportunities.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "timeline_id": {
+                    "type": "string",
+                    "description": "ID of the timeline containing the branches"
+                },
+                "branch_ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 2,
+                    "description": "IDs of branches to compare (minimum 2)"
+                }
+            },
+            "required": ["timeline_id", "branch_ids"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the timeline merge tool definition
+fn get_timeline_merge_tool() -> Tool {
+    Tool {
+        name: "reasoning_timeline_merge".to_string(),
+        description: "Merge two timeline branches, synthesizing insights and resolving conflicts to create a unified path.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "timeline_id": {
+                    "type": "string",
+                    "description": "ID of the timeline containing the branches"
+                },
+                "source_branch_id": {
+                    "type": "string",
+                    "description": "ID of the source branch to merge"
+                },
+                "target_branch_id": {
+                    "type": "string",
+                    "description": "ID of the target branch to merge into"
+                },
+                "merge_strategy": {
+                    "type": "string",
+                    "enum": ["synthesize", "prefer_source", "prefer_target", "interleave"],
+                    "description": "Strategy for resolving conflicts (default: synthesize)"
+                }
+            },
+            "required": ["timeline_id", "source_branch_id", "target_branch_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the MCTS explore tool definition
+fn get_mcts_explore_tool() -> Tool {
+    Tool {
+        name: "reasoning_mcts_explore".to_string(),
+        description: "Monte Carlo Tree Search guided exploration. Uses UCB1 formula (Q/N + c*sqrt(ln(N_parent)/N)) to balance exploitation of promising paths with exploration of novel ones.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "The reasoning problem or content to explore"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "node_id": {
+                    "type": "string",
+                    "description": "Optional specific node to expand from"
+                },
+                "iterations": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Number of MCTS iterations to perform (default: 10)"
+                },
+                "exploration_constant": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 10,
+                    "description": "UCB1 exploration constant c (default: 1.414, sqrt(2))"
+                },
+                "simulation_depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Maximum depth for rollout simulations (default: 5)"
+                }
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the auto backtrack tool definition
+fn get_auto_backtrack_tool() -> Tool {
+    Tool {
+        name: "reasoning_auto_backtrack".to_string(),
+        description: "Intelligent auto-backtracking that monitors reasoning quality and automatically suggests or executes backtracking when quality drops or dead ends are detected.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID to monitor for quality"
+                },
+                "quality_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Minimum quality score before triggering backtrack (default: 0.5)"
+                },
+                "auto_execute": {
+                    "type": "boolean",
+                    "description": "Whether to automatically execute backtrack or just suggest (default: false)"
+                },
+                "lookback_depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "How many steps back to analyze for backtrack point (default: 5)"
+                }
+            },
+            "required": ["session_id"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Get the counterfactual analysis tool definition
+fn get_counterfactual_tool() -> Tool {
+    Tool {
+        name: "reasoning_counterfactual".to_string(),
+        description: "Counterfactual 'what if' analysis based on Pearl's Ladder of Causation. Explores alternative scenarios by modifying assumptions and tracing causal consequences.".to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "scenario": {
+                    "type": "string",
+                    "description": "The base scenario or situation to analyze"
+                },
+                "intervention": {
+                    "type": "string",
+                    "description": "The counterfactual change to apply (e.g., 'What if X had happened instead?')"
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for context continuity"
+                },
+                "causal_model": {
+                    "type": "object",
+                    "properties": {
+                        "variables": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Key variables in the causal model"
+                        },
+                        "relationships": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "cause": { "type": "string" },
+                                    "effect": { "type": "string" },
+                                    "strength": { "type": "number", "minimum": 0, "maximum": 1 }
+                                }
+                            },
+                            "description": "Causal relationships between variables"
+                        }
+                    },
+                    "description": "Optional explicit causal model for the analysis"
+                },
+                "analysis_depth": {
+                    "type": "string",
+                    "enum": ["association", "intervention", "counterfactual"],
+                    "description": "Depth of causal analysis per Pearl's Ladder (default: counterfactual)"
+                }
+            },
+            "required": ["scenario", "intervention"],
             "additionalProperties": false
         }),
     }

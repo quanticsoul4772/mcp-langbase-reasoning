@@ -17,8 +17,8 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::langbase::LangbaseClient;
 use crate::modes::{
-    AutoMode, BacktrackingMode, DecisionMode, DetectionMode, DivergentMode, EvidenceMode, GotMode,
-    LinearMode, ReflectionMode, TreeMode,
+    AutoMode, BacktrackingMode, CounterfactualMode, DecisionMode, DetectionMode, DivergentMode,
+    EvidenceMode, GotMode, LinearMode, MCTSMode, ReflectionMode, TimelineMode, TreeMode,
 };
 use crate::presets::PresetRegistry;
 use crate::self_improvement::{SelfImprovementConfig, SelfImprovementSystem};
@@ -55,6 +55,12 @@ pub struct AppState {
     pub evidence_mode: EvidenceMode,
     /// Detection mode handler for bias/fallacy detection.
     pub detection_mode: DetectionMode,
+    /// Timeline reasoning mode handler.
+    pub timeline_mode: TimelineMode,
+    /// MCTS exploration mode handler.
+    pub mcts_mode: MCTSMode,
+    /// Counterfactual analysis mode handler.
+    pub counterfactual_mode: CounterfactualMode,
     /// Workflow preset registry.
     pub preset_registry: Arc<PresetRegistry>,
     /// Self-improvement system (optional, enabled via config).
@@ -85,6 +91,9 @@ impl AppState {
         let decision_mode = DecisionMode::new(storage.clone(), langbase.clone(), &config);
         let evidence_mode = EvidenceMode::new(storage.clone(), langbase.clone(), &config);
         let detection_mode = DetectionMode::new(storage.clone(), langbase.clone(), &config);
+        let timeline_mode = TimelineMode::new(storage.clone(), langbase.clone(), &config);
+        let mcts_mode = MCTSMode::new(storage.clone(), langbase.clone(), &config);
+        let counterfactual_mode = CounterfactualMode::new(storage.clone(), langbase.clone(), &config);
         let preset_registry = Arc::new(PresetRegistry::new());
 
         // Initialize self-improvement system (enabled by default)
@@ -115,6 +124,9 @@ impl AppState {
             decision_mode,
             evidence_mode,
             detection_mode,
+            timeline_mode,
+            mcts_mode,
+            counterfactual_mode,
             preset_registry,
             self_improvement,
         }
@@ -153,6 +165,9 @@ impl Clone for AppState {
             decision_mode: self.decision_mode.clone(),
             evidence_mode: self.evidence_mode.clone(),
             detection_mode: self.detection_mode.clone(),
+            timeline_mode: self.timeline_mode.clone(),
+            mcts_mode: self.mcts_mode.clone(),
+            counterfactual_mode: self.counterfactual_mode.clone(),
             preset_registry: Arc::clone(&self.preset_registry),
             self_improvement: self.self_improvement.as_ref().map(Arc::clone),
         }

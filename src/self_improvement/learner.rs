@@ -107,13 +107,15 @@ impl std::fmt::Display for LearningBlocked {
 // ============================================================================
 
 /// Single entry in action history.
+///
+/// Note: `action_id` and `executed_at` are retained for future debugging/auditing
+/// and time-based analysis but not currently accessed directly.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Some fields reserved for future use
 struct ActionHistoryEntry {
-    /// Action ID (retained for future debugging/auditing)
-    #[allow(dead_code)]
+    /// Action ID for debugging/auditing
     action_id: ActionId,
-    /// When executed (retained for future time-based analysis)
-    #[allow(dead_code)]
+    /// When executed for time-based analysis
     executed_at: DateTime<Utc>,
     /// Reward achieved
     reward: f64,
@@ -592,15 +594,19 @@ mod tests {
     use crate::self_improvement::executor::ConfigState;
     use crate::self_improvement::types::{ConfigScope, ParamValue, TriggerMetric};
 
+    /// Test configuration with reflection disabled for unit tests.
+    /// Reserved for future integration tests that need a full Learner instance.
     #[allow(dead_code)]
-    fn test_config() -> SelfImprovementConfig {
+    fn _test_config() -> SelfImprovementConfig {
         let mut config = SelfImprovementConfig::default();
         config.learner.use_reflection_for_learning = false; // Disable for unit tests
         config
     }
 
+    /// Create a test diagnosis for learner tests.
+    /// Reserved for future integration tests that need a full Learner instance.
     #[allow(dead_code)]
-    fn test_diagnosis() -> SelfDiagnosis {
+    fn _test_diagnosis() -> SelfDiagnosis {
         SelfDiagnosis::new(
             TriggerMetric::ErrorRate {
                 observed: 0.10,
@@ -617,9 +623,11 @@ mod tests {
         )
     }
 
+    /// Create a test execution result for learner tests.
+    /// Reserved for future integration tests that need a full Learner instance.
     #[allow(dead_code)]
-    fn test_execution_result() -> ExecutionResult {
-        let diagnosis = test_diagnosis();
+    fn _test_execution_result() -> ExecutionResult {
+        let diagnosis = _test_diagnosis();
         ExecutionResult {
             action_id: ActionId::new(),
             diagnosis_id: diagnosis.id.clone(),

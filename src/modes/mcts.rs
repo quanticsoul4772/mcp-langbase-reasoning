@@ -150,10 +150,12 @@ pub struct MCTSMode {
     tree_pipe: String,
     /// Decision pipe for evaluation
     decision_pipe: String,
-    /// Divergent pipe for alternatives (reserved for future use)
+    /// Divergent pipe for alternatives.
+    /// Reserved for future diverse path generation in MCTS expansion.
     #[allow(dead_code)]
     divergent_pipe: String,
-    /// Reflection pipe for analysis (reserved for future use)
+    /// Reflection pipe for quality analysis.
+    /// Reserved for future auto-backtrack quality assessment.
     #[allow(dead_code)]
     reflection_pipe: String,
 }
@@ -688,10 +690,12 @@ struct ExpandBranch {
     confidence: f64,
 }
 
+/// Response from evaluation pipe.
+/// The `rationale` field is parsed from JSON but currently only `score` is used.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // rationale parsed for completeness but not currently used
 struct EvalResponse {
     score: f64,
-    #[allow(dead_code)]
     rationale: String,
 }
 

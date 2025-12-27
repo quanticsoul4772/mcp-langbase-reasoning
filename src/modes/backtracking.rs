@@ -50,8 +50,9 @@ pub struct BacktrackingResult {
     pub snapshot_id: String,
 }
 
-/// Langbase response for backtracking
-#[allow(dead_code)] // Fields needed for deserialization but not all are used directly
+/// Langbase response for backtracking.
+/// Some fields are parsed for JSON completeness but only `thought` and `confidence` are used.
+#[allow(dead_code)] // Fields parsed for JSON completeness
 #[derive(Debug, Clone, Deserialize)]
 struct BacktrackingResponse {
     thought: String,

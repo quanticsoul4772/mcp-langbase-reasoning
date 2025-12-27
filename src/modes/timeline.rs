@@ -174,7 +174,8 @@ pub struct TimelineMode {
     core: ModeCore,
     /// Tree pipe for branching
     tree_pipe: String,
-    /// Divergent pipe for alternatives (reserved for future use)
+    /// Divergent pipe for alternatives.
+    /// Reserved for future multi-perspective branch generation.
     #[allow(dead_code)]
     divergent_pipe: String,
     /// GoT pipe for comparison
@@ -667,12 +668,14 @@ struct TreeBranchResponse {
     branches: Vec<TreeBranchData>,
 }
 
+/// Branch data from tree pipe response.
+/// The `rationale` field is parsed for completeness but not currently used.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // rationale parsed for completeness
 struct TreeBranchData {
     thought: String,
     confidence: f64,
     #[serde(default)]
-    #[allow(dead_code)]
     rationale: String,
 }
 

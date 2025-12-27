@@ -111,7 +111,8 @@ pub struct CounterfactualMode {
     core: ModeCore,
     /// Reflection pipe for analysis
     reflection_pipe: String,
-    /// Decision pipe for evaluation (reserved for future use)
+    /// Decision pipe for causal attribution scoring.
+    /// Reserved for future enhanced causal analysis.
     #[allow(dead_code)]
     decision_pipe: String,
 }

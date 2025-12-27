@@ -721,8 +721,10 @@ mod tests {
         config
     }
 
+    /// Create a test health report for analyzer tests.
+    /// Reserved for future integration tests that need a full Analyzer instance.
     #[allow(dead_code)]
-    fn test_health_report(with_trigger: bool) -> HealthReport {
+    fn _test_health_report(with_trigger: bool) -> HealthReport {
         let triggers = if with_trigger {
             vec![TriggerMetric::ErrorRate {
                 observed: 0.15,

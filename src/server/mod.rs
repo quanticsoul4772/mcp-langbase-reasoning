@@ -96,19 +96,14 @@ impl AppState {
         let counterfactual_mode = CounterfactualMode::new(storage.clone(), langbase.clone(), &config);
         let preset_registry = Arc::new(PresetRegistry::new());
 
-        // Initialize self-improvement system (enabled by default)
+        // Initialize self-improvement system (always enabled)
         let self_improvement_config = SelfImprovementConfig::from_env();
-        let self_improvement = if self_improvement_config.enabled {
-            tracing::info!("Self-improvement system enabled (autonomous optimization active)");
-            Some(Arc::new(SelfImprovementSystem::new(
-                self_improvement_config,
-                storage.clone(),
-                langbase.clone(),
-            )))
-        } else {
-            tracing::warn!("Self-improvement system disabled via SELF_IMPROVEMENT_ENABLED=false");
-            None
-        };
+        tracing::info!("Self-improvement system active (autonomous optimization running)");
+        let self_improvement = Some(Arc::new(SelfImprovementSystem::new(
+            self_improvement_config,
+            storage.clone(),
+            langbase.clone(),
+        )));
 
         Self {
             config,
@@ -142,9 +137,9 @@ impl AppState {
         }
     }
 
-    /// Check if self-improvement system is enabled.
+    /// Check if self-improvement system is enabled (always true).
     pub fn self_improvement_enabled(&self) -> bool {
-        self.self_improvement.is_some()
+        true
     }
 }
 

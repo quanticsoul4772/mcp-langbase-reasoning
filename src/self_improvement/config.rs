@@ -9,11 +9,10 @@ use super::types::Severity;
 
 /// Configuration for the self-improvement system.
 ///
-/// The system is **disabled by default** for safety.
-/// Set `SELF_IMPROVEMENT_ENABLED=true` to activate.
+/// The system is **always enabled** for full autonomous operation.
 #[derive(Debug, Clone)]
 pub struct SelfImprovementConfig {
-    /// Enable/disable the self-improvement system (default: false)
+    /// Self-improvement system is always enabled
     pub enabled: bool,
 
     /// Monitor configuration
@@ -56,10 +55,8 @@ impl Default for SelfImprovementConfig {
 impl SelfImprovementConfig {
     /// Load configuration from environment variables.
     pub fn from_env() -> Self {
-        // Default is disabled for safety - must explicitly enable with "true"
-        let enabled = std::env::var("SELF_IMPROVEMENT_ENABLED")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+        // Always enabled - no disable option
+        let enabled = true;
 
         Self {
             enabled,

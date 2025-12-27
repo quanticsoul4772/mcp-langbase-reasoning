@@ -158,7 +158,7 @@ The server includes an autonomous self-improvement loop that monitors system hea
 
 ### Safety Features
 
-- **Disabled by Default** - Set `SELF_IMPROVEMENT_ENABLED=true` to activate
+- **Always Enabled** - Self-improvement runs continuously
 - **Circuit Breaker** - Stops after consecutive failures (default: 5)
 - **Action Allowlist** - Only bounded, pre-approved parameter changes allowed
 - **Rate Limiting** - Maximum actions per hour (default: 10)
@@ -170,7 +170,6 @@ The server includes an autonomous self-improvement loop that monitors system hea
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SELF_IMPROVEMENT_ENABLED` | `false` | Enable the self-improvement loop |
 | `SI_MAX_ACTIONS_PER_HOUR` | `10` | Maximum actions per hour |
 | `SI_COOLDOWN_SECS` | `60` | Cooldown between actions |
 | `SI_REQUIRE_APPROVAL` | `false` | Require manual approval |

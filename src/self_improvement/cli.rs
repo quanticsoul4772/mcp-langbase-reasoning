@@ -445,7 +445,7 @@ async fn execute_config() -> CliResult {
     output.push_str("\nSelf-Improvement Configuration\n");
     output.push_str("═══════════════════════════════════════════════════════════════════════════════\n\n");
 
-    output.push_str(&format!("System Enabled: {}\n\n", if config.enabled { "YES" } else { "NO" }));
+    output.push_str("System Status: ALWAYS ACTIVE\n\n");
 
     output.push_str("Monitor Settings:\n");
     output.push_str(&format!("  Check Interval: {}s\n", config.monitor.check_interval_secs));

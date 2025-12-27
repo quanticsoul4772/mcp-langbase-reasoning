@@ -327,19 +327,15 @@ impl SelfImprovementSystem {
         }
     }
 
-    /// Check if the system is enabled.
+    /// Check if the system is enabled (always true).
     pub fn is_enabled(&self) -> bool {
-        self.config.enabled
+        true
     }
 
     /// Record an invocation for metric tracking.
     ///
     /// This should be called after each tool invocation to feed the Monitor.
     pub async fn on_invocation(&self, event: InvocationEvent) {
-        if !self.config.enabled {
-            return;
-        }
-
         debug!(
             tool = %event.tool_name,
             latency_ms = event.latency_ms,
@@ -383,7 +379,7 @@ impl SelfImprovementSystem {
             .unwrap_or(false);
 
         SystemStatus {
-            enabled: self.config.enabled,
+            enabled: true,
             circuit_state: cb_summary.state,
             consecutive_failures: cb_summary.consecutive_failures,
             in_cooldown,
@@ -409,11 +405,6 @@ impl SelfImprovementSystem {
     /// * `Err(SelfImprovementError)` - Cycle blocked or failed
     pub async fn run_cycle(&self) -> Result<CycleResult, SelfImprovementError> {
         let start = std::time::Instant::now();
-
-        // Check if enabled
-        if !self.config.enabled {
-            return Err(SelfImprovementError::Disabled);
-        }
 
         // Check circuit breaker
         {

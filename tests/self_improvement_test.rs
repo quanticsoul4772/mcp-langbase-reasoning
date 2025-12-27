@@ -479,16 +479,6 @@ async fn test_effectiveness_max_min_tracking() {
 // ============================================================================
 
 #[tokio::test]
-async fn test_set_system_enabled() {
-    let (storage, _dir) = create_test_storage().await;
-    let si_storage = create_si_storage(&storage);
-
-    si_storage.set_system_enabled(true).await.unwrap();
-    si_storage.set_system_enabled(false).await.unwrap();
-    si_storage.set_system_enabled(true).await.unwrap();
-}
-
-#[tokio::test]
 async fn test_create_pause() {
     let (storage, _dir) = create_test_storage().await;
     let si_storage = create_si_storage(&storage);
@@ -608,22 +598,6 @@ async fn test_baselines_command() {
     }
 
     let result = execute_command(SelfImproveCommands::Baselines, &storage).await;
-    assert_eq!(result.exit_code, 0);
-}
-
-#[tokio::test]
-async fn test_enable_command() {
-    let (storage, _dir) = create_test_storage().await;
-
-    let result = execute_command(SelfImproveCommands::Enable, &storage).await;
-    assert_eq!(result.exit_code, 0);
-}
-
-#[tokio::test]
-async fn test_disable_command() {
-    let (storage, _dir) = create_test_storage().await;
-
-    let result = execute_command(SelfImproveCommands::Disable, &storage).await;
     assert_eq!(result.exit_code, 0);
 }
 

@@ -864,30 +864,6 @@ impl SelfImprovementStorage {
     // Runtime Control Operations (for CLI commands)
     // ========================================================================
 
-    /// Set whether the self-improvement system is enabled.
-    pub async fn set_system_enabled(&self, enabled: bool) -> StorageResult<()> {
-        let enabled_val = if enabled { 1 } else { 0 };
-
-        sqlx::query(
-            r#"
-            INSERT INTO system_settings (key, value, updated_at)
-            VALUES ('self_improvement_enabled', ?, datetime('now'))
-            ON CONFLICT(key) DO UPDATE SET
-                value = excluded.value,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(enabled_val.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|e| StorageError::Query {
-            message: format!("Failed to set system enabled state: {}", e),
-        })?;
-
-        debug!(enabled = enabled, "System enabled state updated");
-        Ok(())
-    }
-
     /// Create a pause period for the self-improvement system.
     pub async fn create_pause(
         &self,

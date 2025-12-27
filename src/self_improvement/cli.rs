@@ -45,12 +45,6 @@ pub enum SelfImproveCommands {
     /// Show metric baselines
     Baselines,
 
-    /// Enable the self-improvement system
-    Enable,
-
-    /// Disable the self-improvement system
-    Disable,
-
     /// Pause self-improvement for a duration
     Pause {
         /// Duration to pause (e.g., "30m", "2h", "1d")
@@ -121,8 +115,6 @@ pub async fn execute_command(
         SelfImproveCommands::Config => execute_config().await,
         SelfImproveCommands::CircuitBreaker => execute_circuit_breaker(storage).await,
         SelfImproveCommands::Baselines => execute_baselines(storage).await,
-        SelfImproveCommands::Enable => execute_enable(storage).await,
-        SelfImproveCommands::Disable => execute_disable(storage).await,
         SelfImproveCommands::Pause { duration } => execute_pause(storage, &duration).await,
         SelfImproveCommands::Rollback { action_id } => execute_rollback(storage, &action_id).await,
         SelfImproveCommands::Approve { diagnosis_id } => {
@@ -578,45 +570,6 @@ async fn execute_baselines(storage: &SqliteStorage) -> CliResult {
     CliResult::success(output)
 }
 
-/// Execute enable command.
-async fn execute_enable(storage: &SqliteStorage) -> CliResult {
-    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
-
-    match si_storage.set_system_enabled(true).await {
-        Ok(()) => {
-            let mut output = String::new();
-            output.push_str("\n✓ Self-improvement system ENABLED\n\n");
-            output.push_str("The system will now:\n");
-            output.push_str("  - Monitor metrics for anomalies\n");
-            output.push_str("  - Diagnose issues when thresholds are exceeded\n");
-            output.push_str("  - Execute safe, bounded actions to improve performance\n");
-            output.push_str("  - Learn from action outcomes\n\n");
-            output.push_str("Use 'self-improve status' to check current state.\n");
-            CliResult::success(output)
-        }
-        Err(e) => CliResult::error(format!("Failed to enable system: {}", e)),
-    }
-}
-
-/// Execute disable command.
-async fn execute_disable(storage: &SqliteStorage) -> CliResult {
-    let si_storage = SelfImprovementStorage::new(storage.pool().clone());
-
-    match si_storage.set_system_enabled(false).await {
-        Ok(()) => {
-            let mut output = String::new();
-            output.push_str("\n⚠ Self-improvement system DISABLED\n\n");
-            output.push_str("The system will no longer:\n");
-            output.push_str("  - Execute any automatic actions\n");
-            output.push_str("  - Respond to metric anomalies\n\n");
-            output.push_str("Metrics will continue to be collected for monitoring.\n");
-            output.push_str("Use 'self-improve enable' to re-enable the system.\n");
-            CliResult::success(output)
-        }
-        Err(e) => CliResult::error(format!("Failed to disable system: {}", e)),
-    }
-}
-
 /// Execute pause command.
 async fn execute_pause(storage: &SqliteStorage, duration_str: &str) -> CliResult {
     // Parse duration string (e.g., "30m", "2h", "1d")
@@ -639,7 +592,7 @@ async fn execute_pause(storage: &SqliteStorage, duration_str: &str) -> CliResult
             output.push_str("  - No automatic actions will be executed\n");
             output.push_str("  - Metrics will continue to be collected\n");
             output.push_str("  - System will automatically resume after the pause expires\n\n");
-            output.push_str("To resume early, use 'self-improve enable'.\n");
+            output.push_str("System will automatically resume when pause expires.\n");
             CliResult::success(output)
         }
         Err(e) => CliResult::error(format!("Failed to pause system: {}", e)),
